@@ -20,6 +20,9 @@ c_args = []
 # load flags
 ld_args = []
 
+# root path of the project
+root_dir = meson.source_root()
+
 # ==================== Third-party Library Detection ====================
 
 # indicator of whether necessary libraries were founded
@@ -28,8 +31,9 @@ has_doca = false
 has_cuda = false
 
 # >>>>>>>>>>>>>> DPDK >>>>>>>>>>>>>>
+dpdk_pc_path = '/usr/lib/dpdk/lib/x86_64-linux-gnu/pkgconfig/'
 # dpdk_pc_path = meson.current_source_dir() + '/' + 'third_party/dpdk-21.11/install/lib/x86_64-linux-gnu/pkgconfig/'
-dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
+# dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
 dpdk_modules = ['libdpdk', 'libdpdk-libs']
 founded_dpdk_modules = []
 env.set('PKG_CONFIG_PATH', dpdk_pc_path)
@@ -124,36 +128,8 @@ c_args += ['--std=c++11']
 
 # necessary dependencies check
 assert(has_dpdk, 'couldn\'t find libdpdk')
-
 # =======================================================================
 
-
-# ==================== Specified All Dependent Headers ==================
-
-# scan all needed header files
-glob = run_command('python3', files('./scan_include.py'), project_name_abbreviation, check: false)
-inc_dirs = include_directories(glob.stdout().strip().split('\n'))
-# message(glob.stdout().strip().split('\n'))
-
-# =======================================================================
-
-
-# ====================== Specifed All Source Files ======================
-
-# scan all needed source files
-glob = run_command('python3', files('./scan_src.py'), app, check: false)
-sources = glob.stdout().strip().split('\n')
-# message(sources)
-
-# =======================================================================
-
-# build executable
-message('cflags: ' + ' '.join(c_args))
-message('ldflags: ' + ' '.join(ld_args))
-executable(project_name, sources,
-	dependencies : dep,
-	cpp_args: c_args,
-	link_args: ld_args,
-	include_directories: inc_dirs,
-	install: false
-)
+subdir('runtime')
+subdir('toolchain/compiler')
+subdir('toolchain/loader')
