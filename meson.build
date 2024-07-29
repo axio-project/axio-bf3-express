@@ -31,9 +31,9 @@ has_doca = false
 has_cuda = false
 
 # >>>>>>>>>>>>>> DPDK >>>>>>>>>>>>>>
-dpdk_pc_path = '/usr/lib/dpdk/lib/x86_64-linux-gnu/pkgconfig/'
+# dpdk_pc_path = '/usr/lib/dpdk/lib/x86_64-linux-gnu/pkgconfig/'
 # dpdk_pc_path = meson.current_source_dir() + '/' + 'third_party/dpdk-21.11/install/lib/x86_64-linux-gnu/pkgconfig/'
-# dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
+dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
 dpdk_modules = ['libdpdk', 'libdpdk-libs']
 founded_dpdk_modules = []
 env.set('PKG_CONFIG_PATH', dpdk_pc_path)
@@ -59,7 +59,7 @@ endif
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
 doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
-doca_modules = ['doca-grpc-libs', 'doca-grpc', 'doca-libs', 'doca']
+doca_modules = ['doca-grpc-libs', 'doca-libs']
 founded_doca_modules = []
 message('>>> Detecting DOCA, assume pc file of DOCA is located at ' + doca_pc_path)
 env.set('PKG_CONFIG_PATH', doca_pc_path)
