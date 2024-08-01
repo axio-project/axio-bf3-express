@@ -31,9 +31,14 @@ has_doca = false
 has_cuda = false
 
 # >>>>>>>>>>>>>> DPDK >>>>>>>>>>>>>>
+if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	dpdk_pc_path = '/home/ubuntu/git_repos/dpdk/dpdk-stable-22.11.5/build/install/lib/x86_64-linux-gnu/pkgconfig'
+elif host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
+endif
 # dpdk_pc_path = '/usr/lib/dpdk/lib/x86_64-linux-gnu/pkgconfig/'
 # dpdk_pc_path = meson.current_source_dir() + '/' + 'third_party/dpdk-21.11/install/lib/x86_64-linux-gnu/pkgconfig/'
-dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
+# dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
 dpdk_modules = ['libdpdk', 'libdpdk-libs']
 founded_dpdk_modules = []
 env.set('PKG_CONFIG_PATH', dpdk_pc_path)
@@ -58,7 +63,11 @@ endif
 
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
-doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	doca_pc_path = '/opt/mellanox/doca/lib/x86_64-linux-gnu/pkgconfig/'
+elif host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+endif
 doca_modules = ['doca-grpc-libs', 'doca-libs']
 founded_doca_modules = []
 message('>>> Detecting DOCA, assume pc file of DOCA is located at ' + doca_pc_path)

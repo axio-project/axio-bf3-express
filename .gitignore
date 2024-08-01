@@ -29,3 +29,6 @@ Temporary Items
 .apdisk
 
 **/.vscode
+
+# nicc specific
+build/
