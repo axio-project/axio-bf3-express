@@ -13,7 +13,9 @@ namespace nicc {
 
     /* Register App context */
 
-    /* Construct pipeline */
+    /* Init control path MTs */
+
+    /* Update control path rules to construct pipeline */
 
   }
 
