@@ -13,10 +13,6 @@ namespace nicc {
 
     /* Register App context */
 
-    /* Init control path MTs */
-
-    /* Update control path rules to construct pipeline */
-
   }
 
   DatapathPipeline::~DatapathPipeline() {
