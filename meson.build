@@ -28,6 +28,7 @@ root_dir = meson.source_root()
 # indicator of whether necessary libraries were founded
 has_dpdk = false
 has_doca = false
+has_flexio = false
 has_cuda = false
 
 # >>>>>>>>>>>>>> DPDK >>>>>>>>>>>>>>
@@ -88,6 +89,29 @@ endforeach
 if founded_doca_modules.length() == doca_modules.length()
 	has_doca = true
 	add_global_arguments('-DSC_HAS_DOCA', language: ['c', 'cpp'])
+endif
+
+# >>>>>>>>>>>>>> FlexIO >>>>>>>>>>>>>>
+flexio_pc_path = '/opt/mellanox/flexio/lib/pkgconfig/'
+flexio_modules = ['libflexio-dev']
+founded_flexio_modules = []
+message('>>> Detecting FlexIO, assume pc file of FlexIO is located at ' + flexio_pc_path)
+env.set('PKG_CONFIG_PATH', doca_pc_path)
+foreach flexio_module : flexio_modules
+	flexio_module_cflags = run_command(pkgconfig, '--cflags', flexio_module, env: env, check: false)
+	flexio_module = run_command(pkgconfig, '--libs', '--static', flexio_module, env: env, check: false) # add '--static' option if static link is needed
+	flexio_module_version = run_command(pkgconfig, '--modversion', flexio_module, env: env, check: false)
+	if flexio_module_cflags.returncode() != 0 or flexio_module_ldflags.returncode() != 0 or flexio_module_version.returncode() != 0
+		message('>>>>>> Failed to find ' + flexio_module)
+	else
+		founded_flexio_modules += flexio_module
+		c_args += flexio_module_cflags.stdout().split()
+		ld_args += flexio_module_ldflags.stdout().split()
+		message('>>>>>> Found ' + flexio_module + ', version is ' + flexio_module_version.stdout().split()[0])
+	endif
+endforeach
+if founded_flexio_modules.length() == flexio_modules.length()
+	has_flexio = true
 endif
 
 # >>>>>>>>>>>>>> CUDA >>>>>>>>>>>>>>
