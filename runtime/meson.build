@@ -22,6 +22,14 @@ binary_name = project_name + '/' + module_name
 runtime_c_args = c_args
 runtime_ld_args = ld_args
 
+log_conf = configuration_data()
+log_conf.set('nicc_print_error', enable_print_error)
+log_conf.set('nicc_print_warn', enable_print_warn)
+log_conf.set('nicc_print_log', enable_print_log)
+log_conf.set('nicc_print_debug', enable_print_debug)
+log_conf.set('nicc_print_with_color', enable_print_with_color)
+configure_file(input : 'log.h.in', output : 'log.h', configuration : log_conf)
+
 # build executable
 message('cflags: ' + ' '.join(c_args))
 message('ldflags: ' + ' '.join(ld_args))

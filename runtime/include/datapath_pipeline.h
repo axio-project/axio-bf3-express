@@ -6,13 +6,16 @@
  */
 
 #pragma once
+
+#include <iostream>
 #include "common.h"
+#include "datapath/flow_engine.h"
 
 namespace nicc
 {
-/**
- * ----------------------General definations----------------------
- */ 
+/*!
+ *  \brief  mask for enabling dataplane component
+ */
 #define FLOW_ENGINE_ENABLED 0x01
 #define DPA_ENGINE_ENABLED 0x02
 #define SOC_ENGINE_ENABLED 0x04
@@ -32,21 +35,24 @@ class DatapathPipeline {
    * ----------------------Datapath methods----------------------
    */ 
 
-  public:
+ public:
     DatapathPipeline(uint16_t enabled_components);
     ~DatapathPipeline();
 
   /**
    * ----------------------Util methods----------------------
    */ 
+  
+ private:
+  // component: flow engine
+  Component_FlowEngine *_flow_engine;
+  
+  /*!
+   *  \brief  initialization of each dataplane component
+   *  \param  enabled_components  mask of used dataplane component
+   */ 
+  nicc_retval_t __init(uint16_t enabled_components);
 
-  /**
-   * ----------------------Internal Parameters----------------------
-   */   
-  private:
-  /**
-   * ----------------------Internal Methods----------------------
-   */   
-  doca_error_t datapath_init(uint16_t enabled_components);
 };
+
 } // namespace nicc

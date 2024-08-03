@@ -145,7 +145,7 @@ enum dispatcher_handler_type_t : uint8_t {
  * ----------------------General constants----------------------
  */ 
 
-#define DPERF_LOG_LEVEL 3
+#define NICC_LOG_LEVEL 3
 
 static constexpr uint8_t kWorkspaceTypeNum = 3;
 static constexpr uint8_t kInvaildWorkspaceType = std::pow(2, kWorkspaceTypeNum);
@@ -164,47 +164,67 @@ static constexpr uint8_t kRxNICType = 3;
 static constexpr uint8_t kRxDispatcherType = 4;
 static constexpr uint8_t kRxApplicationType = 5;
 
+// return values
+enum nicc_retval_t {
+    NICC_SUCCESS = 0,
+    NICC_ERROR_NOT_IMPLEMENTED,
+    NICC_ERROR_NOT_FOUND,
+    NICC_ERROR
+};
+
 /**
  * ----------------------Simple methods----------------------
  */ 
-static inline void rt_assert(bool condition, std::string throw_str, char *s) {
-  if (unlikely(!condition)) {
-    fprintf(stderr, "%s %s\n", throw_str.c_str(), s);
-    exit(-1);
+#if NICC_ENABLE_DEBUG_CHECK
+  static inline void rt_assert(bool condition, std::string throw_str, char *s) {
+    if (unlikely(!condition)) {
+      fprintf(stderr, "%s %s\n", throw_str.c_str(), s);
+      exit(-1);
+    }
   }
-}
 
-static inline void rt_assert(bool condition, const char *throw_str) {
-  if (unlikely(!condition)) {
-    fprintf(stderr, "%s\n", throw_str);
-    exit(-1);
+  static inline void rt_assert(bool condition, const char *throw_str) {
+    if (unlikely(!condition)) {
+      fprintf(stderr, "%s\n", throw_str);
+      exit(-1);
+    }
   }
-}
 
-static inline void rt_assert(bool condition, std::string throw_str) {
-  if (unlikely(!condition)) {
-    fprintf(stderr, "%s\n", throw_str.c_str());
-    exit(-1);
+  static inline void rt_assert(bool condition, std::string throw_str) {
+    if (unlikely(!condition)) {
+      fprintf(stderr, "%s\n", throw_str.c_str());
+      exit(-1);
+    }
   }
-}
 
-static inline void rt_assert(bool condition) {
-  if (unlikely(!condition)) {
-    fprintf(stderr, "Error\n");
-    assert(false);
-    exit(-1);
+  static inline void rt_assert(bool condition) {
+    if (unlikely(!condition)) {
+      fprintf(stderr, "Error\n");
+      assert(false);
+      exit(-1);
+    }
   }
-}
 
-/// Check a condition at runtime. If the condition is false, print error message
-/// and exit.
-static inline void exit_assert(bool condition, std::string error_msg) {
-  if (unlikely(!condition)) {
-    fprintf(stderr, "%s. Exiting.\n", error_msg.c_str());
-    fflush(stderr);
-    exit(-1);
+  /// Check a condition at runtime. If the condition is false, print error message
+  /// and exit.
+  static inline void exit_assert(bool condition, std::string error_msg) {
+    if (unlikely(!condition)) {
+      fprintf(stderr, "%s. Exiting.\n", error_msg.c_str());
+      fflush(stderr);
+      exit(-1);
+    }
   }
-}
+  
+  #define NICC_CHECK_POINTER(ptr)  assert((ptr) != nullptr);
+#else // NICC_ENABLE_DEBUG_CHECK
+    static inline void rt_assert(bool condition, std::string throw_str, char *s) {}
+    static inline void rt_assert(bool condition, const char *throw_str) {}
+    static inline void rt_assert(bool condition, std::string throw_str) {}
+    static inline void rt_assert(bool condition) {}
+    static inline void exit_assert(bool condition, std::string error_msg) {}
+    #define NICC_CHECK_POINTER(ptr)  (ptr);
+#endif // NICC_ENABLE_DEBUG_CHECK
+
 
 /**
  * ----------------------Print related----------------------

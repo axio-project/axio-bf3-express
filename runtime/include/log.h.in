@@ -1,0 +1,317 @@
+#pragma once
+
+#include <stdio.h>
+
+#define NICC_PRINT_ERROR         @nicc_print_error@
+#define NICC_PRINT_WARN          @nicc_print_warn@
+#define NICC_PRINT_LOG           @nicc_print_log@
+#define NICC_PRINT_DEBUG         @nicc_print_debug@
+#define NICC_PRINT_WITH_COLOR    @nicc_print_with_color@
+
+#define _NICC_PRINT_NICCITION(stream)                                                 \
+{                                                                                   \
+fprintf(stream, "\
+\033[33mfile:\033[0m       %s;\n\
+\033[33mfunction:\033[0m   %s;\n\
+\033[33mline:\033[0m       %d;\n", __FILE__, __PRETTY_FUNCTION__, __LINE__);\
+}
+
+#ifdef __GNUG__
+#include <cstdlib>
+#include <memory>
+#include <cxxabi.h>
+
+static std::string demangle(const char* name) {
+
+    int status = -4; // some arbitrary value to eliminate the compiler warning
+
+    // enable c++11 by passing the flag -std=c++11 to g++
+    std::unique_ptr<char, void(*)(void*)> res {
+        abi::__cxa_demangle(name, NULL, NULL, &status),
+        std::free
+    };
+
+    return (status==0) ? res.get() : name;
+}
+
+#else
+
+// does nothing if not g++
+static std::string demangle(const char* name) {
+    return name;
+}
+
+#endif
+
+/**************************** NICC_ERROR ****************************/
+
+#if NICC_PRINT_ERROR
+/*!
+ * \brief   print error message (internal-used)
+ */
+#define _NICC_ERROR(...)                                         \
+{                                                               \
+if constexpr(NICC_PRINT_WITH_COLOR)                              \
+    fprintf(stdout, "\033[101m\033[97m NICC Error \033[0m ");    \
+else                                                            \
+    fprintf(stdout, "|-NICC Error-| ");                          \
+fprintf(stdout, __VA_ARGS__);                                   \
+fprintf(stdout, "\n");                                          \
+}
+
+/*!
+ * \brief   print error message with class info (internal-used)
+ * \note    this macro should only be expanded within c++ class
+ */
+#define _NICC_ERROR_C(...)                                   \
+{                                                           \
+if constexpr(NICC_PRINT_WITH_COLOR)                          \
+    fprintf(stdout,                                         \
+        "\033[101m\033[97m NICC Error \033[0m [%s @ %p]  ",  \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+else                                                        \
+    fprintf(stdout,                                         \
+        "|-NICC Error-| [%s @ %p]  ",                        \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+fprintf(stdout, __VA_ARGS__);                               \
+fprintf(stdout, "\n");                                      \
+}
+
+/*!
+    * \brief   print error message, then fatally quit
+    */
+#define NICC_ERROR(...)          \
+{                               \
+_NICC_ERROR(__VA_ARGS__)         \
+fflush(0);                      \
+throw "SHUTDOWN BY NICC ERROR";  \
+exit(1);                        \
+}
+
+/*!
+    * \brief   print error message with class info, then fatally quit
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_ERROR_C(...)        \
+{                               \
+_NICC_ERROR_C(__VA_ARGS__)       \
+fflush(0);                      \
+throw "SHUTDOWN BY NICC ERROR";  \
+exit(1);                        \
+}
+
+/*!
+    * \brief   print error message with specific code position, then fatally quit
+    */
+#define NICC_ERROR_DETAIL(...)   \
+{                               \
+_NICC_ERROR(__VA_ARGS__)         \
+_NICC_PRINT_NICCITION(stderr)     \
+fflush(0);                      \
+throw "SHUTDOWN BY NICC ERROR";  \
+exit(1);                        \
+}
+
+/*!
+    * \brief   print error message with class info and specific code position,
+    *          then fatally quit
+    */
+#define NICC_ERROR_C_DETAIL(...) \
+{                               \
+_NICC_ERROR_C(__VA_ARGS__)       \
+_NICC_PRINT_NICCITION(stderr)     \
+fflush(0);                      \
+throw "SHUTDOWN BY NICC ERROR";  \
+exit(1);                        \
+}
+#else
+#define NICC_ERROR(...)
+#define NICC_ERROR_C(...)
+#define NICC_ERROR_DETAIL(...)
+#define NICC_ERROR_C_DETAIL(...)
+#endif
+
+/**************************** NICC_WARN *******************************/
+
+#if NICC_PRINT_WARN
+/*!
+    * \brief   print warn message
+    */
+#define NICC_WARN(...)                                           \
+{                                                               \
+if constexpr(NICC_PRINT_WITH_COLOR)                              \
+    fprintf(stdout, "\033[103m\033[97m NICC Warn \033[0m ");     \
+else                                                            \
+    fprintf(stdout, "|-NICC Warn-| ");                           \
+fprintf(stdout, __VA_ARGS__);                                   \
+fprintf(stdout, "\n");                                          \
+}
+
+/*!
+    * \brief   print warn message with class info
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_WARN_C(...)                                     \
+{                                                           \
+if constexpr(NICC_PRINT_WITH_COLOR)                          \
+    fprintf(stdout,                                         \
+        "\033[103m\033[97m NICC Warn \033[0m [%s @ %p]  ",   \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+else                                                        \
+    fprintf(stdout,                                         \
+        "|-NICC Warn-| [%s @ %p]  ",                         \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+fprintf(stdout, __VA_ARGS__);                               \
+fprintf(stdout, "\n");                                      \
+}
+
+/*!
+    * \brief   print warn message with class info and specific code position
+    */
+#define NICC_WARN_DETAIL(...)    \
+{                               \
+NICC_WARN(__VA_ARGS__)           \
+_NICC_PRINT_NICCITION(stderr)     \
+}
+
+/*!
+    * \brief   print warn message with class info and specific code position
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_WARN_C_DETAIL(...)  \
+{                               \
+NICC_WARN_C(__VA_ARGS__)         \
+_NICC_PRINT_NICCITION(stderr)     \
+}
+#else
+#define NICC_WARN(...)
+#define NICC_WARN_C(...)
+#define NICC_WARN_DETAIL(...)
+#define NICC_WARN_C_DETAIL(...)
+#endif
+
+/***************************** NICC_LOG *****************************/
+
+#if NICC_PRINT_LOG
+/*!
+    * \brief   print log message
+    */
+#define NICC_LOG(...)                                        \
+{                                                           \
+if constexpr(NICC_PRINT_WITH_COLOR)                          \
+    fprintf(stdout, "\033[104m\033[97m NICC Log \033[0m ");  \
+else                                                        \
+    fprintf(stdout, "|-NICC Log-| ");                        \
+fprintf(stdout, __VA_ARGS__);                               \
+fprintf(stdout, "\n");                                      \
+}
+
+/*!
+    * \brief   print log message with class info
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_LOG_C(...)                                      \
+{                                                           \
+if constexpr(NICC_PRINT_WITH_COLOR)                          \
+    fprintf(stdout,                                         \
+        "\033[104m\033[97m NICC Log \033[0m [%s @ %p]  ",    \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+else                                                        \
+    fprintf(stdout,                                         \
+        "|-NICC Log-| [%s @ %p]  ",                          \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+fprintf(stdout, __VA_ARGS__);                               \
+fprintf(stdout, "\n");                                      \
+}
+
+/*!
+    * \brief   print log message with class info and specific code position
+    */
+#define NICC_LOG_DETAIL(...)     \
+{                               \
+NICC_LOG(__VA_ARGS__)            \
+_NICC_PRINT_NICCITION(stdout)     \
+}
+
+/*!
+    * \brief   print log message with class info and specific code position
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_LOG_C_DETAIL(...)   \
+{                               \
+NICC_LOG_C(__VA_ARGS__)          \
+_NICC_PRINT_NICCITION(stdout)     \
+}
+#else
+#define NICC_LOG(...)
+#define NICC_LOG_C(...)
+#define NICC_LOG_DETAIL(...)
+#define NICC_LOG_C_DETAIL(...)
+#endif
+
+/**************************** NICC_DEBUG ****************************/
+
+#if NICC_PRINT_DEBUG
+/*!
+    * \brief   print debug message
+    */
+#define NICC_DEBUG(...)                                          \
+{                                                               \
+if constexpr(NICC_PRINT_WITH_COLOR)                              \
+    fprintf(stdout, "\033[104m\033[42m NICC Debug \033[0m ");    \
+else                                                            \
+    fprintf(stdout, "|-NICC Debug-| ");                          \
+fprintf(stdout, __VA_ARGS__);                                   \
+fprintf(stdout, "\n");                                          \
+}
+
+/*!
+    * \brief   print debug message with class info
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_DEBUG_C(...)                                    \
+{                                                           \
+if constexpr(NICC_PRINT_WITH_COLOR)                          \
+    fprintf(stdout,                                         \
+        "\033[104m\033[42m NICC Debug \033[0m [%s @ %p]  ",  \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+else                                                        \
+    fprintf(stdout,                                         \
+        "|-NICC Debug-| [%s @ %p]  ",                        \
+        demangle(typeid(*this).name()).c_str(), this        \
+    );                                                      \
+fprintf(stdout, __VA_ARGS__);                               \
+fprintf(stdout, "\n");                                      \
+}
+
+/*!
+    * \brief   print debug message with class info and specific code position
+    */
+#define NICC_DEBUG_DETAIL(...)   \
+{                               \
+NICC_DEBUG(__VA_ARGS__)          \
+_NICC_PRINT_NICCITION(stdout)     \
+}
+
+/*!
+    * \brief   print debug message with class info and specific code position
+    * \note    this macro should only be expanded within c++ class
+    */
+#define NICC_DEBUG_C_DETAIL(...) \
+{                               \
+NICC_DEBUG_C(__VA_ARGS__)        \
+_NICC_PRINT_NICCITION(stdout)     \
+}
+#else
+#define NICC_DEBUG(...)
+#define NICC_DEBUG_C(...)
+#define NICC_DEBUG_DETAIL(...)
+#define NICC_DEBUG_C_DETAIL(...)
+#endif

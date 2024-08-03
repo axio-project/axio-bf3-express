@@ -155,6 +155,24 @@ c_args += ['--std=c++11']
 assert(has_dpdk, 'couldn\'t find libdpdk')
 # =======================================================================
 
+# ==================== Static Configurations ====================
+# switch:   whether to print all fatal messages
+enable_print_error = 1
+
+# switch:   whether to print all warning messages
+enable_print_warn = 1
+
+# switch:   whether to print all log messages
+enable_print_log = 1
+
+# switch:   whether to print all debug messages
+enable_print_debug = 0
+
+# switch:   whether to print fatal/warn/debug/log with colors
+#           should be disabled when try to dump all outputs to a file
+enable_print_with_color = 1
+# ===============================================================
+
 subdir('runtime')
 subdir('toolchain/compiler')
 subdir('toolchain/loader')
