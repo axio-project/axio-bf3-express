@@ -23,6 +23,9 @@ ld_args = []
 # root path of the project
 root_dir = meson.source_root()
 
+envv = run_command('sh', '-c', 'echo $BUILD_TARGET')
+env_build_target = envv.stdout().strip()
+
 # ==================== Third-party Library Detection ====================
 
 # indicator of whether necessary libraries were founded
@@ -57,6 +60,7 @@ foreach dpdk_module : dpdk_modules
 endforeach
 if founded_dpdk_modules.length() == dpdk_modules.length()
 	has_dpdk = true
+	add_global_arguments('-DNICC_DPDK_ENABLED', language: ['c', 'cpp'])
 endif
 
 
@@ -81,31 +85,32 @@ foreach doca_module : doca_modules
 endforeach
 if founded_doca_modules.length() == doca_modules.length()
 	has_doca = true
-	add_global_arguments('-DSC_HAS_DOCA', language: ['c', 'cpp'])
+	add_global_arguments('-DNICC_DOCA_ENABLED', language: ['c', 'cpp'])
 endif
 
 # >>>>>>>>>>>>>> FlexIO >>>>>>>>>>>>>>
-flexio_pc_path = '/opt/mellanox/flexio/lib/pkgconfig/'
-flexio_modules = ['libflexio-dev', 'libflexio-libc', 'libflexio-os', 'libflexio']
-founded_flexio_modules = []
-message('>>> Detecting FlexIO, assume pc file of FlexIO is located at ' + flexio_pc_path)
-env.set('PKG_CONFIG_PATH', flexio_pc_path)
-foreach flexio_module : flexio_modules
-	flexio_module_cflags = run_command(pkgconfig, '--cflags', flexio_module, env: env, check: false)
-	flexio_module_ldflags = run_command(pkgconfig, '--libs', '--static', flexio_module, env: env, check: false) # add '--static' option if static link is needed
-	flexio_module_version = run_command(pkgconfig, '--modversion', flexio_module, env: env, check: false)
-	if flexio_module_cflags.returncode() != 0 or flexio_module_ldflags.returncode() != 0 or flexio_module_version.returncode() != 0
-		message('>>>>>> Failed to find ' + flexio_module)
-	else
-		founded_flexio_modules += flexio_module
-		c_args += flexio_module_cflags.stdout().split()
-		ld_args += flexio_module_ldflags.stdout().split()
-		message('>>>>>> Found ' + flexio_module + ', version is ' + flexio_module_version.stdout().split()[0])
-	endif
-endforeach
-if founded_flexio_modules.length() == flexio_modules.length()
-	has_flexio = true
-endif
+# flexio_pc_path = '/opt/mellanox/flexio/lib/pkgconfig/'
+# flexio_modules = ['libflexio-dev', 'libflexio-libc', 'libflexio-os', 'libflexio']
+# founded_flexio_modules = []
+# message('>>> Detecting FlexIO, assume pc file of FlexIO is located at ' + flexio_pc_path)
+# env.set('PKG_CONFIG_PATH', flexio_pc_path)
+# foreach flexio_module : flexio_modules
+# 	flexio_module_cflags = run_command(pkgconfig, '--cflags', flexio_module, env: env, check: false)
+# 	flexio_module_ldflags = run_command(pkgconfig, '--libs', '--static', flexio_module, env: env, check: false) # add '--static' option if static link is needed
+# 	flexio_module_version = run_command(pkgconfig, '--modversion', flexio_module, env: env, check: false)
+# 	if flexio_module_cflags.returncode() != 0 or flexio_module_ldflags.returncode() != 0 or flexio_module_version.returncode() != 0
+# 		message('>>>>>> Failed to find ' + flexio_module)
+# 	else
+# 		founded_flexio_modules += flexio_module
+# 		c_args += flexio_module_cflags.stdout().split()
+# 		ld_args += flexio_module_ldflags.stdout().split()
+# 		message('>>>>>> Found ' + flexio_module + ', version is ' + flexio_module_version.stdout().split()[0])
+# 	endif
+# endforeach
+# if founded_flexio_modules.length() == flexio_modules.length()
+# 	has_flexio = true
+# 	add_global_arguments('-DNICC_FLEXIO_ENABLED', language: ['c', 'cpp'])
+# endif
 
 # >>>>>>>>>>>>>> CUDA >>>>>>>>>>>>>>
 cudax_desired_version = '12.1'
@@ -134,7 +139,7 @@ endif
 # >>>>>>>>>>>>>> Other Dependencies Found through Compiler >>>>>>>>>>>>>>
 dep = []
 dep += meson.get_compiler('cpp').find_library('pthread')
-dep += meson.get_compiler('cpp').find_library('gmp')
+# dep += meson.get_compiler('cpp').find_library('gmp')
 
 # >>>>>>>>>>>>>> Other Dependencies Found through cflags >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
@@ -149,7 +154,7 @@ endif
 ##		so we block all deprecated-declarations warnings here to make log output of 
 ##		the build process cleaner
 c_args += ['-D_GNU_SOURCE', '-Wno-deprecated-declarations', '-g']
-c_args += ['--std=c++11']
+c_args += ['--std=c++17']
 
 # necessary dependencies check
 assert(has_dpdk, 'couldn\'t find libdpdk')
@@ -173,6 +178,6 @@ enable_print_debug = 0
 enable_print_with_color = 1
 # ===============================================================
 
-subdir('runtime')
-subdir('toolchain/compiler')
-subdir('toolchain/loader')
+message('subdir: ' + env_build_target)
+subdir(env_build_target)
+

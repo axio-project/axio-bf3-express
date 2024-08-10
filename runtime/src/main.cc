@@ -8,9 +8,11 @@ int main(){
     /* Init app contexts, including function and state for each datapath component */
 
     /* Init and allocate datapath components for all apps, then construct the datapath pipeline */
-    uint16_t enabled_components = FLOW_ENGINE_ENABLED | DPA_ENGINE_ENABLED | SOC_ENGINE_ENABLED | DECOMPRESS_ENGINE_ENABLED | SHA_ENGINE_ENABLED;
+    uint16_t enabled_components = kComponent_FlowEngine | kComponent_DPA | kComponent_ARM | kComponent_Decompress | kComponent_SHA;
 
-    nicc::DatapathPipeline dp_pipeline (enabled_components);
+    nicc::ResourcePool rpool(enabled_components);
+
+    nicc::DatapathPipeline dp_pipeline (enabled_components, rpool);
 
     /* Init control path, including user-request channel, just-in-time verifier, and rule loader (SONiC) */
         /* Init control path MTs */

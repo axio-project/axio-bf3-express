@@ -8,19 +8,12 @@
 #pragma once
 
 #include <iostream>
+
 #include "common.h"
+#include "resource_pool.h"
 #include "datapath/flow_engine.h"
 
-namespace nicc
-{
-/*!
- *  \brief  mask for enabling dataplane component
- */
-#define FLOW_ENGINE_ENABLED 0x01
-#define DPA_ENGINE_ENABLED 0x02
-#define SOC_ENGINE_ENABLED 0x04
-#define DECOMPRESS_ENGINE_ENABLED 0x08
-#define SHA_ENGINE_ENABLED 0x10
+namespace nicc {
 
 class DatapathPipeline {
   /**
@@ -36,7 +29,7 @@ class DatapathPipeline {
    */ 
 
  public:
-    DatapathPipeline(uint16_t enabled_components);
+    DatapathPipeline(uint16_t enabled_components, ResourcePool& rpool);
     ~DatapathPipeline();
 
   /**
@@ -50,9 +43,9 @@ class DatapathPipeline {
   /*!
    *  \brief  initialization of each dataplane component
    *  \param  enabled_components  mask of used dataplane component
+   *  \param  rpool               global resource pool
    */ 
-  nicc_retval_t __init(uint16_t enabled_components);
-
+  nicc_retval_t __init(uint16_t enabled_components, ResourcePool& rpool);
 };
 
 } // namespace nicc

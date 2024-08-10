@@ -54,9 +54,10 @@ class Component {
     
     /*!
      *  \brief  initialization of the components
+     *  \param  desp    descriptor to initialize the component
      *  \return NICC_SUCCESS for successful initialization
      */
-    virtual nicc_retval_t init(ComponentBaseConfig_t* desp){
+    virtual nicc_retval_t init(void* desp){
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
@@ -85,3 +86,4 @@ class Component {
 };
 
 } // namespace nicc
+

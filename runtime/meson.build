@@ -28,17 +28,18 @@ log_conf.set('nicc_print_warn', enable_print_warn)
 log_conf.set('nicc_print_log', enable_print_log)
 log_conf.set('nicc_print_debug', enable_print_debug)
 log_conf.set('nicc_print_with_color', enable_print_with_color)
-configure_file(input : 'log.h.in', output : 'log.h', configuration : log_conf)
+configure_file(input : 'include/log.h.in', output : 'log.h', configuration : log_conf)
 
 # build executable
 message('cflags: ' + ' '.join(c_args))
 message('ldflags: ' + ' '.join(ld_args))
 executable(
-    binary_name,
-    runtime_sources,
+  binary_name,
+  runtime_sources,
 	dependencies : dep,
 	cpp_args: c_args,
 	link_args: ld_args,
 	include_directories: runtime_inc_dirs,
 	install: false
 )
+

@@ -7,9 +7,10 @@ namespace nicc {
 
 /*!
  *  \brief  initialization of the components
+ *  \param  desp    descriptor to initialize the component
  *  \return NICC_SUCCESS for successful initialization
  */
-nicc_retval_t Component_FlowEngine::init(ComponentBaseConfig_t* desp) override {
+nicc_retval_t Component_FlowEngine::init(void* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
 
     ComponentConfig_FlowEngine_t *flow_engine_desp 
@@ -26,7 +27,7 @@ exit:
  *  \param  cb      the handle of the allocated block
  *  \return NICC_SUCCESS for successful allocation
  */
-nicc_retval_t Component_FlowEngine::allocate_block(ComponentBaseConfig_t* desp, ComponentBlock* cb) override {
+nicc_retval_t Component_FlowEngine::allocate_block(ComponentBaseConfig_t* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
 
     ComponentConfig_FlowEngine_t *flow_engine_desp 
@@ -42,7 +43,7 @@ exit:
  *  \param  cb      the handle of the block to be deallocated
  *  \return NICC_SUCCESS for successful deallocation
  */
-nicc_retval_t Component_FlowEngine::deallocate_block(ComponentBlock* cb) override {
+nicc_retval_t Component_FlowEngine::deallocate_block(ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
 
     NICC_CHECK_POINTER(cb);

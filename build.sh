@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# >>>>>>>>>> common variables <<<<<<<<<<
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# target to build
+targets=("runtime" "toolchain/compiler" "toolchain/loader")
+targets_string=$(
+  IFS='/'
+  echo "${targets[*]}"
+)
+u_targets=()
+
+# clean
+do_clean=false
+
+log() {
+  echo -e "\033[37m\033[40m [NICC Build Log] $1 \033[0m"
+}
+
+warn() {
+  echo -e "\033[33m\033[40m [NICC Build Wrn] $1 \033[0m"
+}
+
+error() {
+  echo -e "\033[31m\033[40m [NICC Build Err] $1 \033[0m"
+  exit 1
+}
+
+# print helping
+print_usage() {
+  echo ">>>>>>>>>> NICC build routine <<<<<<<<<<"
+  echo "usage: $0 [-c] [-t <target_1>,<target_2>] [-h]"
+  echo "  -t  target to be built or cleaned, supported targets: $targets_string"
+  echo "  -c  clean previously built assets"
+  echo "  -h  help message"
+}
+
+# func_desp:  generic building procedure
+# param_1:    name of the building target
+# param_2:    path to the building target
+build_nicc() {
+  cd $script_dir
+  log ">> building $1..."
+  if [ ! -d "$2/build" ]; then
+    log ">>>> generate building processing via meson..."
+    export BUILD_TARGET=$2
+    meson $script_dir/$2/build
+    retval=$?
+    if [ $retval -ne 0 ]; then
+      error ">>>> meson build failed..."
+    fi
+  fi
+  cd $2/build
+  ninja clean
+  ninja &>./$1_build.log
+  retval=$?
+  if [ $retval -ne 0 ]; then
+    grep -n -A 5 'error' $1_build.log | awk '{print} NR%2==0 {print ""}'
+    error ">>>> building $1 failed, error message printed"
+  fi
+}
+
+# func_desp:  generic cleaning procedure
+# param_1:    name of the cleaning target
+# param_2:    path to the cleaning target
+clean_nicc() {
+  cd $script_dir
+  cd $2
+  log ">> cleaning $1..."
+  if [ -d "./build" ]; then
+    rm -rf ./build
+  else
+    log ">>>> no built target was founded, skipped"
+  fi
+}
+
+# parse command line options
+args=("$@")
+while getopts ":hct:" opt; do
+  case $opt in
+  h)
+    print_usage
+    exit 0
+    ;;
+  c)
+    do_clean=true
+    ;;
+  t)
+    u_targets=(${OPTARG//,/ })
+    ;;
+  \?)
+    echo "invalid target: -$OPTARG" >&2
+    exit 1
+    ;;
+  :)
+    echo "option -$OPTARG require extra parameter" >&2
+    exit 1
+    ;;
+  esac
+done
+
+# check target list
+if [ ${#u_targets[@]} -eq 0 ]; then
+  warn "no target specified, aims at all target: $targets_string"
+  u_targets=("${targets[@]}")
+else
+  for arg in "${u_targets[@]}"; do
+    if ! printf '%s\n' "${targets[@]}" | grep -q -P "^$arg$"; then
+      error "unknown target $arg, supported target are: $targets_string"
+    fi
+  done
+  u_targets_string=$(
+    IFS=', '
+    echo "${u_targets[*]}"
+  )
+  log "aims at target: $u_targets_string"
+fi
+
+# building procedure
+for arg in "${u_targets[@]}"; do
+  if [ $do_clean = true ]; then
+    clean_nicc "nicc_$arg" "./$arg"
+  else
+    build_nicc "nicc_$arg" "./$arg"
+  fi
+done
