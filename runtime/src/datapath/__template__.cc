@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include "common.h"
-#include "datapath/flow_engine.h"
+#include "datapath/__template__.h"
 
 namespace nicc {
 
@@ -10,12 +10,12 @@ namespace nicc {
  *  \param  desp    descriptor to initialize the component
  *  \return NICC_SUCCESS for successful initialization
  */
-nicc_retval_t Component_FlowEngine::init(void* desp) {
+nicc_retval_t Component_Template::init(void* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
 
-    ComponentDesp_FlowEngine_t *flow_engine_desp 
-        = reinterpret_cast<ComponentDesp_FlowEngine_t*>(desp);
-    NICC_CHECK_POINTER(flow_engine_desp);
+    ComponentDesp_Template_t *template_desp 
+        = reinterpret_cast<ComponentDesp_Template_t*>(desp);
+    NICC_CHECK_POINTER(template_desp);
 
 exit:
     return retval;
@@ -27,12 +27,12 @@ exit:
  *  \param  cb      the handle of the allocated block
  *  \return NICC_SUCCESS for successful allocation
  */
-nicc_retval_t Component_FlowEngine::allocate_block(void* desp, ComponentBlock** cb) {
+nicc_retval_t Component_Template::allocate_block(void* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
 
-    ComponentDesp_FlowEngine_t *flow_engine_desp 
-        = reinterpret_cast<ComponentDesp_FlowEngine_t*>(desp);
-    NICC_CHECK_POINTER(flow_engine_desp);
+    ComponentDesp_Template_t *template_desp 
+        = reinterpret_cast<ComponentDesp_Template_t*>(desp);
+    NICC_CHECK_POINTER(template_desp);
 
 exit:
     return retval;
@@ -43,7 +43,7 @@ exit:
  *  \param  cb      the handle of the block to be deallocated
  *  \return NICC_SUCCESS for successful deallocation
  */
-nicc_retval_t Component_FlowEngine::deallocate_block(ComponentBlock* cb) {
+nicc_retval_t Component_Template::deallocate_block(ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
 
     NICC_CHECK_POINTER(cb);

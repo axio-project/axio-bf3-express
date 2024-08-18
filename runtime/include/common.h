@@ -169,6 +169,9 @@ enum nicc_retval_t {
     NICC_SUCCESS = 0,
     NICC_ERROR_NOT_IMPLEMENTED,
     NICC_ERROR_NOT_FOUND,
+    NICC_ERROR_EXSAUSTED,
+    NICC_ERROR_DUPLICATED,
+    NICC_ERROR_HARDWARE_FAILURE,
     NICC_ERROR
 };
 
@@ -215,7 +218,8 @@ enum nicc_retval_t {
     }
   }
   
-  #define NICC_CHECK_POINTER(ptr)  assert((ptr) != nullptr);
+  #define NICC_CHECK_POINTER(ptr)   assert((ptr) != nullptr);
+  #define NICC_ASSERT(condition)    assert((condition));
 #else // NICC_ENABLE_DEBUG_CHECK
     static inline void rt_assert(bool condition, std::string throw_str, char *s) {}
     static inline void rt_assert(bool condition, const char *throw_str) {}
@@ -223,6 +227,7 @@ enum nicc_retval_t {
     static inline void rt_assert(bool condition) {}
     static inline void exit_assert(bool condition, std::string error_msg) {}
     #define NICC_CHECK_POINTER(ptr)  (ptr);
+    #define NICC_ASSERT(condition)   (condition);
 #endif // NICC_ENABLE_DEBUG_CHECK
 
 

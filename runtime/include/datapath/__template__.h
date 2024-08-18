@@ -8,35 +8,22 @@
     #include <rte_flow.h>
 #endif // NICC_DOCA_ENABLED
 
-#include "datapath/component.h"
-
 namespace nicc {
 
 /*!
- *  \brief  configuration of flow engine
+ *  \brief  configuration of Template
  */
-typedef struct ComponentDesp_FlowEngine {
+typedef struct ComponentDesp_Template {
     /*!
-     *  \note   basic config of the flow engine
+     *  \note   basic config of the Template
      */
     ComponentBaseConfig_t base_config;
+} ComponentDesp_Template_t;
 
-    /*!
-     *  \ref    https://docs.nvidia.com/doca/sdk/doca+flow/index.html
-     *  \note   mode of flow engine, options including:
-     *          [1] vnf:    steering destination is port
-     *          [2] switch: steering destination is interface descriptor
-     *  \note   addon options including:
-     *          [1] hws:    hardware steering enable
-     *          [2] ...
-     */
-    const char* mode;
-} ComponentDesp_FlowEngine_t;
-
-class Component_FlowEngine : public Component {
+class Component_Template : public Component {
  public:
-    Component_FlowEngine() : Component() {}
-    ~Component_FlowEngine(){}
+    Component_Template() : Component() {}
+    ~Component_Template(){}
 
     /*!
      *  \brief  initialization of the components
@@ -61,7 +48,7 @@ class Component_FlowEngine : public Component {
     nicc_retval_t deallocate_block(ComponentBlock* cb) override;
 
  private:
-    
 };
+
 
 } // namespace nicc

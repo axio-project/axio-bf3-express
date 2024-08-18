@@ -15,15 +15,15 @@ u_targets=()
 do_clean=false
 
 log() {
-  echo -e "\033[37m\033[40m [NICC Build Log] $1 \033[0m"
+  echo -e "\033[37m [NICC Build Log] $1 \033[0m"
 }
 
 warn() {
-  echo -e "\033[33m\033[40m [NICC Build Wrn] $1 \033[0m"
+  echo -e "\033[33m [NICC Build Wrn] $1 \033[0m"
 }
 
 error() {
-  echo -e "\033[31m\033[40m [NICC Build Err] $1 \033[0m"
+  echo -e "\033[31m [NICC Build Err] $1 \033[0m"
   exit 1
 }
 
@@ -57,7 +57,10 @@ build_nicc() {
   retval=$?
   if [ $retval -ne 0 ]; then
     grep -n -A 5 'error' $1_build.log | awk '{print} NR%2==0 {print ""}'
+    # cat $1_build.log
     error ">>>> building $1 failed, error message printed"
+  else
+    log "successfully built $1"
   fi
 }
 

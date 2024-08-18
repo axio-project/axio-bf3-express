@@ -37,7 +37,7 @@ nicc_retval_t DatapathPipeline::__init(uint16_t enabled_components, ResourcePool
 
   if (enabled_components & kComponent_FlowEngine) {
     // TODO: change to allocate block
-    ComponentConfig_FlowEngine_t fe_config;
+    ComponentDesp_FlowEngine_t fe_config;
 
     this->_flow_engine = new Component_FlowEngine();
     NICC_CHECK_POINTER(this->_flow_engine);
