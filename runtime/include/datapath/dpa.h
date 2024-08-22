@@ -14,43 +14,46 @@
 
 namespace nicc {
 
+
 /* Logarithm ring size */
-#define L2_LOG_SQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_RQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_CQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_WQ_DATA_ENTRY_BSIZE 11 /* WQ buffer logarithmic size */
+#define DPA_LOG_SQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_RQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_CQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 11 /* WQ buffer logarithmic size */
 
 
 /* Queues index mask, represents the index of the last CQE/WQE in the queue */
-#define L2_CQ_IDX_MASK ((1 << L2_LOG_CQ_RING_DEPTH) - 1)
-#define L2_RQ_IDX_MASK ((1 << L2_LOG_RQ_RING_DEPTH) - 1)
-#define L2_SQ_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
-#define L2_DATA_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH)) - 1)
+#define DPA_CQ_IDX_MASK ((1 << DPA_LOG_CQ_RING_DEPTH) - 1)
+#define DPA_RQ_IDX_MASK ((1 << DPA_LOG_RQ_RING_DEPTH) - 1)
+#define DPA_SQ_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
+#define DPA_DATA_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH)) - 1)
 
 
+// metadata of a dpa cq
 struct dpa_cq {
-  uint32_t cq_num;
-  uint32_t log_cq_depth;
-  flexio_uintptr_t cq_ring_daddr;
-  flexio_uintptr_t cq_dbr_daddr;
+    uint32_t cq_num;
+    uint32_t log_cq_depth;
+    flexio_uintptr_t cq_ring_daddr;
+    flexio_uintptr_t cq_dbr_daddr;
 } __attribute__((__packed__, aligned(8)));
 
 
+// metadata of a dpa wq
 struct dpa_wq {
-  uint32_t wq_num;
-  uint32_t wqd_mkey_id;
-  flexio_uintptr_t wq_ring_daddr;
-  flexio_uintptr_t wq_dbr_daddr;
-  flexio_uintptr_t wqd_daddr;
+    uint32_t wq_num;
+    uint32_t wqd_mkey_id;
+    flexio_uintptr_t wq_ring_daddr;
+    flexio_uintptr_t wq_dbr_daddr;
+    flexio_uintptr_t wqd_daddr;
 } __attribute__((__packed__, aligned(8)));
 
 
 /* Transport data from HOST application to DEV application */
 struct dpa_data_queues {
-  struct dpa_cq rq_cq_data; /* device RQ's CQ */
-  struct dpa_wq rq_data;	/* device RQ */
-  struct dpa_cq sq_cq_data; /* device SQ's CQ */
-  struct dpa_wq sq_data;	/* device SQ */
+    struct dpa_cq rq_cq_data;   /* device RQ's CQ */
+    struct dpa_wq rq_data;	    /* device RQ */
+    struct dpa_cq sq_cq_data;   /* device SQ's CQ */
+    struct dpa_wq sq_data;	    /* device SQ */
 } __attribute__((__packed__, aligned(8)));
 
 
@@ -58,16 +61,16 @@ struct dpa_data_queues {
  *  \brief  descriptor of DPA
  */
 typedef struct ComponentDesp_DPA {
-  // basic desriptor
-  ComponentBaseDesp_t base_desp;
+    // basic desriptor
+    ComponentBaseDesp_t base_desp;
 
-  // IB device name
-  char *device_name;
+    // IB device name
+    char *device_name;
 
-  // core id
-  //! \note this field is for ComponentBlock_DPA
-  //! \todo support EU group
-  uint8_t core_id;
+    // core id
+    //! \note this field is for ComponentBlock_DPA
+    //! \todo support EU group
+    uint8_t core_id;
 } ComponentDesp_DPA_t;
 
 
@@ -75,8 +78,8 @@ typedef struct ComponentDesp_DPA {
  *  \brief  state of DPA
  */
 typedef struct ComponentState_DPA {
-  // basic state
-  ComponentBaseState_t base_state;
+    // basic state
+    ComponentBaseState_t base_state;
 } ComponentState_DPA_t;
 
 
@@ -87,121 +90,174 @@ typedef struct ComponentState_DPA {
  *          implenented by each component
  */
 typedef struct ComponentFuncState_DPA {
-  ComponentFuncBaseState_t base_state;
+    ComponentFuncBaseState_t base_state;
 
-  // device data queues
-  struct dpa_data_queues	*dev_queues;
+    // device data queues
+    struct dpa_data_queues	*dev_queues;
 
-  // IB Verbs resources
-  struct ibv_context		  *ibv_ctx;		      /* IB device context */
-  struct ibv_pd			      *pd;			        /* Protection domain */
-  struct mlx5dv_devx_uar  *uar;			        /* User Access Region */
+    // IB Verbs resources
+    struct ibv_context		  *ibv_ctx;		      /* IB device context */
+    struct ibv_pd			      *pd;			        /* Protection domain */
+    struct mlx5dv_devx_uar  *uar;			        /* User Access Region */
 
-	// FlexIO resources
-  flexio_uintptr_t		        dev_data_daddr;		/* Data address accessible by the device */
-  struct flexio_process       *flexio_process;	/* FlexIO process */
-  struct flexio_uar		        *flexio_uar;		  /* FlexIO UAR */
-  struct flexio_event_handler	*event_handler;		/* Event handler on device */
-  struct dpa_cq		rq_cq_transf;
-  struct dpa_cq		sq_cq_transf;
-  struct flexio_mkey  *rqd_mkey;
-  struct dpa_wq		    rq_transf;
-  struct flexio_mkey  *sqd_mkey;
-  struct dpa_wq		    sq_transf;
-  struct flexio_cq    *flexio_rq_cq_ptr;	/* FlexIO RQ CQ */
-  struct flexio_cq    *flexio_sq_cq_ptr;	/* FlexIO SQ CQ */
-  struct flexio_rq    *flexio_rq_ptr;		/* FlexIO RQ */
-  struct flexio_sq    *flexio_sq_ptr;		/* FlexIO SQ */
+        // FlexIO resources
+    flexio_uintptr_t		        dev_data_daddr;		/* Data address accessible by the device */
+    struct flexio_process       *flexio_process;	/* FlexIO process */
+    struct flexio_uar		        *flexio_uar;		  /* FlexIO UAR */
+    struct flexio_event_handler	*event_handler;		/* Event handler on device */
+    struct dpa_cq		rq_cq_transf;
+    struct dpa_cq		sq_cq_transf;
+    struct flexio_mkey  *rqd_mkey;
+    struct dpa_wq		    rq_transf;
+    struct flexio_mkey  *sqd_mkey;
+    struct dpa_wq		    sq_transf;
+    struct flexio_cq    *flexio_rq_cq_ptr;	/* FlexIO RQ CQ */
+    struct flexio_cq    *flexio_sq_cq_ptr;	/* FlexIO SQ CQ */
+    struct flexio_rq    *flexio_rq_ptr;		/* FlexIO RQ */
+    struct flexio_sq    *flexio_sq_ptr;		/* FlexIO SQ */
 } ComponentFuncState_DPA_t;
 
 
 class ComponentBlock_DPA : public ComponentBlock {
  public:
-  ComponentBlock_DPA(Component* component, ComponentBaseDesp_t* desp) 
-    : ComponentBlock(component, desp);
-  ~ComponentBlock_DPA();
+    ComponentBlock_DPA(Component* component, ComponentBaseDesp_t* desp) 
+        : ComponentBlock(component, desp);
+    ~ComponentBlock_DPA();
 
-  /*!
-   *  \brief  register a new application function into this component
-   *  \param  app_func  the function to be registered into this component
-   *  \return NICC_SUCCESS for successful registeration
-   */
-  nicc_retval_t register_app_function(AppFunction *app_func) override;
+    /*!
+     *  \brief  register a new application function into this component
+     *  \param  app_func  the function to be registered into this component
+     *  \return NICC_SUCCESS for successful registeration
+     */
+    nicc_retval_t register_app_function(AppFunction *app_func) override;
 
-  /*!
-   *  \brief  deregister a application function
-   *  \param  func the function to be deregistered from this compoennt
-   *  \return NICC_SUCCESS for successful unregisteration
-   */
-  nicc_retval_t unregister_app_function(AppFunction *func) override;
+    /*!
+     *  \brief  deregister a application function
+     *  \param  func the function to be deregistered from this compoennt
+     *  \return NICC_SUCCESS for successful unregisteration
+     */
+    nicc_retval_t unregister_app_function(AppFunction *func) override;
 
- private:
-  /*!
-   *  \brief  register event handler on DPA block
-   *  \param  app_func    application function which the event handler comes from
-   *  \param  handler     the handler to be registered
-   *  \param  func_state  state of the function on this DPA block
-   *  \return NICC_SUCCESS for successful registering
-   */
-  nicc_retval_t __register_event_handler(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+    private:
+    /*!
+     *  \brief  setup mlnx_device for this DPA block
+     *  \note   this function is called within register_app_function
+     *  \param  func_state  state of the function which intend to init new rdma revice
+     *  \return NICC_SUCCESS on success;
+     *          NICC_ERROR otherwise
+     */
+    nicc_retval_t __setup_ibv_device(ComponentFuncState_DPA_t *func_state);
 
-  /*!
-   *  \brief  setup mlnx_device for this DPA block
-   *  \param  func_state  state of the function which intend to init new rdma revice
-   *  \return NICC_SUCCESS on success;
-   *          NICC_ERROR otherwise
-   */
-  nicc_retval_t __setup_ibv_device(ComponentFuncState_DPA_t *func_state);
+    /*!
+     *  \brief  register event handler on DPA block
+     *  \note   this function is called within register_app_function
+     *  \param  app_func    application function which the event handler comes from
+     *  \param  handler     the event handler to be registered
+     *  \param  func_state  state of the function on this DPA block
+     *  \return NICC_SUCCESS for successful registering
+     */
+    nicc_retval_t __register_event_handler(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+
+    /*!
+     *  \brief  allocate on-device resource for DPA process
+     *  \note   this function is called within register_app_function
+     *  \param  app_func    application function which the event handler comes from
+     *  \param  handler     the event handler to be registered
+     *  \param  func_state  state of the function on this DPA block
+     *  \return NICC_SUCCESS for successful allocation
+     */
+    nicc_retval_t __allocate_device_resources(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+
+    /*!
+     *  \brief  allocate SQ/RQ and corresponding CQ for DPA process
+     *  \note   these functions are called within __allocate_device_resources
+     *  \param  func_state  state of the function on this DPA block
+     *  \return NICC_SUCCESS for successful allocation
+     */
+    nicc_retval_t __allocate_sq_cq(ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __allocate_rq_cq(ComponentFuncState_DPA_t *func_state);
+
+    /*!
+     *  \brief  allocate memory resource for SQ
+     *  \note   this function is called within __allocate_sq_cq
+     *  \param  process         flexIO process
+     *  \param  log_depth       log2 of the SQ depth
+     *  \param  log_data_bsize  log2 of the SQ data buffer size
+     *  \param  sq_transf       SQ resource
+     *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __allocate_sq_memory(
+        struct flexio_process *process, int log_depth, int log_data_bsize, struct dpa_wq *sq_transf
+    );
+
+    /*!
+     *  \brief  allocate memory resource for SQ/CQ
+     *  \note   this function is called within __allocate_sq_cq/__allocate_rq_cq
+     *  \param  process   flexIO process
+     *  \param  log_depth log2 of the SQ/CQ depth
+     *  \param  app_cq    CQ resource
+     *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __allocate_cq_memory(struct flexio_process *process, int log_depth, struct dpa_cq *app_cq);
+    
+    /*!
+     *  \brief  allocates doorbell record and return its address on the device's memory
+     *  \note   this function is called within __allocate_cq_memory, __allocate_sq_memory and __allocate_rq_cq
+     *  \param  process   flexIO process
+     *  \param  dbr_daddr doorbell record address on the device's memory
+     *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __allocate_dbr(struct flexio_process *process, flexio_uintptr_t *dbr_daddr);
 };
 
 
 class Component_DPA : public Component {
  public:
-  Component_DPA() : Component() {}
-  ~Component_DPA(){}
+    Component_DPA() : Component() {}
+    ~Component_DPA(){}
 
-  /*!
-   *  \brief  typeid of handlers register into DPA
-   */
-  enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
+    /*!
+     *  \brief  typeid of handlers register into DPA
+     */
+    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
 
-  /*!
-   *  \brief  initialization of the components
-   *  \param  desp    descriptor to initialize the component
-   *  \return NICC_SUCCESS for successful initialization
-   */
-  nicc_retval_t init(ComponentBaseDesp_t* desp) override;
+    /*!
+     *  \brief  initialization of the components
+     *  \param  desp    descriptor to initialize the component
+     *  \return NICC_SUCCESS for successful initialization
+     */
+    nicc_retval_t init(ComponentBaseDesp_t* desp) override;
 
-  /*!
-   *  \brief  apply block of resource from the component
-   *  \param  desp    descriptor for allocation
-   *  \param  app_cxt app context which this block allocates to
-   *  \param  cb      the handle of the allocated block
-   *  \return NICC_SUCCESS for successful allocation
-   */
-  nicc_retval_t allocate_block(ComponentBaseDesp_t* desp, AppContext* app_cxt, ComponentBlock** cb) override;
+    /*!
+     *  \brief  apply block of resource from the component
+     *  \param  desp    descriptor for allocation
+     *  \param  app_cxt app context which this block allocates to
+     *  \param  cb      the handle of the allocated block
+     *  \return NICC_SUCCESS for successful allocation
+     */
+    nicc_retval_t allocate_block(ComponentBaseDesp_t* desp, AppContext* app_cxt, ComponentBlock** cb) override;
 
-  /*!
-   *  \brief  return block of resource back to the component
-   *  \param  cb      the handle of the block to be deallocated
-   *  \return NICC_SUCCESS for successful deallocation
-   */
-  nicc_retval_t deallocate_block(ComponentBlock* cb) override;
+    /*!
+     *  \brief  return block of resource back to the component
+     *  \param  cb      the handle of the block to be deallocated
+     *  \return NICC_SUCCESS for successful deallocation
+     */
+    nicc_retval_t deallocate_block(ComponentBlock* cb) override;
 
- private:
-  /*!
-   *  \brief  register DPA function state and allocate memory
-   *  \return NICC_SUCCESS on success;
-   *          NICC_ERROR otherwise
-   */
-  nicc_retval_t __dpa_allocate_device_resources();
+    private:
+    /*!
+     *  \brief  register DPA function state and allocate memory
+     *  \return NICC_SUCCESS on success;
+     *          NICC_ERROR otherwise
+     */
+    nicc_retval_t __dpa_allocate_device_resources();
 
-  /*!
-   *  \brief  init DPA device resources
-   *  \return NICC_SUCCESS on success;
-   *          NICC_ERROR otherwise
-   */
-  nicc_retval_t __init_dpa_device_resources(AppContext *app_context);
+    /*!
+     *  \brief  init DPA device resources
+     *  \return NICC_SUCCESS on success;
+     *          NICC_ERROR otherwise
+     */
+    nicc_retval_t __init_dpa_device_resources(AppContext *app_context);
 };
 
 } // namespace nicc

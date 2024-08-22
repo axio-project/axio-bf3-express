@@ -195,13 +195,13 @@ process_packet(struct flexio_dev_thread_ctx *dtctx)
 	data_sz = flexio_dev_cqe_get_byte_cnt(dev_ctx.rqcq_ctx.cqe);
 
 	/* Get RQ WQE pointed by CQE */
-	rwqe = &dev_ctx.rq_ctx.rq_ring[rq_wqe_idx & L2_RQ_IDX_MASK];
+	rwqe = &dev_ctx.rq_ctx.rq_ring[rq_wqe_idx & DPA_RQ_IDX_MASK];
 
 	/* Extract data (whole packet) pointed by RQ WQE */
 	rq_data = flexio_dev_rwqe_get_addr(rwqe);
 
 	/* Take next entry from data ring */
-	sq_data = get_next_dte(&dev_ctx.dt_ctx, L2_DATA_IDX_MASK, L2_LOG_WQ_DATA_ENTRY_BSIZE);
+	sq_data = get_next_dte(&dev_ctx.dt_ctx, DPA_DATA_IDX_MASK, DPA_LOG_WQ_DATA_ENTRY_BSIZE);
 
 	/* Copy received packet to sq_data as is */
 	memcpy(sq_data, rq_data, data_sz);
@@ -215,22 +215,22 @@ process_packet(struct flexio_dev_thread_ctx *dtctx)
 	}
 
 	/* Take first segment for SQ WQE (3 segments will be used) */
-	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, DPA_SQ_IDX_MASK);
 
 	/* Fill out 1-st segment (Control) */
 	flexio_dev_swqe_seg_ctrl_set(swqe, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number,
 				     MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR, FLEXIO_CTRL_SEG_SEND_EN);
 
 	/* Fill out 2-nd segment (Ethernet) */
-	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, DPA_SQ_IDX_MASK);
 	flexio_dev_swqe_seg_eth_set(swqe, mss, checksum, 0, NULL);
 
 	/* Fill out 3-rd segment (Data) */
-	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, DPA_SQ_IDX_MASK);
 	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, dev_ctx.lkey, (uint64_t)sq_data);
 
 	/* Send WQE is 4 WQEBBs need to skip the 4-th segment */
-	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, DPA_SQ_IDX_MASK);
 
 	/* Ring DB */
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
@@ -282,7 +282,7 @@ __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit) {
 		__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 		process_packet(dtctx);
-		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
+		step_cq(&dev_ctx.rqcq_ctx, DPA_CQ_IDX_MASK);
 	}
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
