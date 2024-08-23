@@ -76,8 +76,15 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
     flexio_func_t *cast_handler;
     ComponentFuncState_DPA_t *func_state; 
 
+    NICC_CHECK_POINTER(app_func);
+    if(unlikely(this->_function_state_map.count(app_func) > 0)){
+        NICC_WARN_C("try to register duplicated functions, omited: app_func(%p)", app_func);
+        retval = NICC_ERROR_DUPLICATED;
+        goto exit;
+    }
+
     // create and init function state on this component
-    NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t);
+    NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t());
     if(unlikely(
         NICC_SUCCESS != (retval = this->__setup_ibv_device(func_state))
     )){
@@ -125,22 +132,76 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
         goto exit;
     }
 
+    // allocate resource for this event handler
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__allocate_device_resources(app_func, event_handler, func_state))
+    )){
+        NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
+        goto exit;
+    }
 
+    // init resources
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__init_device_resources(app_func, event_handler, func_state))
+    )){
+        NICC_WARN_C("failed to init reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
+        goto exit;
+    }
 
-
+    // insert to function map
+    this->_function_state_map.insert({ app_func, func_state });
 
  exit:
+    // TODO: destory if failed
     return retval;
 }
 
 
 /*!
  *  \brief  deregister a application function
- *  \param  func the function to be deregistered from this compoennt
+ *  \param  app_func the function to be deregistered from this compoennt
  *  \return NICC_SUCCESS for successful unregisteration
  */
-nicc_retval_t ComponentBlock_DPA::unregister_app_function(AppFunction *func){
+nicc_retval_t ComponentBlock_DPA::unregister_app_function(AppFunction *app_func){
+    nicc_retval_t retval = NICC_SUCCESS;
+    ComponentFuncBaseState_t *base_func_state;
+    ComponentFuncState_DPA_t *func_state; 
 
+    NICC_CHECK_POINTER(app_func);
+    if(unlikely(this->_function_state_map.count(app_func) == 0)){
+        NICC_WARN_C("try to unregister a unexist app function, omited: app_func(%p)", app_func);
+        retval = NICC_ERROR_NOT_FOUND;
+        goto exit;
+    }
+
+    // obtain function state
+    func_state = reinterpret_cast<ComponentFuncState_DPA_t*>(this->_function_state_map[app_func]);
+    NICC_CHECK_POINTER(func_state);
+
+    // remove from state map
+    this->_function_state_map.erase(app_func);
+
+    // deallocate resource for event handler
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__deallocate_device_resources(app_func, func_state))
+    )){
+        NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
+        goto exit;
+    }
+
+    // unregister event handler
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__unregister_event_handler(func_state))
+    )){
+        NICC_WARN_C("failed to unregister event handler on DPA block: retval(%u)", retval);
+        goto exit;
+    }
+
+    // delete the function state
+    delete func_state;
+
+exit:
+    return retval;
 }
 
 
@@ -284,10 +345,93 @@ nicc_retval_t ComponentBlock_DPA::__allocate_device_resources(
     nicc_retval_t retval = NICC_SUCCESS;
     doca_error_t result;
     flexio_status ret;
-   
+
+    NICC_CHECK_POINTER(app_func);
+    NICC_CHECK_POINTER(handler);
+    NICC_CHECK_POINTER(func_state);
+
+    // allocate SQ/CQ
+    if(unlikely(NICC_SUCCESS !=(
+        retval = this->__allocate_sq_cq(func_state)
+    ))){
+        NICC_WARN_C(
+            "failed to allocate and init SQ and corresponding CQ/DBR: nicc_retval(%u)", retval
+        );
+        goto exit;
+    }
+
+    // allocate RQ/CQ
+    if(unlikely(NICC_SUCCESS !=(
+        retval = this->__allocate_rq_cq(func_state)
+    ))){
+        NICC_WARN_C(
+            "failed to allocate and init RQ and corresponding CQ/DBR: nicc_retval(%u)", retval
+        );
+        goto exit;
+    }
     
+    // copy queue metadata to device
+    func_state->dev_queues = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
+    NICC_CHECK_POINTER(func_state->dev_queues);
+
+    func_state->dev_queues->sq_cq_data = func_state->sq_cq_transf;
+    func_state->dev_queues->sq_data = func_state->sq_transf;
+    func_state->dev_queues->rq_cq_data = func_state->rq_cq_transf;
+    func_state->dev_queues->rq_data = func_state->rq_transf;
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_copy_from_host(
+            func_state->flexio_process, func_state->dev_queues,
+            sizeof(struct dpa_data_queues), &func_state->d_dev_queues
+        )
+    ))){
+        NICC_WARN_C(
+            "failed to copy queue metadata to DPA heap memories: "
+            "flexio_process(%p), flexio_retval(%u), ",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
 
  exit:
+
+    // TODO: destory if failed
+
+    return retval;
+}
+
+
+/*!
+ *  \brief  init on-device resource for handlers running on DPA
+ *  \note   this function is called within register_app_function
+ *  \param  app_func    application function which the event handler comes from
+ *  \param  handler     the init handler to be registered
+ *  \param  func_state  state of the function on this DPA block
+ *  \return NICC_SUCCESS for successful initialization
+ */
+nicc_retval_t ComponentBlock_DPA::__init_device_resources(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state){
+    int ret = 0;
+    uint64_t rpc_ret_val;
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    NICC_CHECK_POINTER(app_func);
+    NICC_CHECK_POINTER(handler);
+    NICC_CHECK_POINTER(func_state);
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_process_call(func_state->flexio_process, handler, &rpc_ret_val, func_state->d_dev_queues)
+    ))){
+        NICC_WARN_C(
+            "failed to call init handler for initializing on-device resources: "
+            "flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+exit:
     return retval;
 }
 
@@ -303,7 +447,6 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
     doca_error_t result;
     flexio_status ret;
     uint32_t cq_num;
-    uint32_t log_sqd_bsize;
 
     NICC_CHECK_POINTER(func_state);
 
@@ -353,10 +496,9 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
     func_state->sq_cq_transf.log_cq_depth = DPA_LOG_CQ_RING_DEPTH;
 
     // allocate memory for SQ
-    log_sqd_bsize = DPA_LOG_WQ_DATA_ENTRY_BSIZE + DPA_LOG_SQ_RING_DEPTH;
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_sq_memory(
-            func_state->flexio_process, DPA_LOG_SQ_RING_DEPTH, log_sqd_bsize, &func_state->sq_transf
+        retval = this->__allocate_wq_memory(
+            func_state->flexio_process, DPA_LOG_SQ_RING_DEPTH, &func_state->sq_transf
         )
     ))){
         NICC_WARN_C(
@@ -365,9 +507,9 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
         );
         goto exit;
     }
-    sq_attr.wq_ring_qmem.daddr = func_state->sq_transf.wq_ring_daddr;
-
+    
     // create SQ on flexio driver
+    sq_attr.wq_ring_qmem.daddr = func_state->sq_transf.wq_ring_daddr;
     if(unlikely(FLEXIO_STATUS_SUCCESS != (
         ret = flexio_sq_create(func_state->flexio_process, NULL, cq_num, &sq_attr, &func_state->flexio_sq_ptr)
     ))){
@@ -380,20 +522,24 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
     }
     func_state->sq_transf.wq_num = flexio_sq_get_wq_num(func_state->flexio_sq_ptr);
     
-    // create SQ TX mkey
+    // create mkey for SQ data buffers
     if(unlikely(NICC_SUCCESS != (
         result = this->__create_dpa_mkey(
-            func_state->flexio_process, func_state->pd, func_state->sq_transf.wqd_daddr,
-            log_sqd_bsize, IBV_ACCESS_LOCAL_WRITE, &func_state->sqd_mkey
+            /* process */ func_state->flexio_process,
+            /* pd */ func_state->pd,
+            /* daddr */ func_state->sq_transf.wqd_daddr,
+            /* log_bsize */ DPA_LOG_SQ_RING_DEPTH + DPA_LOG_WQ_DATA_ENTRY_BSIZE,
+            /* access */ IBV_ACCESS_LOCAL_WRITE,
+            /* mkey */ &func_state->sqd_mkey
         )
     ))){
         NICC_WARN_C(
-            "failed to create SQ TX mkey: flexio_process(%p), retval(%u)",
+            "failed to create mkey for SQ data buffers: flexio_process(%p), retval(%u)",
             func_state->flexio_process, retval
         );
         goto exit;
     }
-    dpa_config_->sq_transf.wqd_mkey_id = flexio_mkey_get_id(dpa_config_->sqd_mkey);
+    func_state->sq_transf.wqd_mkey_id = flexio_mkey_get_id(func_state->sqd_mkey);
 
  exit:
 
@@ -416,6 +562,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *fun
     uint32_t cq_num;	    // CQ number
     uint32_t wq_num;	    // WQ number
     uint32_t log_rqd_bsize;	// SQ data buffer size
+    __be32 dbr[2] = { 0, 0 };
 
     // RQ's CQ attributes
     struct flexio_cq_attr rqcq_attr = {
@@ -447,38 +594,134 @@ nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *fun
     rqcq_attr.cq_dbr_daddr = func_state->rq_cq_transf.cq_dbr_daddr;
     rqcq_attr.cq_ring_qmem.daddr = func_state->rq_cq_transf.cq_ring_daddr;
 
+    // create CQ on flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_cq_create(func_state->flexio_process, NULL, &rqcq_attr, &func_state->flexio_rq_cq_ptr))
+    )){
+        NICC_WARN_C(
+            "failed to create flexio RQ's CQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    cq_num = flexio_cq_get_cq_num(func_state->flexio_rq_cq_ptr);
+    func_state->rq_cq_transf.cq_num = cq_num;
+    func_state->rq_cq_transf.log_cq_depth = DPA_LOG_RQ_RING_DEPTH;
+    
+    // allocate RQ memories (data buffers and the ring)
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__allocate_wq_memory(
+            func_state->flexio_process, DPA_LOG_RQ_RING_DEPTH, &func_state->rq_transf
+        )
+    ))){
+        NICC_WARN_C(
+            "failed to allocate RQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+
+    // create mkey for RQ data buffers
+    if(unlikely(NICC_SUCCESS != (
+        result = this->__create_dpa_mkey(
+            /* process */ func_state->flexio_process,
+            /* pd */ func_state->pd,
+            /* daddr */ func_state->rq_transf.wqd_daddr,
+            /* log_bsize */ DPA_LOG_RQ_RING_DEPTH + DPA_LOG_WQ_DATA_ENTRY_BSIZE,
+            /* access */ IBV_ACCESS_LOCAL_WRITE,
+            /* mkey */ &func_state->rqd_mkey
+        )
+    ))){
+        NICC_WARN_C(
+            "failed to create mkey for RQ data buffers: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+    func_state->rq_transf.wqd_mkey_id = flexio_mkey_get_id(func_state->sqd_mkey);
+
+    // init WQEs on the RQ ring
+    if(unlikely(NICC_SUCCESS != (
+        retval = __init_rq_ring_wqes(
+            /* process */ func_state->flexio_process,
+            /* rq_ring_daddr */ func_state->rq_transf.wq_ring_daddr,
+            /* log_depth */ DPA_LOG_RQ_RING_DEPTH,
+            /* data_daddr */ func_state->rq_transf.wqd_daddr,
+            /* wqd_mkey_id */ func_state->rq_transf.wqd_mkey_id
+        )
+    ))){
+        NICC_WARN_C("failed to initialize WQEs within RQ ring");
+        goto exit;
+    }
+
+    // create RQ on flexio driver
+    rq_attr.wq_dbr_qmem.memtype = FLEXIO_MEMTYPE_DPA;
+    rq_attr.wq_dbr_qmem.daddr = func_state->rq_transf.wq_dbr_daddr;
+    rq_attr.wq_ring_qmem.daddr = func_state->rq_transf.wq_ring_daddr;
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_sq_create(func_state->flexio_process, NULL, cq_num, &rq_attr, &func_state->flexio_rq_ptr)
+    ))){
+        NICC_WARN_C(
+            "failed to create flexio RQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    wq_num = flexio_rq_get_wq_num(func_state->flexio_rq_ptr);
+    func_state->rq_transf.wq_num = wq_num;
+
+    // modify RQ's DBR record to count for the number of WQEs
+    dbr[0] = htobe32(LOG2VALUE(DPA_LOG_RQ_RING_DEPTH) & 0xffff);    // recv counter
+    dbr[1] = htobe32(0 & 0xffff);                                   // send counter
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_host2dev_memcpy(func_state->flexio_process, dbr, sizeof(dbr), func_state->rq_transf.wq_dbr_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to modify DBR for RQ for counting all allocated slot: flexio_retval(%u), flexio_process(%p)",
+            ret, func_state->flexio_process
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
  exit:
+
+    // TODO: release DPA memories if failed
+
     return retval;
 }
 
 
 /*!
- *  \brief  allocate memory resource for SQ
- *  \note   this function is called within __allocate_sq_cq
+ *  \brief  allocate memory resource for SQ/RQ ring and data buffers
+ *  \note   this function is called within __allocate_sq_cq/__allocate_rq_cq
  *  \param  process         flexIO process
- *  \param  log_depth       log2 of the SQ depth
- *  \param  log_data_bsize  log2 of the SQ data buffer size
- *  \param  sq_transf       SQ resource
+ *  \param  log_depth       log2 of the SQ/RQ depth
+ *  \param  wq_transf       SQ/RQ resource
  *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
  */
-nicc_retval_t ComponentBlock_DPA::__allocate_sq_memory(
-    struct flexio_process *process, int log_depth, int log_data_bsize, struct dpa_wq *sq_transf
+nicc_retval_t ComponentBlock_DPA::__allocate_wq_memory(
+    struct flexio_process *process, int log_depth, struct dpa_wq *wq_transf
 ){
     nicc_retval_t retval = NICC_SUCCESS;
-    const int log_wqe_bsize = 6; /* WQE size is 64 bytes */
+    
+    // TODO: for debug, remove later
+    NICC_ASSERT(DPA_LOG_WQE_BSIZE == 6);
 
     NICC_CHECK_POINTER(process);
-    NICC_CHECK_POINTER(sq_transf);
+    NICC_CHECK_POINTER(wq_transf);
 
-    sq_transf->wqd_daddr = nullptr;
-    sq_transf->wq_ring_daddr = nullptr;
+    wq_transf->wqd_daddr = nullptr;
+    wq_transf->wq_ring_daddr = nullptr;
 
-    // allocate data buffer queue, these memories is used by dpa kernel
+    // allocate data buffers, these memories is used by dpa kernel
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
-        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_data_bsize), &sq_transf->wqd_daddr))
+        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_depth + DPA_LOG_WQ_DATA_ENTRY_BSIZE), &wq_transf->wqd_daddr))
     )) {
         NICC_WARN_C(
-            "failed to allocate SQ data buffer: flexio_process(%p), flexio_retval(%u)",
+            "failed to allocate WQ data buffer: flexio_process(%p), flexio_retval(%u)",
             process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
@@ -487,10 +730,10 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_memory(
 
     // allocate descriptor (wqe) queue, these memories is used by flexio driver
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
-        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_depth + log_wqe_bsize), &sq_transf->wq_ring_daddr))
+        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_depth + DPA_LOG_WQE_BSIZE), &wq_transf->wq_ring_daddr))
     )){
         NICC_WARN_C(
-            "failed to allocate SQ ring: flexio_process(%p), flexio_retval(%u)",
+            "failed to allocate WQ ring: flexio_process(%p), flexio_retval(%u)",
             process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
@@ -499,21 +742,21 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_memory(
 
     // allocate doorbell record
     if(unlikely(NICC_SUCCESS !=
-        (result = this->__allocate_dbr(process, &sq_transf->wq_dbr_daddr))
+        (result = this->__allocate_dbr(process, &wq_transf->wq_dbr_daddr))
     )){
-        NICC_WARN_C("failed to allocate doorbell record for SQ: flexio_process(%p), doca_retval(%u), ", process, result);
+        NICC_WARN_C("failed to allocate doorbell record for WQ: flexio_process(%p), doca_retval(%u), ", process, result);
         goto exit;
     }
     
 exit:
     if(unlikely(retval != NICC_SUCCESS)){
-        if(sq_transf->wqd_daddr != nullptr){
-            ret = flexio_buf_dev_free(process, sq_transf->wqd_daddr);
+        if(wq_transf->wqd_daddr != nullptr){
+            ret = flexio_buf_dev_free(process, wq_transf->wqd_daddr);
             NICC_ASSERT(ret == FLEXIO_STATUS_SUCCESS);
         }
 
-        if(sq_transf->wq_ring_daddr != nullptr){
-            ret = flexio_buf_dev_free(process, sq_transf->wq_ring_daddr);
+        if(wq_transf->wq_ring_daddr != nullptr){
+            ret = flexio_buf_dev_free(process, wq_transf->wq_ring_daddr);
             NICC_ASSERT(ret == FLEXIO_STATUS_SUCCESS);
         }
     }
@@ -543,9 +786,9 @@ nicc_retval_t ComponentBlock_DPA::__allocate_cq_memory(struct flexio_process *pr
     NICC_CHECK_POINTER(dbr_daddr);
 
     // allocate doorbell record
-    if(unlikely(NICC_SUCCESS !=
-        (retval = this->__allocate_dbr(process, &app_cq->cq_dbr_daddr);)
-    )){
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__allocate_dbr(process, &app_cq->cq_dbr_daddr)
+    ))){
         NICC_WARN_C("failed to allocate CQ DB record: flexio_process(%p), doca_retval(%u), ", process, result);
         goto exit;
     }
@@ -591,8 +834,63 @@ exit:
 
 
 /*!
+ *  \brief  initialize WQEs on RQ ring (after allocation)
+ *  \note   this function is called within __allocate_rq_cq
+ *  \param  process         flexIO process
+ *  \param  rq_ring_daddr   base address of the allocated RQ ring
+ *  \param  log_depth       log2 of the RQ ring depth
+ *  \param  data_daddr      base address of the RQ data buffers
+ *  \param  wqd_mkey_id     mkey id of the RQ's data buffers
+ *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+ */
+nicc_retval_t __init_rq_ring_wqes(
+    struct flexio_process *process, flexio_uintptr_t rq_ring_daddr, 
+    int log_depth, flexio_uintptr_t data_daddr, uint32_t wqd_mkey_id
+){
+    nicc_retval_t retval = NICC_SUCCESS;
+    struct mlx5_wqe_data_seg *mock_rx_ring, *mock_rx_ring_ptr;
+    int i;
+    flexio_status ret;
+
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(rq_ring_daddr);
+    NICC_CHECK_POINTER(data_daddr);
+
+    // allocate temp memories
+    mock_rx_ring = (struct mlx5_wqe_data_seg*)calloc(LOG2VALUE(log_depth), LOG2VALUE(DPA_LOG_WQE_BSIZE));
+    NICC_CHECK_POINTER(mock_rx_ring);
+
+    // seting data pointer within each WQE
+    mock_rx_ring_ptr = mock_rx_ring;
+    for (i=0; i<LOG2VALUE(log_depth); i++) {
+        mlx5dv_set_data_seg(mock_rx_ring_ptr, DPA_LOG_WQ_DATA_ENTRY_BSIZE, wqd_mkey_id, data_daddr);
+        mock_rx_ring_ptr++;
+        data_daddr += DPA_LOG_WQ_DATA_ENTRY_BSIZE;
+    }
+
+    // copy RX WQEs from host to FlexIO RQ ring
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_host2dev_memcpy(process, mock_rx_ring, LOG2VALUE(log_depth + DPA_LOG_WQE_BSIZE), rq_ring_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to copy initialized RQ to DPA heap memory: flexio_retval(%u), flexio_process(%p)",
+            ret, process
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+exit:
+    if(likely(mock_rx_ring != nullptr)){
+        free(mock_rx_ring);
+    }
+    return retval;
+}
+
+
+/*!
  *  \brief  allocates doorbell record and return its address on the device's memory
- *  \note   this function is called within __allocate_cq_memory, __allocate_sq_memory and __allocate_rq_cq
+ *  \note   this function is called within __allocate_cq_memory, __allocate_wq_memory and __allocate_rq_cq
  *  \param  process   flexIO process
  *  \param  dbr_daddr doorbell record address on the device's memory
  *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
@@ -637,17 +935,368 @@ nicc_retval_t ComponentBlock_DPA::__create_dpa_mkey(
     nicc_retval_t retval = NICC_SUCCESS;
     struct flexio_mkey_attr mkey_attr = {0};
     flexio_status ret;
+    
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(pd);
+    NICC_CHECK_POINTER(daddr);
+    NICC_CHECK_POINTER(mkey);
+
     mkey_attr.pd = pd;
     mkey_attr.daddr = daddr;
     mkey_attr.len = LOG2VALUE(log_bsize);
     mkey_attr.access = access;
-
+    
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
         (ret = flexio_device_mkey_create(process, &mkey_attr, mkey))
     )){
         NICC_WARN_C(
             "failed to create mkey for memory region: flexio_process(%p), daddr(%p)",
             process, daddr
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  unregister event handler on DPA block
+ *  \note   this function is called within unregister_app_function
+ *  \param  func_state  state of the function on this DPA block
+ *  \return NICC_SUCCESS for successful unregistering
+ */
+nicc_retval_t ComponentBlock_DPA::__unregister_event_handler(ComponentFuncState_DPA_t *func_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+
+    NICC_CHECK_POINTER(func_state);
+
+    if(likely(func_state->uar != nullptr)){
+        if(unlikely(FLEXIO_STATUS_SUCCESS != (
+            res = flexio_uar_destroy(func_state->uar) 
+        ))){
+            NICC_WARN_C(
+                "failed to destory uar on DPA block: flexio_retval(%d), flexio_process(%p)",
+                res, func_state->flexio_process
+            );
+            retval = NICC_ERROR_HARDWARE_FAILURE;
+            goto exit;
+        }
+    }
+
+    if(likely(func_state->flexio_process != nullptr)){
+        if(unlikely(FLEXIO_STATUS_SUCCESS != (
+            res = flexio_process_destroy(func_state->flexio_process) 
+        ))){
+            NICC_WARN_C("failed to destory process on DPA block: flexio_retval(%d)", res);
+            retval = NICC_ERROR_HARDWARE_FAILURE;
+            goto exit;
+        }
+    }
+
+exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocate on-device resource for handlers running on DPA
+ *  \note   this function is called within unregister_app_function
+ *  \param  app_func    application function which the event handler comes from
+ *  \param  func_state  state of the function on this DPA block
+ *  \return NICC_SUCCESS for successful deallocation
+ */
+nicc_retval_t ComponentBlock_DPA::__deallocate_device_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+
+    NICC_CHECK_POINTER(app_func);
+    NICC_CHECK_POINTER(func_state);
+
+    // deallocate SQ/CQ
+    if(unlikely(NICC_SUCCESS !=(
+        retval = this->__deallocate_sq_cq(func_state)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate and init SQ and corresponding CQ/DBR: nicc_retval(%u)", retval
+        );
+        goto exit;
+    }
+
+    // deallocate RQ/CQ
+    if(unlikely(NICC_SUCCESS !=(
+        retval = this->__deallocate_rq_cq(func_state)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate and init RQ and corresponding CQ/DBR: nicc_retval(%u)", retval
+        );
+        goto exit;
+    }
+
+    // free on-host queue metadata
+    if(likely(func_state->dev_queues != nullptr)){
+        free(func_state->dev_queues);
+    }
+
+    // free on-device queue metadata
+    if(likely(func_state->d_dev_queues != nullptr)){
+        if(unlikely(FLEXIO_STATUS_SUCCESS != (
+            ret = flexio_buf_dev_free(func_state->flexio_process, unc_state->d_dev_queues)
+        ))){
+            NICC_WARN_C(
+                "failed to free on-device queue metadata: "
+                "flexio_process(%p), flexio_retval(%u), ",
+                func_state->flexio_process, ret
+            );
+            retval = NICC_ERROR_HARDWARE_FAILURE;
+            goto exit;
+        }
+    }
+
+exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocate SQ and corresponding CQ for DPA process
+ *  \note   these functions are called within __deallocate_device_resources
+ *  \param  func_state  state of the function on this DPA block
+ *  \return NICC_SUCCESS for successful deallocation
+ */
+nicc_retval_t ComponentBlock_DPA::__deallocate_sq_cq(ComponentFuncState_DPA_t *func_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+
+    NICC_CHECK_POINTER(func_state);
+
+    // destory SQ on flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_sq_destory(func_state->flexio_sq_ptr)
+    ))){
+        NICC_WARN_C(
+            "failed to destory flexio SQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // destory CQ on flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_cq_destory(func_state->flexio_sq_cq_ptr)
+    ))){
+        NICC_WARN_C(
+            "failed to destory flexio SQ's CQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // deallocate CQ & doorbell on DPA heap memory
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__deallocate_cq_memory(func_state->flexio_process, &func_state->sq_cq_transf)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate SQ's CQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+
+    // deallocate memory for SQ
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__deallocate_wq_memory(func_state->flexio_process, &func_state->sq_transf)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate SQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+
+exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocate RQ and corresponding CQ for DPA process
+ *  \note   these functions are called within __deallocate_device_resources
+ *  \param  func_state  state of the function on this DPA block
+ *  \return NICC_SUCCESS for successful deallocation
+ */
+nicc_retval_t ComponentBlock_DPA::__deallocate_rq_cq(ComponentFuncState_DPA_t *func_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    NICC_CHECK_POINTER(func_state);
+
+    // destory RQ on flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_sq_create(func_state->flexio_rq_ptr)
+    ))){
+        NICC_WARN_C(
+            "failed to destory flexio RQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // destory CQ on flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_cq_destory(func_state->flexio_rq_cq_ptr))
+    )){
+        NICC_WARN_C(
+            "failed to destory flexio RQ's CQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            func_state->flexio_process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    
+    // deallocate CQ & doorbell on DPA heap memory
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__deallocate_cq_memory(func_state->flexio_process, &func_state->rq_cq_transf)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate RQ's CQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+
+    // deallocate RQ memories (data buffers and the ring)
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__deallocate_wq_memory(func_state->flexio_process, &func_state->rq_transf)
+    ))){
+        NICC_WARN_C(
+            "failed to deallocate RQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
+            func_state->flexio_process, retval
+        );
+        goto exit;
+    }
+
+ exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocate memory resource for SQ/RQ
+ *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
+ *  \param  process         flexIO process
+ *  \param  sq_transf       created SQ/RQ resource
+ *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+ */
+nicc_retval_t ComponentBlock_DPA::__deallocate_wq_memory(struct flexio_process *process, struct dpa_wq *wq_transf){
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(wq_transf);
+
+    // deallocate data buffers
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_free(process, wq_transf->wqd_daddr))
+    )) {
+        NICC_WARN_C(
+            "failed to deallocate WQ data buffer: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // deallocate descriptor (wqe) queue, these memories is used by flexio driver
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_free(process, wq_transf->wq_ring_daddr))
+    )){
+        NICC_WARN_C(
+            "failed to deallocate WQ ring: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // deallocate doorbell record
+    if(unlikely(NICC_SUCCESS !=
+        (result = this->__deallocate_dbr(process, wq_transf->wq_dbr_daddr))
+    )){
+        NICC_WARN_C(
+            "failed to deallocate doorbell record for WQ: "
+            "flexio_process(%p), doca_retval(%u), ",
+            process, result
+        );
+        goto exit;
+    }
+
+exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocate memory resource for SQ/CQ
+ *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
+ *  \param  process   flexIO process
+ *  \param  app_cq    CQ resource
+ *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+ */
+nicc_retval_t __deallocate_cq_memory(struct flexio_process *process, int log_depth, struct dpa_cq *app_cq){
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(app_cq);
+
+    // deallocate doorbell record
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__deallocate_dbr(process, app_cq->cq_dbr_daddr);)
+    )){
+        NICC_WARN_C("failed to deallocate CQ DB record: flexio_process(%p), doca_retval(%u), ", process, result);
+        goto exit;
+    }
+
+    // deallocate FlexIO CQ ring
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_free(process, app_cq->cq_ring_daddr))
+    )){
+        NICC_WARN_C(
+            "failed to deallocate CQ ring: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+ exit:
+    return retval;
+}
+
+
+/*!
+ *  \brief  deallocates doorbell record and return its address on the device's memory
+ *  \note   this function is called within __deallocate_cq_memory, __deallocate_sq_memory and __deallocate_rq_cq
+ *  \param  process   flexIO process
+ *  \param  dbr_daddr doorbell record address on the device's memory
+ *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+ */
+nicc_retval_t ComponentBlock_DPA::__deallocate_dbr(struct flexio_process *process, flexio_uintptr_t dbr_daddr){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(dbr_daddr);
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_free(process, dbr_daddr))
+    )){
+        NICC_WARN_C(
+            "failed to deallocate DBR from device memory: flexio_process(%p), flexio_retval(%u)",
+            process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;

@@ -42,6 +42,10 @@ print_usage() {
 build_nicc() {
   cd $script_dir
   log ">> building $1..."
+
+  # prevent clock skew between host and dpu
+  touch *
+
   if [ ! -d "$2/build" ]; then
     log ">>>> generate building processing via meson..."
     export BUILD_TARGET=$2

@@ -38,6 +38,22 @@ enum nicc_retval_t {
     NICC_ERROR
 };
 
+
+/*!
+ *  \brief  mask for enabling dataplane component
+ */
+enum nicc_component_id_t : uint16_t {
+    kComponent_Unknown = 0x00,
+    kComponent_FlowEngine = 0x01,
+    kComponent_DPA = 0x02,
+    kComponent_ARM = 0x04,
+    kComponent_Decompress = 0x08,
+    kComponent_SHA = 0x10
+};
+#define NICC_ENABLE_EMPTY_MASK  0x0000
+#define NICC_ENABLE_FULL_MASK   0xFFFF
+
+
 /**
  * ----------------------Simple methods----------------------
  */ 
@@ -48,3 +64,5 @@ enum nicc_retval_t {
     #define NICC_CHECK_POINTER(ptr)  (ptr);
     #define NICC_ASSERT(condition)   (condition);
 #endif // NICC_ENABLE_DEBUG_CHECK
+
+} // namespace nicc

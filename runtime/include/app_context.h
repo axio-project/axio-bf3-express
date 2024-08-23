@@ -3,7 +3,7 @@
 #include <string>
 
 #include "common.h"
-#include "resource_pool.h"
+#include "log.h"
 
 namespace nicc
 {
@@ -16,8 +16,13 @@ using appfunc_handler_typeid_t = uint8_t;
  */
 class AppHandler {
  public:
-  AppHandler(appfunc_handler_typeid_t tid) 
-    : _tid(tid), host_stub(nullptr), binary(nullptr), binary_size(0){}
+  /*!
+   *  \brief  constructor
+   *  \param  tid_  type id of this app handler, note that type index
+   *                is defined in each component
+   */
+  AppHandler(appfunc_handler_typeid_t tid_)
+    : tid(tid_), host_stub(nullptr), binary(nullptr), binary_size(0){}
   ~AppHandler(){}
 
   /*!

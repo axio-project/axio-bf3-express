@@ -8,21 +8,6 @@
 namespace nicc {
 
 
-/*!
- *  \brief  mask for enabling dataplane component
- */
-enum nicc_component_id_t : uint16_t {
-    kComponent_Unknown = 0x00,
-    kComponent_FlowEngine = 0x01,
-    kComponent_DPA = 0x02,
-    kComponent_ARM = 0x04,
-    kComponent_Decompress = 0x08,
-    kComponent_SHA = 0x10
-};
-#define NICC_ENABLE_EMPTY_MASK  0x0000
-#define NICC_ENABLE_FULL_MASK   0xFFFF
-
-
 // forward declaration
 class ComponentBlock;
 class Component;

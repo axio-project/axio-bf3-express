@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 
 #include <infiniband/mlx5_api.h>
 #include <infiniband/mlx5dv.h>

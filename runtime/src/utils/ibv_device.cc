@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "utils/ibv_device.h"
 
 namespace nicc {
