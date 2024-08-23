@@ -6,8 +6,8 @@ extern "C" {
 #endif
 
 extern struct flexio_app *l2_swap_wrapper;  // nicc/bin/l2_swap_wrapper.a
-extern flexio_func_t dpa_pkt_func;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
-extern flexio_func_t dpa_pkt_func_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_event_handler;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
 
 #ifdef __cplusplus
 }
@@ -22,8 +22,8 @@ namespace nicc {
  */
 AppHandler::AppHandler(appfunc_handler_typeid_t tid_) : tid(tid_) {
     ///!    \todo   remove this
-    this->host_stubs.dpa.dpa_pkt_func = &dpa_pkt_func;
-    this->host_stubs.dpa.dpa_pkt_func_init = &dpa_pkt_func_init;
+    this->host_stubs.dpa.dpa_pkt_func = &dpa_event_handler;
+    this->host_stubs.dpa.dpa_pkt_func_init = &dpa_device_init;
     this->binary.dpa_binary = l2_swap_wrapper;
 }
 

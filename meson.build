@@ -36,7 +36,7 @@ has_cuda = false
 
 # >>>>>>>>>>>>>> DPDK >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
-	dpdk_pc_path = '/home/ubuntu/git_repos/dpdk/dpdk-stable-22.11.5/build/install/lib/x86_64-linux-gnu/pkgconfig'
+	dpdk_pc_path = '/opt/mellanox/dpdk/lib/x86_64-linux-gnu/pkgconfig/'
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
 	dpdk_pc_path = '/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig'
 endif

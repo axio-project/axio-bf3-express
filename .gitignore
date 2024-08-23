@@ -35,3 +35,6 @@ third_party/doca_*
 
 # nicc specific
 build/
+bin/
+*.a
+*.o

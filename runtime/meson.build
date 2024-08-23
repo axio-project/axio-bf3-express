@@ -20,7 +20,7 @@ runtime_sources = glob.stdout().strip().split('\n')
 
 binary_name = project_name + '/' + module_name
 runtime_c_args = c_args
-runtime_ld_args = ld_args
+runtime_ld_args = ld_args + ['-L'+root_dir+'/bin', '-ll2_swap_wrapper']
 
 log_conf = configuration_data()
 log_conf.set('nicc_print_error', enable_print_error)
@@ -37,8 +37,8 @@ executable(
   binary_name,
   runtime_sources,
 	dependencies : dep,
-	cpp_args: c_args,
-	link_args: ld_args,
+	cpp_args: runtime_c_args,
+	link_args: runtime_ld_args,
 	include_directories: runtime_inc_dirs,
 	install: false
 )
