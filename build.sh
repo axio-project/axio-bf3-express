@@ -36,6 +36,19 @@ print_usage() {
   echo "  -h  help message"
 }
 
+
+# func_desp: check dependencies
+check_deps() {
+  check_single_dep() {
+    if ! command -v $1 &> /dev/null; then
+      error "$1 required, please \"sudo apt-get install $1\""
+    fi
+  }
+
+  check_single_dep ntpdate
+}
+
+
 # func_desp:  generic building procedure
 # param_1:    name of the building target
 # param_2:    path to the building target
@@ -44,7 +57,9 @@ build_nicc() {
   log ">> building $1..."
 
   # prevent clock skew between host and dpu
-  touch *
+  ntp_server="ntp.aliyun.com"
+  log ">>>> sync system time with $ntp_server..."
+  sudo ntpdate -u $ntp_server
 
   if [ ! -d "$2/build" ]; then
     log ">>>> generate building processing via meson..."
@@ -81,6 +96,11 @@ clean_nicc() {
     log ">>>> no built target was founded, skipped"
   fi
 }
+
+# =========== Rotinue Starts Here ===========
+
+# check dependencies
+check_deps
 
 # parse command line options
 args=("$@")

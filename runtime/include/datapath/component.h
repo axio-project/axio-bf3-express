@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <map>
 
 #include "common.h"
 #include "app_context.h"
@@ -56,13 +57,31 @@ typedef struct ComponentFuncBaseState {
  */
 class ComponentBlock {
  public:
-    ComponentBlock(Component* component_, ComponentBaseDesp_t* desp_) 
-        : component(component_), desp(desp_) {}
-    ~ComponentBlock(){}
+    ComponentBlock(Component* component_, ComponentBaseDesp_t* desp) 
+        : _component(component_), _desp(desp) {}
+    virtual ~ComponentBlock(){}
+
+    /*!
+     *  \brief  register a new application function into this component
+     *  \param  app_func  the function to be registered into this component
+     *  \return NICC_SUCCESS for successful registeration
+     */
+    virtual nicc_retval_t register_app_function(AppFunction *app_func){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /*!
+     *  \brief  deregister a application function
+     *  \param  app_func    the function to be deregistered from this compoennt
+     *  \return NICC_SUCCESS for successful unregisteration
+     */
+    virtual nicc_retval_t unregister_app_function(AppFunction *app_func){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
 
  protected:
     // root component of this block
-    Component *component;
+    Component *_component;
 
     // descriptor of the component block
     ComponentBaseDesp_t *_desp;
@@ -72,24 +91,6 @@ class ComponentBlock {
 
     // map of function states which has been registered in to this component block
     std::map<AppFunction*, ComponentFuncBaseState_t*> _function_state_map;
-
-    /*!
-     *  \brief  register a new application function into this component block
-     *  \param  func    the function to be registered into this component
-     *  \return NICC_SUCCESS for successful registeration
-     */
-    virtual nicc_retval_t register_function(AppFunction *func){
-        return NICC_ERROR_NOT_IMPLEMENTED;
-    }
-
-    /*!
-     *  \brief  deregister a application function
-     *  \param  func    the function to be deregistered from this compoennt block
-     *  \return NICC_SUCCESS for successful unregisteration
-     */
-    virtual nicc_retval_t unregister_function(AppFunction *func){
-        return NICC_ERROR_NOT_IMPLEMENTED;
-    }
 };
 
 
@@ -102,8 +103,8 @@ class Component {
      *  \brief  constructor
      *  \param  
      */
-    Component(){}
-    ~Component(){}
+    Component() : _cid(kComponent_Unknown) {}
+    virtual ~Component(){}
     
     /*!
      *  \brief  initialization of the components
@@ -136,7 +137,7 @@ class Component {
 
  protected:
     // component id
-    static nicc_component_id_t _cid = kComponent_Unknown;
+    component_typeid_t _cid;
 
     // descriptor of the component
     ComponentBaseDesp_t *_desp;
@@ -160,14 +161,15 @@ class Component {
         
         NICC_CHECK_POINTER(desp);
         NICC_CHECK_POINTER(app_cxt);
-        NICC_CHECK_POINTER(cb)
+        NICC_CHECK_POINTER(cb);
+        NICC_CHECK_POINTER(this->_state);
 
         // check quota
-        if(unlikely(this->_state.quota < desp->quota)){
+        if(unlikely(this->_state->quota < desp->quota)){
             NICC_WARN_C(
                 "failed to allocate block due to unsufficient resource remained:"
-                " component_id(), request(), remain()",
-                this->_cid, desp->quota, this->_state.quota
+                " component_id(%u), request(%lu), remain(%lu)",
+                this->_cid, desp->quota, this->_state->quota
             )
             retval = NICC_ERROR_EXSAUSTED;
             goto exit;
@@ -175,13 +177,13 @@ class Component {
 
         NICC_CHECK_POINTER(*cb = new CBlock(/* component */ this, /* desp */ desp));
         
-        this->_state.quota -= desp->quota;
+        this->_state->quota -= desp->quota;
         this->_allocate_map[app_cxt].push_back(*cb);
 
         NICC_DEBUG_C(
             "allocate block to application context: ",
             " component_id(), app_cxt(), request(), remain()",
-            this->_cid, app_cxt, desp->quota, this->_state.quota
+            this->_cid, app_cxt, desp->quota, this->_state->quota
         );
 
     exit:
@@ -196,10 +198,7 @@ class Component {
     template<typename CBlock>
     nicc_retval_t __deallocate_block(CBlock* cb){
         nicc_retval_t retval = NICC_SUCCESS;
-
         // TODO
-
-    exit:
         return retval;
     }
 

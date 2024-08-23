@@ -7,10 +7,8 @@ namespace nicc {
  *  \param  enabled_components  identify which component to be activated
  *  \param  config_map          component id -> component configuration
  */
-nicc_retval_t ResourcePool::ResourcePool(nicc_component_id_t enabled_components, std::map<nicc_component_id_t, void*> &&config_map){
-    nicc_retval_t tmp_retval;
-    typename std::map<nicc_component_id_t, void*>::iterator config_map_iter;
-    nicc_component_id_t enabled_mask = NICC_ENABLE_EMPTY_MASK;
+ResourcePool::ResourcePool(component_typeid_t enabled_components, std::map<component_typeid_t, ComponentBaseDesp_t*> &&config_map){
+    typename std::map<component_typeid_t, ComponentBaseDesp_t*>::iterator config_map_iter;
     Component *component;
 
     this->_enabled_components = enabled_components;
@@ -29,9 +27,10 @@ nicc_retval_t ResourcePool::ResourcePool(nicc_component_id_t enabled_components,
 
     // initialize components
     for(config_map_iter = config_map.begin(); config_map_iter != config_map.end(); config_map_iter++){
+        NICC_CHECK_POINTER(config_map_iter->second);
         switch(config_map_iter->first){
             case kComponent_FlowEngine:
-                component = new Component_FlowEngine();
+                // component = new Component_FlowEngine();
                 break;
             case kComponent_DPA:
                 component = new Component_DPA();
@@ -56,12 +55,16 @@ nicc_retval_t ResourcePool::ResourcePool(nicc_component_id_t enabled_components,
  *  \brief  allocate resource from enabled components
  *  \param  cid     index of the componen to allocate resource on
  *  \param  desp    configration description of the block to be allocated
+ *  \param  app_cxt context of the application
  *  \param  cb      the allocated component block
  */
-nicc_retval_t ResourcePool::allocate(nicc_component_id_t cid, void *desp, ComponentBlock** cb){
+nicc_retval_t ResourcePool::allocate(
+    component_typeid_t cid, ComponentBaseDesp_t *desp, AppContext *app_cxt, ComponentBlock** cb
+){
     nicc_retval_t retval = NICC_SUCCESS;
     Component *component = nullptr;
 
+    NICC_CHECK_POINTER(app_cxt);
     NICC_CHECK_POINTER(desp);
     NICC_CHECK_POINTER(cb);
 
@@ -72,12 +75,11 @@ nicc_retval_t ResourcePool::allocate(nicc_component_id_t cid, void *desp, Compon
     NICC_CHECK_POINTER(component = reinterpret_cast<Component*>(this->_component_map[cid]));
     
     if(unlikely(
-        NICC_SUCCESS != (retval = component->allocate_block(desp, cb))
+        NICC_SUCCESS != (retval = component->allocate_block(desp, app_cxt, cb))
     )){
         NICC_WARN_C("failed to allocate component block: component_id(%u), retval(%u)", cid, retval);
     }
 
-exit:
     return retval;
 }
 

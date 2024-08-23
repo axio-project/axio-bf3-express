@@ -7,7 +7,7 @@
 #include "datapath/flow_engine.h"
 #include "datapath/dpa.h"
 
-extern nicc::ComponentDesp_FlowEngine_t flow_engine_config;
+// extern nicc::ComponentDesp_FlowEngine_t flow_engine_config;
 extern nicc::ComponentDesp_DPA_t dpa_config;
 
 int main(){
@@ -21,12 +21,12 @@ int main(){
      *  \brief  init and allocate datapath components for all apps, then construct the datapath pipeline
      *  \note   options: kComponent_FlowEngine | kComponent_DPA | kComponent_ARM | kComponent_Decompress | kComponent_SHA
      */
-    nicc::nicc_component_id_t enabled_components = kComponent_FlowEngine | kComponent_DPA;
+    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
 
     // create the resource pool of nicc runtime
     nicc::ResourcePool rpool(enabled_components, {
-        { kComponent_FlowEngine, &flow_engine_config },
-        { kComponent_DPA, &dpa_config }
+        // { kComponent_FlowEngine, &flow_engine_config },
+        { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_config) }
     });
 
     // create

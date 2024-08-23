@@ -1,6 +1,31 @@
 #include "app_context.h"
 
+/// !   \todo   remove this
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern struct flexio_app *l2_swap_wrapper;  // nicc/bin/l2_swap_wrapper.a
+extern flexio_func_t dpa_pkt_func;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_pkt_func_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+
+#ifdef __cplusplus
+}
+#endif
+
 namespace nicc {
+
+
+/*!
+ *  \brief  constructor
+ *  \param  tid_  type id of this app handler, note that type index is defined in each component
+ */
+AppHandler::AppHandler(appfunc_handler_typeid_t tid_) : tid(tid_) {
+    ///!    \todo   remove this
+    this->host_stubs.dpa.dpa_pkt_func = &dpa_pkt_func;
+    this->host_stubs.dpa.dpa_pkt_func_init = &dpa_pkt_func_init;
+    this->binary.dpa_binary = l2_swap_wrapper;
+}
 
 
 /*!
@@ -12,39 +37,6 @@ AppFunction::AppFunction(std::vector<AppHandler*> &handlers){
         NICC_WARN_C("try to create app function without handler inserted, empty app function created");
     }
     this->handlers = handlers;
-}
-
-
-/*!
- *  \brief  load functions genearted by compiler
- *  \param  path   path to the compilation result
- *  \return NICC_SUCCESS for successfully loading;
- *          NICC_FAILED otherwise
- */
-nicc_retval_t AppContext::load_functions_from_binary(std::string path){
-    nicc_retval_t retval = NICC_SUCCESS;
-
-    
-
-exit:
-    return retval;
-}
-
-
-/*!
- *  \brief  load a function from compilation result from compiler
- *  \param  bin   pointer to the raw binary
- *  \return NICC_SUCCESS for successfully loading;
- *          NICC_FAILED otherwise
- */
-nicc_retval_t AppContext::__load_single_function_from_binary(uint8_t *bin, AppFunction **func){
-    nicc_retval_t retval = NICC_SUCCESS;
-
-    NICC_CHECK_POINTER(bin);
-    NICC_CHECK_POINTER(func);
-
-exit:
-    return retval;
 }
 
 

@@ -38,7 +38,7 @@ class DatapathPipeline {
   
  private:
   // component: flow engine
-  Component_FlowEngine *_flow_engine;
+  // Component_FlowEngine *_flow_engine;
   
   /*!
    *  \brief  initialization of each dataplane component

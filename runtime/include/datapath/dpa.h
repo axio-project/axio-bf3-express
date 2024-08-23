@@ -125,8 +125,13 @@ typedef struct ComponentFuncState_DPA {
 class ComponentBlock_DPA : public ComponentBlock {
  public:
     ComponentBlock_DPA(Component* component, ComponentBaseDesp_t* desp) 
-        : ComponentBlock(component, desp);
+        : ComponentBlock(component, desp) {}
     ~ComponentBlock_DPA();
+
+    /*!
+     *  \brief  typeid of handlers register into DPA
+     */
+    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
 
     /*!
      *  \brief  register a new application function into this component
@@ -137,12 +142,12 @@ class ComponentBlock_DPA : public ComponentBlock {
 
     /*!
      *  \brief  deregister a application function
-     *  \param  func the function to be deregistered from this compoennt
+     *  \param  app_func    the function to be deregistered from this compoennt
      *  \return NICC_SUCCESS for successful unregisteration
      */
-    nicc_retval_t unregister_app_function(AppFunction *func) override;
+    nicc_retval_t unregister_app_function(AppFunction *app_func) override;
 
-    private:
+ private:
     /*!
      *  \brief  setup mlnx_device for this DPA block
      *  \note   this function is called within register_app_function
@@ -155,12 +160,12 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  register event handler on DPA block
      *  \note   this function is called within register_app_function
-     *  \param  app_func    application function which the event handler comes from
-     *  \param  handler     the event handler to be registered
-     *  \param  func_state  state of the function on this DPA block
+     *  \param  app_func        application function which the event handler comes from
+     *  \param  app_handler     the handler to be registered
+     *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful registering
      */
-    nicc_retval_t __register_event_handler(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __register_event_handler(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
     
     /*!
      *  \brief  unregister event handler on DPA block
@@ -173,12 +178,11 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  (de)allocate on-device resource for handlers running on DPA
      *  \note   this function is called within register_app_function
-     *  \param  app_func    application function which the event handler comes from
-     *  \param  handler     the event handler to be registered
-     *  \param  func_state  state of the function on this DPA block
+     *  \param  app_func        application function which the event handler comes from
+     *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful (de)allocation
      */
-    nicc_retval_t __allocate_device_resources(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __allocate_device_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state);
     
     /*!
      *  \brief  deallocate on-device resource for handlers running on DPA
@@ -192,12 +196,12 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  init on-device resource for handlers running on DPA
      *  \note   this function is called within register_app_function
-     *  \param  app_func    application function which the event handler comes from
-     *  \param  handler     the init handler to be registered
-     *  \param  func_state  state of the function on this DPA block
+     *  \param  app_func        application function which the event handler comes from
+     *  \param  app_handler     the init handler to be registered
+     *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful initialization
      */
-    nicc_retval_t __init_device_resources(AppFunction *app_func, flexio_func_t *handler, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __init_device_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
 
     /*!
      *  \brief  (de)allocate SQ/RQ and corresponding CQ for DPA process
@@ -280,18 +284,29 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __deallocate_dbr(struct flexio_process *process, flexio_uintptr_t dbr_daddr);
+
+    /*!
+     *  \brief  create mkey for the given memory region
+     *  \param  process     flexIO process
+     *  \param  pd          protection domain
+     *  \param  daddr       device address of the memory region
+     *  \param  log_bsize   log2 of the memory region size
+     *  \param  access      access flags
+     *  \param  mkey        mkey
+     *  \return NICC_SUCCESS on success
+     */
+    nicc_retval_t __create_dpa_mkey(
+        struct flexio_process *process, struct ibv_pd *pd, flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
+    );
 };
 
 
 class Component_DPA : public Component {
  public:
-    Component_DPA() : Component() {}
+    Component_DPA() : Component() {
+        this->_cid = kComponent_DPA;
+    }
     ~Component_DPA(){}
-
-    /*!
-     *  \brief  typeid of handlers register into DPA
-     */
-    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
 
     /*!
      *  \brief  initialization of the components
@@ -316,7 +331,7 @@ class Component_DPA : public Component {
      */
     nicc_retval_t deallocate_block(ComponentBlock* cb) override;
 
-    private:
+ private:
     /*!
      *  \brief  register DPA function state and allocate memory
      *  \return NICC_SUCCESS on success;

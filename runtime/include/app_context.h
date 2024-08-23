@@ -2,6 +2,8 @@
 #include <iostream>
 #include <string>
 
+#include <libflexio/flexio.h>
+
 #include "common.h"
 #include "log.h"
 
@@ -9,7 +11,6 @@ namespace nicc
 {
 
 using appfunc_handler_typeid_t = uint8_t;
-
 
 /*!
  *  \brief  handler within a function
@@ -21,8 +22,7 @@ class AppHandler {
    *  \param  tid_  type id of this app handler, note that type index
    *                is defined in each component
    */
-  AppHandler(appfunc_handler_typeid_t tid_)
-    : tid(tid_), host_stub(nullptr), binary(nullptr), binary_size(0){}
+  AppHandler(appfunc_handler_typeid_t tid_);
   ~AppHandler(){}
 
   /*!
@@ -32,25 +32,24 @@ class AppHandler {
    *  \return NICC_SUCCESS for successfully loading
    */
   nicc_retval_t load_from_binary(uint8_t *raw, uint64_t size){
-    nicc_retval_t retval = NICC_SUCCESS;
-
-    NICC_CHECK_POINTER(raw);
-    NICC_ASSERT(size > 0);
-
-    NICC_CHECK_POINTER(this->binary = new uint8_t[size]);
-    memcpy(this->binary, raw, size);
-    this->binary_size = size;
-
-  exit:
+    nicc_retval_t retval = NICC_ERROR_NOT_IMPLEMENTED;
     return retval;
   }
 
-  // host stub of this handler (for hetrogeneous processors such as DPA)
-  void *host_stub;
+  typedef struct __dpa_host_stubs {
+    flexio_func_t *dpa_pkt_func;
+    flexio_func_t *dpa_pkt_func_init;
+  } __dpa_host_stubs_t;
 
-  // raw binary of the handler
-  uint8_t *binary;
-  uint64_t binary_size;
+  // host stub of the handler (for hetrogeneous process such as DPA)
+  union {
+    __dpa_host_stubs_t dpa;
+  } host_stubs;
+
+  // binary of the handler
+  union {
+    flexio_app  *dpa_binary;
+  } binary;
 
   // typeid of this handler
   appfunc_handler_typeid_t tid;
@@ -79,7 +78,7 @@ class AppFunction {
 
  private:
   // index of the deploy component of this function
-  nicc_component_id_t _component_id;
+  component_typeid_t _component_id;
 
   // TODO: more definition
   uint8_t *_state;

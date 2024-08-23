@@ -42,17 +42,15 @@ enum nicc_retval_t {
 /*!
  *  \brief  mask for enabling dataplane component
  */
-enum nicc_component_id_t : uint16_t {
-    kComponent_Unknown = 0x00,
-    kComponent_FlowEngine = 0x01,
-    kComponent_DPA = 0x02,
-    kComponent_ARM = 0x04,
-    kComponent_Decompress = 0x08,
-    kComponent_SHA = 0x10
-};
-#define NICC_ENABLE_EMPTY_MASK  0x0000
-#define NICC_ENABLE_FULL_MASK   0xFFFF
-
+using component_typeid_t = uint16_t;
+static constexpr component_typeid_t kComponent_Unknown = 0x00;
+static constexpr component_typeid_t kComponent_FlowEngine = 0x01;
+static constexpr component_typeid_t kComponent_DPA = 0x02;
+static constexpr component_typeid_t kComponent_ARM = 0x04;
+static constexpr component_typeid_t kComponent_Decompress = 0x08;
+static constexpr component_typeid_t kComponent_SHA = 0x10;
+static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
+static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
 
 /**
  * ----------------------Simple methods----------------------
@@ -61,8 +59,8 @@ enum nicc_component_id_t : uint16_t {
   #define NICC_CHECK_POINTER(ptr)   assert((ptr) != nullptr);
   #define NICC_ASSERT(condition)    assert((condition));
 #else // NICC_ENABLE_DEBUG_CHECK
-    #define NICC_CHECK_POINTER(ptr)  (ptr);
-    #define NICC_ASSERT(condition)   (condition);
+    #define NICC_CHECK_POINTER(ptr)  _unused (ptr);
+    #define NICC_ASSERT(condition)   _unused (condition);
 #endif // NICC_ENABLE_DEBUG_CHECK
 
 } // namespace nicc

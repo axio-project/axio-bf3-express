@@ -19,23 +19,29 @@ class ResourcePool {
      *  \param  enabled_components  identify which component to be activated
      *  \param  config_map          component id -> component configuration
      */
-    ResourcePool(nicc_component_id_t enabled_components, std::map<nicc_component_id_t, void*> &&config_map);
+    ResourcePool(
+        component_typeid_t enabled_components, std::map<component_typeid_t, ComponentBaseDesp_t*> &&config_map
+    );
 
     ~ResourcePool(){
         // TODO: deinit components
     }
-    
+
+
     /*!
      *  \brief  allocate resource from enabled components
      *  \param  cid     index of the componen to allocate resource on
      *  \param  desp    configration description of the block to be allocated
+     *  \param  app_cxt context of the application
      *  \param  cb      the allocated component block
      */
-    nicc_retval_t allocate(nicc_component_id_t cid, void *desp, ComponentBlock** cb);
+    nicc_retval_t allocate(
+        component_typeid_t cid, ComponentBaseDesp_t *desp, AppContext *app_cxt, ComponentBlock** cb
+    );
 
  private:
     // maskable code that identify which components are enabled
-    nicc_component_id_t _enabled_components;
+    component_typeid_t _enabled_components;
 
     // map of all enabled component
     std::map<uint8_t, void*> _component_map;

@@ -30,5 +30,8 @@ Temporary Items
 
 **/.vscode
 
+# third party
+third_party/doca_*
+
 # nicc specific
 build/
