@@ -276,18 +276,18 @@ allocate_sq(struct l2_reflector_config *app_cfg)
 
 	/* SQ's CQ attributes */
 	struct flexio_cq_attr sqcq_attr = {
-		.log_cq_depth = L2_LOG_CQ_RING_DEPTH,
+		.log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
 		/* SQ does not need APU CQ */
 		.element_type = FLEXIO_CQ_ELEMENT_TYPE_NON_DPA_CQ,
 		.uar_id = app_cfg->uar->page_id};
 	/* SQ attributes */
 	struct flexio_wq_attr sq_attr = {
-		.log_wq_depth = L2_LOG_SQ_RING_DEPTH,
+		.log_wq_depth = DPA_LOG_SQ_RING_DEPTH,
 		.uar_id = app_cfg->uar->page_id,
 		.pd = app_cfg->pd};
 
 	/* Allocate memory for SQ's CQ */
-	result = allocate_cq_memory(app_cfg->flexio_process, L2_LOG_CQ_RING_DEPTH, &app_cfg->sq_cq_transf);
+	result = allocate_cq_memory(app_cfg->flexio_process, DPA_LOG_CQ_RING_DEPTH, &app_cfg->sq_cq_transf);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -304,11 +304,11 @@ allocate_sq(struct l2_reflector_config *app_cfg)
 
 	cq_num = flexio_cq_get_cq_num(app_cfg->flexio_sq_cq_ptr);
 	app_cfg->sq_cq_transf.cq_num = cq_num;
-	app_cfg->sq_cq_transf.log_cq_depth = L2_LOG_CQ_RING_DEPTH;
+	app_cfg->sq_cq_transf.log_cq_depth = DPA_LOG_CQ_RING_DEPTH;
 
 	/* Allocate memory for SQ */
-	log_sqd_bsize = L2_LOG_WQ_DATA_ENTRY_BSIZE + L2_LOG_SQ_RING_DEPTH;
-	result = allocate_sq_memory(app_cfg->flexio_process, L2_LOG_SQ_RING_DEPTH, log_sqd_bsize, &app_cfg->sq_transf);
+	log_sqd_bsize = DPA_LOG_WQ_DATA_ENTRY_BSIZE + DPA_LOG_SQ_RING_DEPTH;
+	result = allocate_sq_memory(app_cfg->flexio_process, DPA_LOG_SQ_RING_DEPTH, log_sqd_bsize, &app_cfg->sq_transf);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -401,18 +401,18 @@ allocate_rq(struct l2_reflector_config *app_cfg)
 
 	/* RQ's CQ attributes */
 	struct flexio_cq_attr rqcq_attr = {
-		.log_cq_depth = L2_LOG_CQ_RING_DEPTH,
+		.log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
 		.element_type = FLEXIO_CQ_ELEMENT_TYPE_DPA_THREAD,
 		.thread = flexio_event_handler_get_thread(app_cfg->event_handler),
 		.uar_id = app_cfg->uar->page_id,
 		.uar_base_addr = app_cfg->uar->base_addr};
 	/* RQ attributes */
 	struct flexio_wq_attr rq_attr = {
-		.log_wq_depth = L2_LOG_RQ_RING_DEPTH,
+		.log_wq_depth = DPA_LOG_RQ_RING_DEPTH,
 		.pd = app_cfg->pd};
 
 	/* Allocate memory for RQ's CQ */
-	result = allocate_cq_memory(app_cfg->flexio_process, L2_LOG_CQ_RING_DEPTH, &app_cfg->rq_cq_transf);
+	result = allocate_cq_memory(app_cfg->flexio_process, DPA_LOG_CQ_RING_DEPTH, &app_cfg->rq_cq_transf);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -428,9 +428,9 @@ allocate_rq(struct l2_reflector_config *app_cfg)
 
 	cq_num = flexio_cq_get_cq_num(app_cfg->flexio_rq_cq_ptr);
 	app_cfg->rq_cq_transf.cq_num = cq_num;
-	app_cfg->rq_cq_transf.log_cq_depth = L2_LOG_RQ_RING_DEPTH;
+	app_cfg->rq_cq_transf.log_cq_depth = DPA_LOG_RQ_RING_DEPTH;
 
-	log_rqd_bsize = L2_LOG_RQ_RING_DEPTH + L2_LOG_WQ_DATA_ENTRY_BSIZE;
+	log_rqd_bsize = DPA_LOG_RQ_RING_DEPTH + DPA_LOG_WQ_DATA_ENTRY_BSIZE;
 
 	flexio_buf_dev_alloc(app_cfg->flexio_process, LOG2VALUE(log_rqd_bsize), &app_cfg->rq_transf.wqd_daddr);
 	if (app_cfg->rq_transf.wqd_daddr == 0) {
@@ -438,7 +438,7 @@ allocate_rq(struct l2_reflector_config *app_cfg)
 		return DOCA_ERROR_DRIVER;
 	}
 
-	flexio_buf_dev_alloc(app_cfg->flexio_process, LOG2VALUE(L2_LOG_CQ_RING_DEPTH) * sizeof(struct mlx5_wqe_data_seg),
+	flexio_buf_dev_alloc(app_cfg->flexio_process, LOG2VALUE(DPA_LOG_CQ_RING_DEPTH) * sizeof(struct mlx5_wqe_data_seg),
 				&app_cfg->rq_transf.wq_ring_daddr);
 	if (app_cfg->rq_transf.wq_ring_daddr == 0x0) {
 		DOCA_LOG_ERR("Failed to allocate memory for RQ ring buffer");
@@ -462,8 +462,8 @@ allocate_rq(struct l2_reflector_config *app_cfg)
 	mkey_id = flexio_mkey_get_id(app_cfg->rqd_mkey);
 
 	result = init_dpa_rq_ring(app_cfg->flexio_process, app_cfg->rq_transf.wq_ring_daddr,
-				  L2_LOG_CQ_RING_DEPTH, app_cfg->rq_transf.wqd_daddr,
-				  L2_LOG_WQ_DATA_ENTRY_BSIZE, mkey_id);
+				  DPA_LOG_CQ_RING_DEPTH, app_cfg->rq_transf.wqd_daddr,
+				  DPA_LOG_WQ_DATA_ENTRY_BSIZE, mkey_id);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -483,7 +483,7 @@ allocate_rq(struct l2_reflector_config *app_cfg)
 
 	/* Modify RQ's DBR record to count for the number of WQEs */
 	__be32 dbr[2];
-	uint32_t rcv_counter = LOG2VALUE(L2_LOG_RQ_RING_DEPTH);
+	uint32_t rcv_counter = LOG2VALUE(DPA_LOG_RQ_RING_DEPTH);
 	uint32_t send_counter = 0;
 
 	dbr[0] = htobe32(rcv_counter & 0xffff);

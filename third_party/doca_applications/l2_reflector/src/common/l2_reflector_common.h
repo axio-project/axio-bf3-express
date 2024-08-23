@@ -16,17 +16,17 @@
 
 
 /* Logarithm ring size */
-#define L2_LOG_SQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_RQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_CQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_SQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_RQ_RING_DEPTH 7 /* 2^7 entries */
+#define DPA_LOG_CQ_RING_DEPTH 7 /* 2^7 entries */
 
-#define L2_LOG_WQ_DATA_ENTRY_BSIZE 11 /* WQ buffer logarithmic size */
+#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 11 /* WQ buffer logarithmic size */
 
 /* Queues index mask, represents the index of the last CQE/WQE in the queue */
-#define L2_CQ_IDX_MASK ((1 << L2_LOG_CQ_RING_DEPTH) - 1)
-#define L2_RQ_IDX_MASK ((1 << L2_LOG_RQ_RING_DEPTH) - 1)
-#define L2_SQ_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
-#define L2_DATA_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH)) - 1)
+#define DPA_CQ_IDX_MASK ((1 << DPA_LOG_CQ_RING_DEPTH) - 1)
+#define DPA_RQ_IDX_MASK ((1 << DPA_LOG_RQ_RING_DEPTH) - 1)
+#define DPA_SQ_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
+#define DPA_DATA_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH)) - 1)
 
 struct app_transfer_cq {
 	uint32_t cq_num;

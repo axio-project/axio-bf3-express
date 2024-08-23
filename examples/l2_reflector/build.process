@@ -1,0 +1,169 @@
+#$ /opt/mellanox/doca/tools/dpa-clang -Wno-attributes -ffreestanding -mcmodel=medany -isystem /opt/mellanox/flexio/include -v -E dpa_kernel.c -o /tmp/dpacc_0yvR80/dpa_kernel.i
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+ (in-process)
+ "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/clang-15" -cc1 -triple riscv64-unknown-unknown-elf -E -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name dpa_kernel.c -mrelocation-model static -mframe-pointer=all -fmath-errno -ffp-contract=on -fno-rounding-math -fno-verbose-asm -mconstructor-aliases -ffreestanding -nostdsysteminc -mcmodel=medium -target-cpu nv-dpa-bf3 -target-feature +m -target-feature +a -target-feature +c -target-feature +zbb -target-feature +experimental-zbp -target-feature +experimental-zbr -target-feature +zbs -target-feature +xfenceheap -target-feature +xnvcc -target-feature +xrpfxp -target-feature +64bit -target-feature +relax -target-feature -save-restore -target-feature +cx-7 -target-abi lp64 -msmall-data-limit 8 -debugger-tuning=gdb -v -fcoverage-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -resource-dir /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7 -isystem /opt/mellanox/flexio/include -internal-isystem /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include -internal-isystem /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/include -Wno-attributes -fdebug-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -faddrsig -o /tmp/dpacc_0yvR80/dpa_kernel.i -x c dpa_kernel.c
+clang -cc1 version 15.0.7 based upon LLVM 15.0.7 default target riscv64-unknown-elf
+ignoring nonexistent directory "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/include"
+ignoring duplicate directory "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/mellanox/flexio/include
+ /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include
+End of search list.
+#$ /opt/mellanox/doca/tools/dpa-clang -Wno-attributes -ffreestanding -mcmodel=medany -Wno-unused-command-line-argument -Wno-gnu-line-marker -v -c /tmp/dpacc_0yvR80/dpa_kernel.i -o /tmp/dpacc_0yvR80/dpa_kernel.o
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+ (in-process)
+ "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/clang-15" -cc1 -triple riscv64-unknown-unknown-elf -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name dpa_kernel.i -mrelocation-model static -mframe-pointer=all -fmath-errno -ffp-contract=on -fno-rounding-math -fno-verbose-asm -mconstructor-aliases -ffreestanding -nostdsysteminc -mcmodel=medium -target-cpu nv-dpa-bf3 -target-feature +m -target-feature +a -target-feature +c -target-feature +zbb -target-feature +experimental-zbp -target-feature +experimental-zbr -target-feature +zbs -target-feature +xfenceheap -target-feature +xnvcc -target-feature +xrpfxp -target-feature +64bit -target-feature +relax -target-feature -save-restore -target-feature +cx-7 -target-abi lp64 -msmall-data-limit 8 -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=gdb -v -fcoverage-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -resource-dir /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7 -Wno-attributes -Wno-unused-command-line-argument -Wno-gnu-line-marker -fdebug-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -faddrsig -o /tmp/dpacc_0yvR80/dpa_kernel.o -x cpp-output /tmp/dpacc_0yvR80/dpa_kernel.i
+clang -cc1 version 15.0.7 based upon LLVM 15.0.7 default target riscv64-unknown-elf
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include
+End of search list.
+#$ /opt/mellanox/doca/tools/ifgen /tmp/dpacc_0yvR80/dpa_kernel.i -devicecc-options="-Wno-attributes -ffreestanding -mcmodel=medany -Wno-unused-command-line-argument -Wno-pedantic " -output-path="/tmp/dpacc_0yvR80/" -verbose --
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+clang Invocation:
+ "/opt/mellanox/doca/tools/clang-tool" "-cc1" "-triple" "riscv64-unknown-unknown-elf" "-fsyntax-only" "-disable-free" "-clear-ast-before-backend" "-disable-llvm-verifier" "-discard-value-names" "-main-file-name" "dpa_kernel.i" "-mrelocation-model" "static" "-mframe-pointer=all" "-fmath-errno" "-ffp-contract=on" "-fno-rounding-math" "-fno-verbose-asm" "-mconstructor-aliases" "-ffreestanding" "-nostdsysteminc" "-target-cpu" "nv-dpa-bf3" "-target-feature" "+m" "-target-feature" "+a" "-target-feature" "+c" "-target-feature" "+zbb" "-target-feature" "+experimental-zbp" "-target-feature" "+experimental-zbr" "-target-feature" "+zbs" "-target-feature" "+xfenceheap" "-target-feature" "+xnvcc" "-target-feature" "+xrpfxp" "-target-feature" "+64bit" "-target-feature" "+relax" "-target-feature" "-save-restore" "-target-feature" "+cx-7" "-target-abi" "lp64" "-msmall-data-limit" "8" "-mllvm" "-treat-scalable-fixed-error-as-warning" "-debugger-tuning=gdb" "-v" "-fcoverage-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector" "-resource-dir" "/opt/mellanox/doca/lib/clang/15.0.7" "-Wno-attributes" "-Wno-unused-command-line-argument" "-Wno-pedantic" "-fdebug-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector" "-ferror-limit" "19" "-fno-signed-char" "-fgnuc-version=4.2.1" "-faddrsig" "-x" "cpp-output" "/tmp/dpacc_0yvR80/dpa_kernel.i"
+
+clang -cc1 version 15.0.7 based upon LLVM 15.0.7 default target riscv64-unknown-elf
+ignoring nonexistent directory "/opt/mellanox/doca/lib/clang/15.0.7/include"
+#include "..." search starts here:
+End of search list.
+#$ /opt/mellanox/doca/tools/dpa-clang -Wno-attributes -ffreestanding -mcmodel=medany -Wno-pedantic -Wno-unused-parameter -Wno-unused-command-line-argument -isystem /opt/mellanox/flexio/include -v -c /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.c -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.o
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+ (in-process)
+ "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/clang-15" -cc1 -triple riscv64-unknown-unknown-elf -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name dpa_kernel.dpa.device.c -mrelocation-model static -mframe-pointer=all -fmath-errno -ffp-contract=on -fno-rounding-math -fno-verbose-asm -mconstructor-aliases -ffreestanding -nostdsysteminc -mcmodel=medium -target-cpu nv-dpa-bf3 -target-feature +m -target-feature +a -target-feature +c -target-feature +zbb -target-feature +experimental-zbp -target-feature +experimental-zbr -target-feature +zbs -target-feature +xfenceheap -target-feature +xnvcc -target-feature +xrpfxp -target-feature +64bit -target-feature +relax -target-feature -save-restore -target-feature +cx-7 -target-abi lp64 -msmall-data-limit 8 -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=gdb -v -fcoverage-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -resource-dir /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7 -isystem /opt/mellanox/flexio/include -internal-isystem /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include -internal-isystem /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/include -Wno-attributes -Wno-pedantic -Wno-unused-parameter -Wno-unused-command-line-argument -fdebug-compilation-dir=/home/zobin/projects/bf3_mount/nicc/examples/l2_reflector -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -faddrsig -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.o -x c /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.c
+clang -cc1 version 15.0.7 based upon LLVM 15.0.7 default target riscv64-unknown-elf
+ignoring nonexistent directory "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/include"
+ignoring duplicate directory "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/mellanox/flexio/include
+ /opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/include
+End of search list.
+#$ /opt/mellanox/doca/tools/dpa-clang -r -nostdlib -v /tmp/dpacc_0yvR80/dpa_kernel.o /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.o -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.join.o
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+ "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/ld.lld" -r /tmp/dpacc_0yvR80/dpa_kernel.o /tmp/dpacc_0yvR80/dpa_kernel.dpa.device.o -Bstatic -r -L/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/lib -L/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/lib/baremetal -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.join.o
+#$ /opt/mellanox/doca/tools/objproc -emit-as-stub -array-prefix dpa_kernel -embed-as-obj /tmp/dpacc_0yvR80/dpa_kernel.dpa.join.o -o /tmp/dpacc_0yvR80/dpa_kernel.stub.inc
+#$ gcc -Wno-attributes -Wno-pedantic -I/opt/mellanox/flexio/include -v -Wno-unused-parameter -Wno-return-type -I /tmp/dpacc_0yvR80 -D__DPA_OBJ_STUB_FILE__="\"dpa_kernel.stub.inc\"" /tmp/dpacc_0yvR80/dpa_kernel.dpa.host.c -c -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.o
+Using built-in specs.
+COLLECT_GCC=gcc
+OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 11.4.0-1ubuntu1~22.04' --with-bugurl=file:///usr/share/doc/gcc-11/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-11 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-gcn/usr --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04) 
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-unused-parameter' '-Wno-return-type' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_OBJ_STUB_FILE__="dpa_kernel.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/dpa_kernel.dpa.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/'
+ /usr/lib/gcc/x86_64-linux-gnu/11/cc1 -quiet -v -I /opt/mellanox/flexio/include -I /tmp/dpacc_0yvR80 -imultiarch x86_64-linux-gnu -D __DPA_OBJ_STUB_FILE__="dpa_kernel.stub.inc" /tmp/dpacc_0yvR80/dpa_kernel.dpa.host.c -quiet -dumpdir /tmp/dpacc_0yvR80/ -dumpbase dpa_kernel.dpa.c -dumpbase-ext .c -mtune=generic -march=x86-64 -Wno-attributes -Wno-pedantic -Wno-unused-parameter -Wno-return-type -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/cc8UXQs5.s
+GNU C17 (Ubuntu 11.4.0-1ubuntu1~22.04) version 11.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version isl-0.24-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/11/include-fixed"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/11/../../../../x86_64-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/mellanox/flexio/include
+ /tmp/dpacc_0yvR80
+ /usr/lib/gcc/x86_64-linux-gnu/11/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+GNU C17 (Ubuntu 11.4.0-1ubuntu1~22.04) version 11.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version isl-0.24-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+Compiler executable checksum: 50eaa2331df977b8016186198deb2d18
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-unused-parameter' '-Wno-return-type' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_OBJ_STUB_FILE__="dpa_kernel.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/dpa_kernel.dpa.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/'
+ as -v -I /opt/mellanox/flexio/include -I /tmp/dpacc_0yvR80 --64 -o /tmp/dpacc_0yvR80/dpa_kernel.dpa.o /tmp/cc8UXQs5.s
+GNU assembler version 2.38 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.38
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-unused-parameter' '-Wno-return-type' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_OBJ_STUB_FILE__="dpa_kernel.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/dpa_kernel.dpa.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/dpa_kernel.dpa.'
+#$ /opt/mellanox/doca/tools/objproc -extract-dev-obj /tmp/dpacc_0yvR80/dpa_kernel.dpa.o -out-dir=/tmp/dpacc_0yvR80
+#$ /opt/mellanox/doca/tools/dpa-clang -fPIE -nostdlib -z nognustack -z norelro -Wl,--no-rosegment /tmp/dpacc_0yvR80/dpa_kernel.dpa.join.o -T /opt/mellanox/doca/tools/dpa_llvm/ldscripts/dpa_linker.ld -L/opt/mellanox/flexio/lib -Wl,--start-group -Wl,-whole-archive -lflexio_dev -Wl,-no-whole-archive -lflexio-libc -lflexio_os -Wl,--end-group -lclang_rt.builtins-riscv64 -v -o /tmp/dpacc_0yvR80/device_exec
+dpa-clang version 1.5.0-22
+Target: riscv64-unknown-unknown-elf
+Thread model: posix
+InstalledDir: /opt/mellanox/doca/tools
+ "/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/ld.lld" -z nognustack -z norelro --no-rosegment /tmp/dpacc_0yvR80/dpa_kernel.dpa.join.o --start-group -whole-archive -lflexio_dev -no-whole-archive -lflexio-libc -lflexio_os --end-group -lclang_rt.builtins-riscv64 -Bstatic -T /opt/mellanox/doca/tools/dpa_llvm/ldscripts/dpa_linker.ld -L/opt/mellanox/flexio/lib -L/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/bin/../lib/clang-runtimes/riscv64-unknown-elf/lib -L/opt/mellanox/doca/lib/x86_64-linux-gnu/dpa_llvm/lib/clang/15.0.7/lib/baremetal -o /tmp/dpacc_0yvR80/device_exec
+#$ /opt/mellanox/doca/tools/objproc -emit-as-stub -array-prefix __dpa_a_out /tmp/dpacc_0yvR80/device_exec -o /tmp/dpacc_0yvR80/device_exec.stub.inc
+#$ /opt/mellanox/doca/tools/objproc -gen-meta-stub -dpa-app-name __dpa_a_out  -L/opt/mellanox/flexio/lib -lflexio_dev /tmp/dpacc_0yvR80/dpa_kernel.dpa.o -o /tmp/dpacc_0yvR80/__dpa_a_out.meta.c
+#$ gcc -Wno-attributes -Wno-pedantic -I/opt/mellanox/flexio/include -v -Wno-implicit-function-declaration -I /tmp/dpacc_0yvR80 -D__DPA_EXEC_STUB_FILE__="\"device_exec.stub.inc\"" /tmp/dpacc_0yvR80/__dpa_a_out.meta.c -c -o /tmp/dpacc_0yvR80/__dpa_a_out.meta.o
+Using built-in specs.
+COLLECT_GCC=gcc
+OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 11.4.0-1ubuntu1~22.04' --with-bugurl=file:///usr/share/doc/gcc-11/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-11 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-gcn/usr --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04) 
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-implicit-function-declaration' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_EXEC_STUB_FILE__="device_exec.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/__dpa_a_out.meta.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/'
+ /usr/lib/gcc/x86_64-linux-gnu/11/cc1 -quiet -v -I /opt/mellanox/flexio/include -I /tmp/dpacc_0yvR80 -imultiarch x86_64-linux-gnu -D __DPA_EXEC_STUB_FILE__="device_exec.stub.inc" /tmp/dpacc_0yvR80/__dpa_a_out.meta.c -quiet -dumpdir /tmp/dpacc_0yvR80/ -dumpbase __dpa_a_out.meta.c -dumpbase-ext .c -mtune=generic -march=x86-64 -Wno-attributes -Wno-pedantic -Wno-implicit-function-declaration -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccI5aw7m.s
+GNU C17 (Ubuntu 11.4.0-1ubuntu1~22.04) version 11.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version isl-0.24-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/11/include-fixed"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/11/../../../../x86_64-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/mellanox/flexio/include
+ /tmp/dpacc_0yvR80
+ /usr/lib/gcc/x86_64-linux-gnu/11/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+GNU C17 (Ubuntu 11.4.0-1ubuntu1~22.04) version 11.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version isl-0.24-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+Compiler executable checksum: 50eaa2331df977b8016186198deb2d18
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-implicit-function-declaration' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_EXEC_STUB_FILE__="device_exec.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/__dpa_a_out.meta.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/'
+ as -v -I /opt/mellanox/flexio/include -I /tmp/dpacc_0yvR80 --64 -o /tmp/dpacc_0yvR80/__dpa_a_out.meta.o /tmp/ccI5aw7m.s
+GNU assembler version 2.38 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.38
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-Wno-attributes' '-Wno-pedantic' '-I' '/opt/mellanox/flexio/include' '-v' '-Wno-implicit-function-declaration' '-I' '/tmp/dpacc_0yvR80' '-D' '__DPA_EXEC_STUB_FILE__="device_exec.stub.inc"' '-c' '-o' '/tmp/dpacc_0yvR80/__dpa_a_out.meta.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/__dpa_a_out.meta.'
+#$ objcopy -v --remove-section=.dpa_obj /tmp/dpacc_0yvR80/dpa_kernel.dpa.o 
+copy from `/tmp/dpacc_0yvR80/dpa_kernel.dpa.o' [elf64-x86-64] to `/tmp/dpacc_0yvR80/stDHpGbW' [elf64-x86-64]
+#$ gcc -r -nostdlib -v /tmp/dpacc_0yvR80/__dpa_a_out.meta.o /tmp/dpacc_0yvR80/dpa_kernel.dpa.o -o /tmp/dpacc_0yvR80/hostStubs.o
+Using built-in specs.
+COLLECT_GCC=gcc
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 11.4.0-1ubuntu1~22.04' --with-bugurl=file:///usr/share/doc/gcc-11/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-11 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-11-XeT9lY/gcc-11-11.4.0/debian/tmp-gcn/usr --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04) 
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-r' '-nostdlib' '-v' '-o' '/tmp/dpacc_0yvR80/hostStubs.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/hostStubs.o.'
+ /usr/lib/gcc/x86_64-linux-gnu/11/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/ccCOAm65.res --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -z relro -o /tmp/dpacc_0yvR80/hostStubs.o -r -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. /tmp/dpacc_0yvR80/__dpa_a_out.meta.o /tmp/dpacc_0yvR80/dpa_kernel.dpa.o
+COLLECT_GCC_OPTIONS='-r' '-nostdlib' '-v' '-o' '/tmp/dpacc_0yvR80/hostStubs.o' '-mtune=generic' '-march=x86-64' '-dumpdir' '/tmp/dpacc_0yvR80/hostStubs.o.'
+#$ rm libexample.a
+#$ ar crv  libexample.a /tmp/dpacc_0yvR80/hostStubs.o 
+a - /tmp/dpacc_0yvR80/hostStubs.o

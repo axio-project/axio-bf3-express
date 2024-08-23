@@ -13,4 +13,6 @@ include_dirs = [
 ]
 
 for i in include_dirs:
+    if "__template__" in i or "__TEMPLATE__" in i:
+        continue
     print(i)

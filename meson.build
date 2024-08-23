@@ -65,7 +65,11 @@ endif
 
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
-doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	doca_pc_path = '/opt/mellanox/doca/lib/x86_64-linux-gnu/pkgconfig/'
+elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
+	doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+endif
 doca_modules = ['doca-grpc-libs', 'doca-libs']
 founded_doca_modules = []
 message('>>> Detecting DOCA, assume pc file of DOCA is located at ' + doca_pc_path)
@@ -89,51 +93,54 @@ if founded_doca_modules.length() == doca_modules.length()
 endif
 
 # >>>>>>>>>>>>>> FlexIO >>>>>>>>>>>>>>
-# flexio_pc_path = '/opt/mellanox/flexio/lib/pkgconfig/'
-# flexio_modules = ['libflexio-dev', 'libflexio-libc', 'libflexio-os', 'libflexio']
-# founded_flexio_modules = []
-# message('>>> Detecting FlexIO, assume pc file of FlexIO is located at ' + flexio_pc_path)
-# env.set('PKG_CONFIG_PATH', flexio_pc_path)
-# foreach flexio_module : flexio_modules
-# 	flexio_module_cflags = run_command(pkgconfig, '--cflags', flexio_module, env: env, check: false)
-# 	flexio_module_ldflags = run_command(pkgconfig, '--libs', '--static', flexio_module, env: env, check: false) # add '--static' option if static link is needed
-# 	flexio_module_version = run_command(pkgconfig, '--modversion', flexio_module, env: env, check: false)
-# 	if flexio_module_cflags.returncode() != 0 or flexio_module_ldflags.returncode() != 0 or flexio_module_version.returncode() != 0
-# 		message('>>>>>> Failed to find ' + flexio_module)
-# 	else
-# 		founded_flexio_modules += flexio_module
-# 		c_args += flexio_module_cflags.stdout().split()
-# 		ld_args += flexio_module_ldflags.stdout().split()
-# 		message('>>>>>> Found ' + flexio_module + ', version is ' + flexio_module_version.stdout().split()[0])
-# 	endif
-# endforeach
-# if founded_flexio_modules.length() == flexio_modules.length()
-# 	has_flexio = true
-# 	add_global_arguments('-DNICC_FLEXIO_ENABLED', language: ['c', 'cpp'])
-# endif
-
-# >>>>>>>>>>>>>> CUDA >>>>>>>>>>>>>>
-cudax_desired_version = '12.1'
-cudax_pc_path = '/usr/lib/pkgconfig'
-cudax_modules = ['cublas', 'cuda', 'cudart', 'cufft', 'cufftw', 'cufile', 'cuinj64', 'curand', 'cusolver', 'cusparse']
-founded_cudax_modules = []
-message('>>> Detecting CUDA Toolkit, assume pc file of CUDA Toolkit is located at ' + cudax_pc_path)
-env.set('PKG_CONFIG_PATH', cudax_pc_path)
-foreach cudax_module : cudax_modules
-	cudax_module_cflags = run_command(pkgconfig, '--cflags', cudax_module+'-'+cudax_desired_version, env: env, check: false)
-	cudax_module_ldflags = run_command(pkgconfig, '--libs', '--static', cudax_module+'-'+cudax_desired_version, env: env, check: false) # add '--static' option if static link is needed
-	cudax_module_version = run_command(pkgconfig, '--modversion', cudax_module+'-'+cudax_desired_version, env: env, check: false)
-	if cudax_module_cflags.returncode() != 0 or cudax_module_ldflags.returncode() != 0 or cudax_module_version.returncode() != 0
-		message('>>>>>> Failed to find ' + cudax_module+'-'+cudax_desired_version)
+flexio_pc_path = '/opt/mellanox/flexio/lib/pkgconfig/'
+# flexio_modules = ['libflexio-dev', 'libflexio']
+flexio_modules = ['libflexio']
+founded_flexio_modules = []
+message('>>> Detecting FlexIO, assume pc file of FlexIO is located at ' + flexio_pc_path)
+env.set('PKG_CONFIG_PATH', flexio_pc_path)
+foreach flexio_module : flexio_modules
+	flexio_module_cflags = run_command(pkgconfig, '--cflags', flexio_module, env: env, check: false)
+	flexio_module_ldflags = run_command(pkgconfig, '--libs', '--static', flexio_module, env: env, check: false) # add '--static' option if static link is needed
+	flexio_module_version = run_command(pkgconfig, '--modversion', flexio_module, env: env, check: false)
+	if flexio_module_cflags.returncode() != 0 or flexio_module_ldflags.returncode() != 0 or flexio_module_version.returncode() != 0
+		message('>>>>>> Failed to find ' + flexio_module)
 	else
-		founded_cudax_modules += cudax_module
-		c_args += cudax_module_cflags.stdout().split()
-		ld_args += cudax_module_ldflags.stdout().split()
-		message('>>>>>> Found ' + cudax_module + ', version is ' + cudax_module_version.stdout().split()[0])
+		founded_flexio_modules += flexio_module
+		c_args += flexio_module_cflags.stdout().split()
+		ld_args += flexio_module_ldflags.stdout().split()
+		message('>>>>>> Found ' + flexio_module + ', version is ' + flexio_module_version.stdout().split()[0])
 	endif
 endforeach
-if founded_cudax_modules.length() == cudax_modules.length()
-	has_cuda = true
+if founded_flexio_modules.length() == flexio_modules.length()
+	has_flexio = true
+endif
+
+# >>>>>>>>>>>>>> mlx5 >>>>>>>>>>>>>>
+if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+	mlx5_pc_path = '/usr/lib/x86_64-linux-gnu/pkgconfig/'
+elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
+	mlx5_pc_path = '/usr/lib/aarch64-linux-gnu/pkgconfig/'
+endif
+mlx5_modules = ['libmlx5', 'libibverbs']
+founded_mlx5_modules = []
+message('>>> Detecting MLX5 library, assume pc file of MLX5 is located at ' + mlx5_pc_path)
+env.set('PKG_CONFIG_PATH', mlx5_pc_path)
+foreach mlx5_module : mlx5_modules
+	mlx5_module_cflags = run_command(pkgconfig, '--cflags', mlx5_module, env: env, check: false)
+	mlx5_module_ldflags = run_command(pkgconfig, '--libs', '--static', mlx5_module, env: env, check: false) # add '--static' option if static link is needed
+	mlx5_module_version = run_command(pkgconfig, '--modversion', mlx5_module, env: env, check: false)
+	if mlx5_module_cflags.returncode() != 0 or mlx5_module_ldflags.returncode() != 0 or mlx5_module_version.returncode() != 0
+		message('>>>>>> Failed to find ' + mlx5_module)
+	else
+		founded_mlx5_modules += mlx5_module
+		c_args += mlx5_module_cflags.stdout().split()
+		ld_args += mlx5_module_ldflags.stdout().split()
+		message('>>>>>> Found ' + mlx5_module + ', version is ' + mlx5_module_version.stdout().split()[0])
+	endif
+endforeach
+if founded_mlx5_modules.length() == mlx5_modules.length()
+	has_mlx5 = true
 endif
 
 # >>>>>>>>>>>>>> Other Dependencies Found through Compiler >>>>>>>>>>>>>>
@@ -154,10 +161,13 @@ endif
 ##		so we block all deprecated-declarations warnings here to make log output of 
 ##		the build process cleaner
 c_args += ['-D_GNU_SOURCE', '-Wno-deprecated-declarations', '-g']
-c_args += ['--std=c++17']
+c_args += ['--std=c++17', '-Wno-missing-field-initializers']
 
 # necessary dependencies check
 assert(has_dpdk, 'couldn\'t find libdpdk')
+assert(has_doca, 'couldn\'t find libdoca')
+assert(has_flexio, 'couldn\'t find libflexio')
+assert(has_mlx5, 'couldn\'t find libmlx5')
 # =======================================================================
 
 # ==================== Static Configurations ====================
@@ -180,4 +190,3 @@ enable_print_with_color = 1
 
 message('subdir: ' + env_build_target)
 subdir(env_build_target)
-

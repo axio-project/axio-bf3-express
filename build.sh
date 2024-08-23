@@ -15,15 +15,15 @@ u_targets=()
 do_clean=false
 
 log() {
-  echo -e "\033[37m\033[40m [NICC Build Log] $1 \033[0m"
+  echo -e "\033[37m [NICC Build Log] $1 \033[0m"
 }
 
 warn() {
-  echo -e "\033[33m\033[40m [NICC Build Wrn] $1 \033[0m"
+  echo -e "\033[33m [NICC Build Wrn] $1 \033[0m"
 }
 
 error() {
-  echo -e "\033[31m\033[40m [NICC Build Err] $1 \033[0m"
+  echo -e "\033[31m [NICC Build Err] $1 \033[0m"
   exit 1
 }
 
@@ -36,12 +36,31 @@ print_usage() {
   echo "  -h  help message"
 }
 
+
+# func_desp: check dependencies
+check_deps() {
+  check_single_dep() {
+    if ! command -v $1 &> /dev/null; then
+      error "$1 required, please \"sudo apt-get install $1\""
+    fi
+  }
+
+  check_single_dep ntpdate
+}
+
+
 # func_desp:  generic building procedure
 # param_1:    name of the building target
 # param_2:    path to the building target
 build_nicc() {
   cd $script_dir
   log ">> building $1..."
+
+  # prevent clock skew between host and dpu
+  ntp_server="ntp.aliyun.com"
+  log ">>>> sync system time with $ntp_server..."
+  sudo ntpdate -u $ntp_server
+
   if [ ! -d "$2/build" ]; then
     log ">>>> generate building processing via meson..."
     export BUILD_TARGET=$2
@@ -57,7 +76,10 @@ build_nicc() {
   retval=$?
   if [ $retval -ne 0 ]; then
     grep -n -A 5 'error' $1_build.log | awk '{print} NR%2==0 {print ""}'
+    # cat $1_build.log
     error ">>>> building $1 failed, error message printed"
+  else
+    log "successfully built $1"
   fi
 }
 
@@ -74,6 +96,11 @@ clean_nicc() {
     log ">>>> no built target was founded, skipped"
   fi
 }
+
+# =========== Rotinue Starts Here ===========
+
+# check dependencies
+check_deps
 
 # parse command line options
 args=("$@")

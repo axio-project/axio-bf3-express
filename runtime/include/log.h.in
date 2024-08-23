@@ -21,7 +21,7 @@ fprintf(stream, "\
 #include <memory>
 #include <cxxabi.h>
 
-static std::string demangle(const char* name) {
+static __attribute__((unused)) std::string demangle(const char* name) {
 
     int status = -4; // some arbitrary value to eliminate the compiler warning
 
@@ -37,7 +37,7 @@ static std::string demangle(const char* name) {
 #else
 
 // does nothing if not g++
-static std::string demangle(const char* name) {
+static __attribute__((unused)) std::string demangle(const char* name) {
     return name;
 }
 

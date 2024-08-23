@@ -42,4 +42,3 @@ executable(
 	include_directories: runtime_inc_dirs,
 	install: false
 )
-
