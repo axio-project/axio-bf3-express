@@ -15,8 +15,5 @@
 // };
 
 nicc::ComponentDesp_DPA_t dpa_config = {
-    .base_desp = {
-        .quota = 256
-    },
-    .device_name = "mlx5_0"
+    .base_desp = { .quota = 128 },
 };

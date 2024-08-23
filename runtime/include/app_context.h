@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "log.h"
+#include "datapath/component.h"
 
 namespace nicc
 {
@@ -17,42 +18,21 @@ using appfunc_handler_typeid_t = uint8_t;
  */
 class AppHandler {
  public:
-  /*!
-   *  \brief  constructor
-   *  \param  tid_  type id of this app handler, note that type index
-   *                is defined in each component
-   */
-  AppHandler(appfunc_handler_typeid_t tid_);
-  ~AppHandler(){}
+    AppHandler(){}
+    ~AppHandler(){}
 
-  /*!
-   *  \brief  load binary into this app handler
-   *  \param  raw   pointer to the binary area
-   *  \param  size  size of the binary
-   *  \return NICC_SUCCESS for successfully loading
-   */
-  nicc_retval_t load_from_binary(uint8_t *raw, uint64_t size){
-    nicc_retval_t retval = NICC_ERROR_NOT_IMPLEMENTED;
-    return retval;
-  }
+    // host stub of the handler (for hetrogeneous process such as DPA)
+    union {
+        flexio_func_t *dpa_host_stub;
+    } host_stub;
 
-  typedef struct __dpa_host_stubs {
-    flexio_func_t *dpa_pkt_func;
-    flexio_func_t *dpa_pkt_func_init;
-  } __dpa_host_stubs_t;
+    // binary of the handler
+    union {
+        flexio_app  *dpa_binary;
+    } binary;
 
-  // host stub of the handler (for hetrogeneous process such as DPA)
-  union {
-    __dpa_host_stubs_t dpa;
-  } host_stubs;
-
-  // binary of the handler
-  union {
-    flexio_app  *dpa_binary;
-  } binary;
-
-  // typeid of this handler
-  appfunc_handler_typeid_t tid;
+    // typeid of this handler
+    appfunc_handler_typeid_t tid;
 
  private:
 };
@@ -63,25 +43,29 @@ class AppHandler {
  */
 class AppFunction {
  public:
-  /*!
-   *  \brief  constructor
-   *  \param  handlers   list of pointers to the actual function to be executed
-   */
-  AppFunction(std::vector<AppHandler*> &handlers);
-  ~AppFunction(){}
+    /*!
+     *  \brief  constructor
+     *  \param  handlers   list of pointers to the actual function to be executed
+     */
+    AppFunction(std::vector<AppHandler*>&& handlers_, ComponentBaseDesp_t* cb_desp_, component_typeid_t cid)
+        : handlers(handlers_), cb_desp(cb_desp_), component_id(cid)
+    {
+        if(unlikely(handlers.size() == 0)){
+            NICC_WARN_C("try to create app function without handler inserted, empty app function created");
+        }
+    }
+    ~AppFunction(){}
 
-  // TODO: more definition
-  nicc_retval_t modify_state();
+    // handler pointers -> handler type
+    std::vector<AppHandler*> handlers;
 
-  // handler pointers -> handler type
-  std::vector<AppHandler*> handlers;
+    // component block descriptor of this function
+    ComponentBaseDesp_t *cb_desp;
+
+    // index of the deploy component of this function
+    component_typeid_t component_id;
 
  private:
-  // index of the deploy component of this function
-  component_typeid_t _component_id;
-
-  // TODO: more definition
-  uint8_t *_state;
 };
 
 
@@ -90,29 +74,13 @@ class AppFunction {
  */
 class AppContext {
  public:
-  AppContext();
-  ~AppContext();
+    AppContext(){}
+    ~AppContext(){}
 
-  /*!
-   *  \brief  load functions genearted by compiler
-   *  \param  path   path to the compilation binaries
-   *  \return NICC_SUCCESS for successfully loading;
-   *          NICC_FAILED otherwise
-   */
-  nicc_retval_t load_functions_from_binaries(std::string path);
+    // all functions in this app context
+    std::vector<AppFunction*> functions;
 
  private:
-  // all functions in this app context
-  std::vector<AppFunction*> _functions;
-
-  /*!
-   *  \brief  load a function from compilation result from compiler
-   *  \param  bin   pointer to the raw binary (.a / .so)
-   *  \param  func  the generated AppFunction instance
-   *  \return NICC_SUCCESS for successfully loading;
-   *          NICC_FAILED otherwise
-   */
-  nicc_retval_t __load_single_function_from_binary(uint8_t *bin, AppFunction **func);
 };
 
 } // namespace nicc

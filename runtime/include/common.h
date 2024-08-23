@@ -16,6 +16,8 @@
 
 #include <doca_error.h>
 
+#include "debug.h"
+
 namespace nicc {
 
 #define _unused(x) ((void)(x))  // Make production build happy
@@ -55,12 +57,12 @@ static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<componen
 /**
  * ----------------------Simple methods----------------------
  */ 
-#if NICC_ENABLE_DEBUG_CHECK
+#if NICC_RUNTIME_DEBUG_CHECK
   #define NICC_CHECK_POINTER(ptr)   assert((ptr) != nullptr);
   #define NICC_ASSERT(condition)    assert((condition));
-#else // NICC_ENABLE_DEBUG_CHECK
+#else // NICC_RUNTIME_DEBUG_CHECK
     #define NICC_CHECK_POINTER(ptr)  _unused (ptr);
     #define NICC_ASSERT(condition)   _unused (condition);
-#endif // NICC_ENABLE_DEBUG_CHECK
+#endif // NICC_RUNTIME_DEBUG_CHECK
 
 } // namespace nicc

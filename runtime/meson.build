@@ -30,6 +30,10 @@ log_conf.set('nicc_print_debug', enable_print_debug)
 log_conf.set('nicc_print_with_color', enable_print_with_color)
 configure_file(input : 'include/log.h.in', output : 'log.h', configuration : log_conf)
 
+debug_conf = configuration_data()
+debug_conf.set('nicc_runtime_debug_check', enable_runtime_debug_check)
+configure_file(input : 'include/debug.h.in', output : 'debug.h', configuration : debug_conf)
+
 # build executable
 message('cflags: ' + ' '.join(c_args))
 message('ldflags: ' + ' '.join(ld_args))

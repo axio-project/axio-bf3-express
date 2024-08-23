@@ -2,53 +2,86 @@
 
 #include "common.h"
 #include "datapath_pipeline.h"
-
+#include "app_context.h"
 #include "datapath/dpa.h"
 #include "datapath/flow_engine.h"
 #include "datapath/dpa.h"
 
-// extern nicc::ComponentDesp_FlowEngine_t flow_engine_config;
+
+/*!
+ *  \brief  extern declaration of DPA binaries
+ *  \todo   remove this
+ */
+#ifdef __cplusplus
+    extern "C" {
+#endif
+
+extern struct flexio_app *l2_swap_wrapper;  // nicc/bin/l2_swap_wrapper.a
+extern flexio_func_t dpa_event_handler;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+
+#ifdef __cplusplus
+    }
+#endif
+
+
+/*!
+ *  \brief  extern declaration of component configurations
+ *  \todo   remove this
+ */
 extern nicc::ComponentDesp_DPA_t dpa_config;
 
-int main(){
-    // Parse config file
-    // TODO:
 
-    // init app contexts, including function and state for each datapath component
+int main(){
+    /*!
+     *  \brief  STEP 1: parse config file
+     */
     // TODO:
 
     /*!
-     *  \brief  init and allocate datapath components for all apps, then construct the datapath pipeline
+     *  \brief  STEP 2: create app contexts, including corresponding functions and handlers
+     */
+    nicc::AppHandler app_init_handler;
+    app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
+    app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
+    app_init_handler.binary.dpa_binary = l2_swap_wrapper;
+
+    nicc::AppHandler app_event_handler;
+    app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
+    app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
+    app_event_handler.binary.dpa_binary = l2_swap_wrapper;
+
+    nicc::ComponentDesp_DPA_t dpa_block_desp = {
+        .base_desp = { .quota = 1 },
+        .device_name = "mlx5_0"
+    };
+    nicc::AppFunction app_func = nicc::AppFunction(
+        /* hadnlers_ */ { &app_init_handler, &app_event_handler },
+        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
+        /* cid */ nicc::kComponent_DPA
+    );
+
+    nicc::AppContext app_cxt;
+    app_cxt.functions.push_back(&app_func);
+
+    /*!
+     *  \brief  STEP 3: initialize resourcxe pool, created all enabld components
      *  \note   options: kComponent_FlowEngine | kComponent_DPA | kComponent_ARM | kComponent_Decompress | kComponent_SHA
      */
     nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
-
-    // create the resource pool of nicc runtime
-    nicc::ResourcePool rpool(enabled_components, {
-        // { kComponent_FlowEngine, &flow_engine_config },
-        { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_config) }
-    });
-
-    // create
-    // desp: components 占用量
-    // function: 
-    //  DAG -> compiler -> [match, modify field, SHA, -ARM-, Compress]
-    //                      app-A: 01-11101 -> 01-11100 [不需要 per-hop MTable -> 省内存 + 动态切 chain] Overhead
-    //                      app-B: 01-
-    //                      [match, modify field, -SHA-, ARM, -Compress-]
-    //                      [避免 context-switch] [避免 lock] Performance
-
-    //                      两个表: [1] 将包归类为某个 app; [2] 该包在这个 app 的 functions chain 里要执行哪些 stages
-    //      node: function -> dpa_kernel + dpa_state / SoC kernel + soc_state / SHA kernel
-    //                                   [ctrl + user[*]]
-    //                          10 cores    mtable
-
-
-    // function: DatapathPipeline 为他们申请资源
-    // function/component MTable next-hop -> general (支持 baseline, 也支持 nicc mask 方案)
+    nicc::ResourcePool rpool(
+        enabled_components,
+        {
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_config) }
+        }
+    );
     
-    nicc::DatapathPipeline dp_pipeline(enabled_components, rpool);
+    /*!
+     *  \brief  STEP 4: create the datapath pipeline
+     */
+    nicc::DatapathPipeline dp_pipeline(rpool, &app_cxt);
     
+
     /* Init control path, including user-request channel, just-in-time verifier, and rule loader (SONiC) */
     /* Init control path MTs */
     // TODO: ctrl state [MTable] inialization

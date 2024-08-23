@@ -30,7 +30,7 @@ class ResourcePool {
 
     /*!
      *  \brief  allocate resource from enabled components
-     *  \param  cid     index of the componen to allocate resource on
+     *  \param  cid     index of the component to allocate resource on
      *  \param  desp    configration description of the block to be allocated
      *  \param  app_cxt context of the application
      *  \param  cb      the allocated component block
@@ -39,12 +39,24 @@ class ResourcePool {
         component_typeid_t cid, ComponentBaseDesp_t *desp, AppContext *app_cxt, ComponentBlock** cb
     );
 
+
+    /*!
+     *  \brief  return back resource to enabled components
+     *  \param  cid     index of the component to be returned
+     *  \param  cb      the component block to be returned
+     *  \param  app_cxt application context which the component block belongs to
+     *  \return NICC_SUCCESS for succesfully returning
+     */
+    nicc_retval_t deallocate(
+        component_typeid_t cid, ComponentBlock* cb, AppContext* app_cxt
+    );
+
  private:
     // maskable code that identify which components are enabled
     component_typeid_t _enabled_components;
 
     // map of all enabled component
-    std::map<uint8_t, void*> _component_map;
+    std::map<component_typeid_t, Component*> _component_map;
 };
 
 } // namespace nicc

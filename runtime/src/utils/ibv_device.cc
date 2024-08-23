@@ -7,11 +7,13 @@ namespace nicc {
  * \param   device_name [in]: device name
  * \return  device context on success and NULL otherwise
  */
-struct ibv_context* nicc_utils_ibv_open_device(const char *device_name){
+struct ibv_context* utils_ibv_open_device(const char *device_name){
     struct ibv_device **dev_list = nullptr;
     struct ibv_device *dev = nullptr;
     struct ibv_context *ibv_ctx = nullptr;
     int dev_idx;
+
+    NICC_CHECK_POINTER(device_name)
 
     dev_list = ibv_get_device_list(nullptr);
     if (unlikely(dev_list == nullptr)) {

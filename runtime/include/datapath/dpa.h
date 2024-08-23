@@ -66,7 +66,7 @@ typedef struct ComponentDesp_DPA {
     ComponentBaseDesp_t base_desp;
 
     // IB device name
-    char *device_name;
+    const char *device_name;
 
     /* ========== ComponentBlock_DPA fields ========== */
     // core id
@@ -126,7 +126,7 @@ class ComponentBlock_DPA : public ComponentBlock {
  public:
     ComponentBlock_DPA(Component* component, ComponentBaseDesp_t* desp) 
         : ComponentBlock(component, desp) {}
-    ~ComponentBlock_DPA();
+    ~ComponentBlock_DPA(){};
 
     /*!
      *  \brief  typeid of handlers register into DPA
@@ -146,6 +146,8 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return NICC_SUCCESS for successful unregisteration
      */
     nicc_retval_t unregister_app_function(AppFunction *app_func) override;
+
+    friend class Component_DPA;
 
  private:
     /*!
@@ -326,10 +328,11 @@ class Component_DPA : public Component {
 
     /*!
      *  \brief  return block of resource back to the component
-     *  \param  cb      the handle of the block to be deallocated
+     *  \param  app_cxt     app context which this block allocates to
+     *  \param  cb          the handle of the block to be deallocated
      *  \return NICC_SUCCESS for successful deallocation
      */
-    nicc_retval_t deallocate_block(ComponentBlock* cb) override;
+    nicc_retval_t deallocate_block(AppContext* app_cxt, ComponentBlock* cb) override;
 
  private:
     /*!

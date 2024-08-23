@@ -181,11 +181,14 @@ enable_print_warn = 1
 enable_print_log = 1
 
 # switch:   whether to print all debug messages
-enable_print_debug = 0
+enable_print_debug = 1
 
 # switch:   whether to print fatal/warn/debug/log with colors
 #           should be disabled when try to dump all outputs to a file
 enable_print_with_color = 1
+
+# switch:   whether conduct runtime bug checking
+enable_runtime_debug_check = 1
 # ===============================================================
 
 message('subdir: ' + env_build_target)

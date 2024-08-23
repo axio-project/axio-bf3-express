@@ -2,9 +2,10 @@
 
 #include <iostream>
 #include <map>
+#include <set>
 
 #include "common.h"
-#include "app_context.h"
+#include "log.h"
 
 namespace nicc {
 
@@ -12,6 +13,9 @@ namespace nicc {
 // forward declaration
 class ComponentBlock;
 class Component;
+class AppHandler;
+class AppFunction;
+class AppContext;
 
 
 /*!
@@ -79,6 +83,8 @@ class ComponentBlock {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
+    friend class Component;
+
  protected:
     // root component of this block
     Component *_component;
@@ -135,6 +141,16 @@ class Component {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
+    /*!
+     *  \brief  return block of resource back to the component
+     *  \param  app_cxt     app context which this block allocates to
+     *  \param  cb          the handle of the block to be deallocated
+     *  \return NICC_SUCCESS for successful deallocation
+     */
+    virtual nicc_retval_t deallocate_block(AppContext* app_cxt, ComponentBlock* cb){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
  protected:
     // component id
     component_typeid_t _cid;
@@ -146,7 +162,7 @@ class Component {
     ComponentBaseState_t *_state;
 
     // allocation table
-    std::map<AppContext*, std::vector<ComponentBlock*>> _allocate_map;
+    std::map<AppContext*, std::set<ComponentBlock*>> _allocate_map;
 
     /*!
      *  \brief  common procedure for block allocation
@@ -178,12 +194,12 @@ class Component {
         NICC_CHECK_POINTER(*cb = new CBlock(/* component */ this, /* desp */ desp));
         
         this->_state->quota -= desp->quota;
-        this->_allocate_map[app_cxt].push_back(*cb);
+        this->_allocate_map[app_cxt].insert(*cb);
 
         NICC_DEBUG_C(
-            "allocate block to application context: ",
-            " component_id(), app_cxt(), request(), remain()",
-            this->_cid, app_cxt, desp->quota, this->_state->quota
+            "allocate block to application context: "
+            "component_id(%u), cb(%p), app_cxt(%p), request(%lu), remain(%lu)",
+            this->_cid, *cb, app_cxt, desp->quota, this->_state->quota
         );
 
     exit:
@@ -192,13 +208,43 @@ class Component {
 
     /*!
      *  \brief  common procedure for block deallocation
-     *  \param  cb      the handle of the block to be deallocated
+     *  \param  app_cxt     app context which this block allocates to
+     *  \param  cb          the handle of the block to be deallocated
      *  \return NICC_SUCCESS for successful deallocation
      */
     template<typename CBlock>
-    nicc_retval_t __deallocate_block(CBlock* cb){
+    nicc_retval_t __deallocate_block(AppContext* app_cxt, CBlock* cb){
         nicc_retval_t retval = NICC_SUCCESS;
-        // TODO
+        
+        NICC_CHECK_POINTER(cb);
+        NICC_CHECK_POINTER(app_cxt);
+        NICC_CHECK_POINTER(this->_state);
+
+        if(unlikely(this->_allocate_map.count(app_cxt) == 0)){
+            NICC_WARN_C(
+                "failed to return component block from unexisted app context, omited: "
+                "component_id(%u), app_cxt(%p), cb(%p)",
+                this->_cid, app_cxt, cb
+            );
+            retval = NICC_ERROR_DUPLICATED;
+            goto exit;
+        }
+
+        if(unlikely(this->_allocate_map[app_cxt].count(cb) == 0)){
+            NICC_WARN_C(
+                "failed to return an unexisted component block, omited: "
+                "component_id(%u), app_cxt(%p), cb(%p)",
+                this->_cid, app_cxt, cb
+            );
+            retval = NICC_ERROR_DUPLICATED;
+            goto exit;
+        }
+
+        this->_state->quota += cb->_desp->quota;
+        this->_allocate_map[app_cxt].erase(cb);
+        delete cb;
+
+    exit:
         return retval;
     }
 

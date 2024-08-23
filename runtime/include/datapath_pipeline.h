@@ -1,51 +1,50 @@
-/**
- * @file datapath_pipeline.h
- * @brief All applications would be compiled into a single datapath pipeline. 
- * An instance of the datapath pipeline records all the allocated resources for each app, 
- * and exposes api for resource re-allocation. 
- */
-
 #pragma once
 
 #include <iostream>
 
 #include "common.h"
+#include "log.h"
 #include "resource_pool.h"
 #include "datapath/flow_engine.h"
+#include "datapath/dpa.h"
 
 namespace nicc {
 
 class DatapathPipeline {
-  /**
-   * ----------------------Parameters in Datapath level----------------------
-   */ 
-
-  /**
-   * ----------------------Datapath internal structures----------------------
-   */ 
-
-  /**
-   * ----------------------Datapath methods----------------------
-   */ 
-
  public:
-    DatapathPipeline(uint16_t enabled_components, ResourcePool& rpool);
+    /*! 
+     *  \brief  initialization of datapath pipeline
+     *  \param  rpool               global resource pool
+     *  \param  app_cxt             the application context of this datapath pipeline
+     */
+    DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt);
     ~DatapathPipeline();
 
-  /**
-   * ----------------------Util methods----------------------
-   */ 
-  
  private:
-  // component: flow engine
-  // Component_FlowEngine *_flow_engine;
-  
-  /*!
-   *  \brief  initialization of each dataplane component
-   *  \param  enabled_components  mask of used dataplane component
-   *  \param  rpool               global resource pool
-   */ 
-  nicc_retval_t __init(uint16_t enabled_components, ResourcePool& rpool);
+    // app_func -> component block
+    std::map<AppFunction*, ComponentBlock*> _component_block_map;
+    
+    // application context on this datapath pipeline
+    AppContext *_app_cxt;
+
+    /*!
+     *  \brief  allocate component block from the resource pool
+     *  \param  rpool               global resource pool
+     */ 
+    nicc_retval_t __allocate_component_blocks(ResourcePool& rpool);
+
+    /*!
+     *  \brief  register all functions onto the component block after allocation
+     *  \return NICC_SUCCESS for successfully registration
+     */ 
+    nicc_retval_t __register_functions();
+
+    /*!
+     *  \brief  return allocated component block to the resource pool
+     *  \param  rpool               global resource pool
+     *  \return NICC_SUCCESS for successfully deallocation
+     */ 
+    nicc_retval_t __deallocate_component_blocks(ResourcePool& rpool);
 };
 
 } // namespace nicc
