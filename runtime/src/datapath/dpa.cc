@@ -498,7 +498,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
     // allocate memory for SQ
     if(unlikely(NICC_SUCCESS != (
         retval = this->__allocate_wq_memory(
-            func_state->flexio_process, DPA_LOG_SQ_RING_DEPTH, &func_state->sq_transf
+            func_state->flexio_process, DPA_LOG_SQ_RING_DEPTH, 64, &func_state->sq_transf
         )
     ))){
         NICC_WARN_C(
@@ -514,7 +514,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
         ret = flexio_sq_create(func_state->flexio_process, NULL, cq_num, &sq_attr, &func_state->flexio_sq_ptr)
     ))){
         NICC_WARN_C(
-            "failed to create flexio SQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
+            "failed to create flexio SQ on flexio driver: flexio_process(%p), flexio_retval(%d)",
             func_state->flexio_process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
@@ -610,7 +610,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *fun
     // allocate RQ memories (data buffers and the ring)
     if(unlikely(NICC_SUCCESS != (
         retval = this->__allocate_wq_memory(
-            func_state->flexio_process, DPA_LOG_RQ_RING_DEPTH, &func_state->rq_transf
+            func_state->flexio_process, DPA_LOG_RQ_RING_DEPTH, sizeof(struct mlx5_wqe_data_seg), &func_state->rq_transf
         )
     ))){
         NICC_WARN_C(
@@ -697,20 +697,19 @@ nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *fun
  *  \note   this function is called within __allocate_sq_cq/__allocate_rq_cq
  *  \param  process         flexIO process
  *  \param  log_depth       log2 of the SQ/RQ depth
+ *  \param  wqe_size        size of wqe on the ring
  *  \param  wq_transf       SQ/RQ resource
  *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
  */
 nicc_retval_t ComponentBlock_DPA::__allocate_wq_memory(
-    struct flexio_process *process, int log_depth, struct dpa_wq *wq_transf
+    struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_wq *wq_transf
 ){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
 
-    // TODO: for debug, remove later
-    NICC_ASSERT(DPA_LOG_WQE_BSIZE == 6);
-
     NICC_CHECK_POINTER(process);
     NICC_CHECK_POINTER(wq_transf);
+    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
 
     wq_transf->wqd_daddr = static_cast<flexio_uintptr_t>(0x00);
     wq_transf->wq_ring_daddr = static_cast<flexio_uintptr_t>(0x00);
@@ -729,7 +728,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wq_memory(
 
     // allocate descriptor (wqe) queue, these memories is used by flexio driver
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
-        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_depth + DPA_LOG_WQE_BSIZE), &wq_transf->wq_ring_daddr))
+        (ret = flexio_buf_dev_alloc(process, LOG2VALUE(log_depth) * wqe_size, &wq_transf->wq_ring_daddr))
     )){
         NICC_WARN_C(
             "failed to allocate WQ ring: flexio_process(%p), flexio_retval(%u)",
