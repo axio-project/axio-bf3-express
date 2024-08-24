@@ -6,7 +6,6 @@
 
 #include "common.h"
 #include "log.h"
-#include "datapath/component.h"
 
 namespace nicc
 {

@@ -9,7 +9,7 @@
 #include "common.h"
 #include "log.h"
 #include "app_context.h"
-#include "datapath/component.h"
+#include "datapath/component_block.h"
 #include "utils/ibv_device.h"
 
 namespace nicc {
@@ -58,8 +58,18 @@ struct dpa_data_queues {
 
 
 /*!
- *  \brief  descriptor of DPA
- */
+*  \brief  state of DPA
+*/
+typedef struct ComponentState_DPA {
+    // basic state
+    ComponentBaseState_t base_state;
+    // state of DPA
+    uint8_t mock_state;
+} ComponentState_DPA_t;
+
+/*!
+*  \brief  descriptor of DPA
+*/
 typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */
     // basic desriptor
@@ -73,16 +83,6 @@ typedef struct ComponentDesp_DPA {
     //! \todo support EU group
     uint8_t core_id;
 } ComponentDesp_DPA_t;
-
-
-/*!
- *  \brief  state of DPA
- */
-typedef struct ComponentState_DPA {
-    // basic state
-    ComponentBaseState_t base_state;
-} ComponentState_DPA_t;
-
 
 /*!
  *  \brief  basic state of the function register 
@@ -124,8 +124,10 @@ typedef struct ComponentFuncState_DPA {
 
 class ComponentBlock_DPA : public ComponentBlock {
  public:
-    ComponentBlock_DPA(Component* component, ComponentBaseDesp_t* desp) 
-        : ComponentBlock(component, desp) {}
+    ComponentBlock_DPA() {
+        NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentBaseDesp_t*> (new ComponentDesp_DPA_t));
+        NICC_CHECK_POINTER(this->_state = reinterpret_cast<ComponentBaseState_t*> (new ComponentState_DPA_t));
+    }
     ~ComponentBlock_DPA(){};
 
     /*!
@@ -142,10 +144,9 @@ class ComponentBlock_DPA : public ComponentBlock {
 
     /*!
      *  \brief  deregister a application function
-     *  \param  app_func    the function to be deregistered from this compoennt
      *  \return NICC_SUCCESS for successful unregisteration
      */
-    nicc_retval_t unregister_app_function(AppFunction *app_func) override;
+    nicc_retval_t unregister_app_function() override;
 
     friend class Component_DPA;
 
@@ -189,11 +190,10 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  deallocate on-device resource for handlers running on DPA
      *  \note   this function is called within unregister_app_function
-     *  \param  app_func    application function which the event handler comes from
      *  \param  func_state  state of the function on this DPA block
      *  \return NICC_SUCCESS for successful deallocation
      */
-    nicc_retval_t __deallocate_device_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __deallocate_device_resources(ComponentFuncState_DPA_t *func_state);
 
     /*!
      *  \brief  init on-device resource for handlers running on DPA
@@ -303,39 +303,6 @@ class ComponentBlock_DPA : public ComponentBlock {
     nicc_retval_t __create_dpa_mkey(
         struct flexio_process *process, struct ibv_pd *pd, flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
     );
-};
-
-
-class Component_DPA : public Component {
- public:
-    Component_DPA() : Component() {
-        this->_cid = kComponent_DPA;
-    }
-    ~Component_DPA(){}
-
-    /*!
-     *  \brief  initialization of the components
-     *  \param  desp    descriptor to initialize the component
-     *  \return NICC_SUCCESS for successful initialization
-     */
-    nicc_retval_t init(ComponentBaseDesp_t* desp) override;
-
-    /*!
-     *  \brief  apply block of resource from the component
-     *  \param  desp    descriptor for allocation
-     *  \param  app_cxt app context which this block allocates to
-     *  \param  cb      the handle of the allocated block
-     *  \return NICC_SUCCESS for successful allocation
-     */
-    nicc_retval_t allocate_block(ComponentBaseDesp_t* desp, AppContext* app_cxt, ComponentBlock** cb) override;
-
-    /*!
-     *  \brief  return block of resource back to the component
-     *  \param  app_cxt     app context which this block allocates to
-     *  \param  cb          the handle of the block to be deallocated
-     *  \return NICC_SUCCESS for successful deallocation
-     */
-    nicc_retval_t deallocate_block(AppContext* app_cxt, ComponentBlock* cb) override;
 };
 
 } // namespace nicc

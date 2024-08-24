@@ -4,9 +4,9 @@
 
 #include "common.h"
 #include "log.h"
-#include "resource_pool.h"
-#include "datapath/flow_engine.h"
-#include "datapath/dpa.h"
+#include "resources/resource_pool.h"
+
+#include "datapath/block_impl/dpa.h"
 
 namespace nicc {
 

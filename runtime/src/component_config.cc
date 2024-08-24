@@ -4,9 +4,8 @@
 #include "common.h"
 #include "datapath_pipeline.h"
 
-#include "datapath/dpa.h"
-#include "datapath/flow_engine.h"
-#include "datapath/dpa.h"
+#include "datapath/block_impl/dpa.h"
+#include "datapath/block_impl/flow_engine.h"
 
 // nicc::ComponentDesp_FlowEngine_t flow_engine_config = {
 //     .base_config = {

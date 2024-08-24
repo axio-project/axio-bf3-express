@@ -20,6 +20,41 @@
 
 namespace nicc {
 
+/**
+ * \brief  basic descriptor of the component
+ * \note   [1] this structure should be inherited and 
+ *         implenented by each component
+ *         [2] this structure could be used for describing
+ *         either root component or component block
+ */
+typedef struct ComponentBaseDesp {
+    // quota of the component
+    uint64_t quota;
+} ComponentBaseDesp_t;
+
+/**
+ * \brief  basic state of the component
+ * \note   [1] this structure should be inherited and
+ *         implenented by each component
+ *         [2] this structure could be used for describing
+ *         either root component or component block
+ */
+typedef struct ComponentBaseState {
+    // quota of the component
+    uint64_t quota;
+} ComponentBaseState_t;
+
+/*!
+ *  \brief  basic state of the function register 
+            into the component
+ *  \note   this structure should be inherited and 
+ *          implenented by each component
+ */
+typedef struct ComponentFuncBaseState {
+    // basic state
+    uint8_t mock_state;
+} ComponentFuncBaseState_t;
+
 #define _unused(x) ((void)(x))  // Make production build happy
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
