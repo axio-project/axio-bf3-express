@@ -333,21 +333,6 @@ class Component_DPA : public Component {
      *  \return NICC_SUCCESS for successful deallocation
      */
     nicc_retval_t deallocate_block(AppContext* app_cxt, ComponentBlock* cb) override;
-
- private:
-    /*!
-     *  \brief  register DPA function state and allocate memory
-     *  \return NICC_SUCCESS on success;
-     *          NICC_ERROR otherwise
-     */
-    nicc_retval_t __dpa_allocate_device_resources();
-
-    /*!
-     *  \brief  init DPA device resources
-     *  \return NICC_SUCCESS on success;
-     *          NICC_ERROR otherwise
-     */
-    nicc_retval_t __init_dpa_device_resources(AppContext *app_context);
 };
 
 } // namespace nicc

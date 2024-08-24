@@ -10,9 +10,16 @@
 
 namespace nicc
 {
-
+/**
+ * ----------------------General definations----------------------
+ */ 
 using appfunc_handler_typeid_t = uint8_t;
-
+  /**
+   * ----------------------Pre-defined Parameters----------------------
+   */ 
+  /**
+   * ----------------------Internal Structures----------------------
+   */ 
 /*!
  *  \brief  handler within a function
  */

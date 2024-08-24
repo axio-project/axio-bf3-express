@@ -20,7 +20,8 @@ class ResourcePool {
      *  \param  config_map          component id -> component configuration
      */
     ResourcePool(
-        component_typeid_t enabled_components, std::map<component_typeid_t, ComponentBaseDesp_t*> &&config_map
+        component_typeid_t enabled_components, 
+        std::map<component_typeid_t, ComponentBaseDesp_t*> &&config_map
     );
 
     ~ResourcePool(){

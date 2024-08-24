@@ -2,14 +2,13 @@
 
 namespace nicc {
 
-/*! 
- *  \brief  initialization of datapath pipeline
- *  \param  rpool               global resource pool
- *  \param  enabled_components  identify which component to be activated
- *  \param  config_map          component id -> component block configuration
- *  \param  app_cxt             the application context of this datapath pipeline
+/**
+ * \brief  initialization of datapath pipeline
+ * \param  rpool               global resource pool
+ * \param  app_cxt             the application context of this datapath 
  */
-DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt) : _app_cxt(app_cxt) {
+DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt) 
+                                    : _app_cxt(app_cxt) {
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(app_cxt);
