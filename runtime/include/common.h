@@ -27,7 +27,8 @@ namespace nicc {
 #define KB(x) (static_cast<size_t>(x) << 10)
 #define MB(x) (static_cast<size_t>(x) << 20)
 #define GB(x) (static_cast<size_t>(x) << 30)
-#define LOG2VALUE(l) (1UL << (l))
+#define LOG2VALUE(l)    (1UL << (l))
+#define LOG2(n)         (std::log2((double)(n)))
 
 // return values
 enum nicc_retval_t {

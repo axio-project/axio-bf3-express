@@ -16,11 +16,11 @@ namespace nicc {
 
 
 /* Logarithm ring size */
-#define DPA_LOG_SQ_RING_DEPTH       7                                   // 2^7 entries
-#define DPA_LOG_RQ_RING_DEPTH       7                                   // 2^7 entries
-#define DPA_LOG_CQ_RING_DEPTH       7                                   // 2^7 entries
-#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 11                                  // WQ buffer logarithmic size
-#define DPA_LOG_WQE_BSIZE           sizeof(struct mlx5_wqe_data_seg)    // size of wqe inside SQ/RQ of DPA
+#define DPA_LOG_SQ_RING_DEPTH       7       // 2^7 entries
+#define DPA_LOG_RQ_RING_DEPTH       7       // 2^7 entries
+#define DPA_LOG_CQ_RING_DEPTH       7       // 2^7 entries
+#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 11      // WQ buffer logarithmic size
+#define DPA_LOG_WQE_BSIZE           6       // size of wqe inside SQ/RQ of DPA (sizeof(struct mlx5_wqe_data_seg))
 
 /* Queues index mask, represents the index of the last CQE/WQE in the queue */
 #define DPA_CQ_IDX_MASK ((1 << DPA_LOG_CQ_RING_DEPTH) - 1)
@@ -221,11 +221,14 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \note   this function is called within __allocate_sq_cq / __allocate_rq_cq
      *  \param  process         flexIO process
      *  \param  log_depth       log2 of the SQ/RQ depth
+     *  \param  wqe_size        size of wqe on the ring
      *  \param  sq_transf       created SQ/RQ resource
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __allocate_wq_memory(struct flexio_process *process, int log_depth, struct dpa_wq *wq_transf);
-    
+    nicc_retval_t __allocate_wq_memory(
+        struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_wq *wq_transf
+    );
+
     /*!
      *  \brief  deallocate memory resource for SQ/RQ
      *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
