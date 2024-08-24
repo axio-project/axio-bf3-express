@@ -1,4 +1,4 @@
-#include "resource_pool.h"
+#include "resources/resource_pool.h"
 
 namespace nicc {
 
@@ -33,7 +33,7 @@ ResourcePool::ResourcePool(component_typeid_t enabled_components, std::map<compo
                 // component = new Component_FlowEngine();
                 break;
             case kComponent_DPA:
-                component = new Component_DPA();
+                NICC_CHECK_POINTER( component = new Component_DPA() );
                 break;
             default:
                 NICC_ERROR_C_DETAIL(
@@ -55,17 +55,15 @@ ResourcePool::ResourcePool(component_typeid_t enabled_components, std::map<compo
  *  \brief  allocate resource from enabled components
  *  \param  cid     index of the componen to allocate resource on
  *  \param  desp    configration description of the block to be allocated
- *  \param  app_cxt context of the application
  *  \param  cb      the allocated component block
  *  \return NICC_SUCCESS for succesfully allocation
  */
 nicc_retval_t ResourcePool::allocate(
-    component_typeid_t cid, ComponentBaseDesp_t *desp, AppContext *app_cxt, ComponentBlock** cb
+    component_typeid_t cid, ComponentBaseDesp_t *desp, ComponentBlock* cb
 ){
     nicc_retval_t retval = NICC_SUCCESS;
     Component *component = nullptr;
 
-    NICC_CHECK_POINTER(app_cxt);
     NICC_CHECK_POINTER(desp);
     NICC_CHECK_POINTER(cb);
 
@@ -76,7 +74,7 @@ nicc_retval_t ResourcePool::allocate(
     NICC_CHECK_POINTER(component = reinterpret_cast<Component*>(this->_component_map[cid]));
     
     if(unlikely(
-        NICC_SUCCESS != (retval = component->allocate_block(desp, app_cxt, cb))
+        NICC_SUCCESS != (retval = component->allocate_block(desp, cb))
     )){
         NICC_WARN_C("failed to allocate component block: component_id(%u), retval(%u)", cid, retval);
     }
@@ -89,15 +87,13 @@ nicc_retval_t ResourcePool::allocate(
  *  \brief  return back resource to enabled components
  *  \param  cid     index of the component to be returned
  *  \param  cb      the component block to be returned
- *  \param  app_cxt application context which the component block belongs to
  *  \return NICC_SUCCESS for succesfully returning
  */
-nicc_retval_t ResourcePool::deallocate(component_typeid_t cid, ComponentBlock* cb, AppContext* app_cxt){
+nicc_retval_t ResourcePool::deallocate(component_typeid_t cid, ComponentBlock* cb){
     nicc_retval_t retval = NICC_SUCCESS;
     Component *component = nullptr;
 
     NICC_CHECK_POINTER(cb);
-    NICC_CHECK_POINTER(app_cxt);
 
     if(unlikely(this->_component_map.count(cid) == 0)){
         NICC_WARN_C("failed to allocate compoent block, not enabled: component_id(%u)", cid);
@@ -106,11 +102,11 @@ nicc_retval_t ResourcePool::deallocate(component_typeid_t cid, ComponentBlock* c
     NICC_CHECK_POINTER(component = reinterpret_cast<Component*>(this->_component_map[cid]));
 
     if(unlikely(
-        NICC_SUCCESS != (retval = component->deallocate_block(app_cxt, cb))
+        NICC_SUCCESS != (retval = component->deallocate_block(cb))
     )){
         NICC_WARN_C(
-            "failed to deallocate component block: app_cxt(%p), component_id(%u), retval(%u)",
-            app_cxt, cid, retval
+            "failed to deallocate component block: component_id(%u), retval(%u)",
+            cid, retval
         );
         goto exit;
     }

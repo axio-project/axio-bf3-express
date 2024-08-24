@@ -1,10 +1,13 @@
 #include <iostream>
 
 #include "common.h"
+#include "resources/component_impl/dpa_component.h"
 #include "datapath_pipeline.h"
-#include "app_context.h"
-#include "datapath/flow_engine.h"
-#include "datapath/dpa.h"
+#include "resources/resource_pool.h"
+
+// #include "app_context.h"
+// #include "datapath/flow_engine.h"
+// #include "datapath/dpa.h"
 
 /**
  * \brief  extern declaration of DPA binaries
@@ -21,9 +24,6 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 #ifdef __cplusplus
     }
 #endif
-
-
-
 
 int main(){
     /**

@@ -8,7 +8,8 @@
     #include <rte_flow.h>
 #endif // NICC_DOCA_ENABLED
 
-#include "datapath/component.h"
+#include "resources/component.h"
+#include "datapath/component_block.h"
 
 namespace nicc {
 

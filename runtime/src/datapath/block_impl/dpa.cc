@@ -1,84 +1,6 @@
-#include "datapath/dpa.h"
+#include "datapath/block_impl/dpa.h"
 
 namespace nicc {
-
-/*!
- *  \brief  initialization of the components
- *  \param  desp    descriptor to initialize the component
- *  \return NICC_SUCCESS for successful initialization
- */
-nicc_retval_t Component_DPA::init(ComponentBaseDesp_t* desp) {
-    nicc_retval_t retval = NICC_SUCCESS;
-    ComponentState_DPA_t *dpa_state;
-
-    // bind descriptor
-    NICC_CHECK_POINTER(this->_desp = desp);
-
-    // allocate and bind state
-    NICC_CHECK_POINTER(dpa_state = new ComponentState_DPA_t);
-    this->_state = reinterpret_cast<ComponentBaseState_t*>(dpa_state);
-    this->_state->quota = this->_desp->quota;
-
-    return retval;
-}
-
-
-/*!
- *  \brief  apply block of resource from the component
- *  \param  desp    descriptor for allocation
- *  \param  app_cxt app context which this block allocates to
- *  \param  cb      the handle of the allocated block
- *  \return NICC_SUCCESS for successful allocation
- */
-nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, AppContext* app_cxt, ComponentBlock** cb) {
-    nicc_retval_t retval = NICC_SUCCESS;
-    ComponentBlock_DPA *dpa_cb = nullptr;
-    ComponentState_DPA_t *dpa_block_state;
-
-    NICC_CHECK_POINTER(desp);
-    NICC_CHECK_POINTER(cb);
-
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_block<ComponentBlock_DPA>(desp, app_cxt, &dpa_cb)
-    ))){
-        NICC_WARN_C("failed to allocate block: retval(%u)", retval);
-        goto exit;
-    }
-    NICC_CHECK_POINTER(*cb = dpa_cb);
-
-    
-    NICC_CHECK_POINTER(dpa_block_state = new ComponentState_DPA_t);
-    dpa_cb->_state = reinterpret_cast<ComponentBaseState_t*>(dpa_block_state);
-    ///!    \todo   transfer state between component and the created block
-
-exit:
-    return retval;
-}
-
-
-/*!
- *  \brief  return block of resource back to the component
- *  \param  app_cxt     app context which this block allocates to
- *  \param  cb          the handle of the block to be deallocated
- *  \return NICC_SUCCESS for successful deallocation
- */
-nicc_retval_t Component_DPA::deallocate_block(AppContext* app_cxt, ComponentBlock* cb) {
-    nicc_retval_t retval = NICC_SUCCESS;
-    ComponentBlock_DPA *dpa_cb = reinterpret_cast<ComponentBlock_DPA*>(cb);
-
-    NICC_CHECK_POINTER(dpa_cb);
-
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__deallocate_block<ComponentBlock_DPA>(app_cxt, dpa_cb)
-    ))){
-        NICC_WARN_C("failed to deallocate block: retval(%u)", retval);
-        goto exit;
-    }
-
-exit:
-    return retval;
-}
-
 
 /*!
  *  \brief  register a new application function into this component
@@ -92,11 +14,6 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
     ComponentFuncState_DPA_t *func_state; 
 
     NICC_CHECK_POINTER(app_func);
-    if(unlikely(this->_function_state_map.count(app_func) > 0)){
-        NICC_WARN_C("try to register duplicated functions, omited: app_func(%p)", app_func);
-        retval = NICC_ERROR_DUPLICATED;
-        goto exit;
-    }
 
     // create and init function state on this component
     NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t());
@@ -163,7 +80,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
     }
 
     // insert to function map
-    this->_function_state_map.insert({ app_func, reinterpret_cast<ComponentFuncBaseState_t*>(func_state) });
+    this->_function_state = reinterpret_cast<ComponentFuncBaseState_t*>(func_state);
 
  exit:
     // TODO: destory if failed
@@ -176,27 +93,16 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
  *  \param  app_func the function to be deregistered from this compoennt
  *  \return NICC_SUCCESS for successful unregisteration
  */
-nicc_retval_t ComponentBlock_DPA::unregister_app_function(AppFunction *app_func){
+nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentFuncState_DPA_t *func_state; 
-
-    NICC_CHECK_POINTER(app_func);
-    if(unlikely(this->_function_state_map.count(app_func) == 0)){
-        NICC_WARN_C("try to unregister a unexist app function, omited: app_func(%p)", app_func);
-        retval = NICC_ERROR_NOT_FOUND;
-        goto exit;
-    }
 
     // obtain function state
-    func_state = reinterpret_cast<ComponentFuncState_DPA_t*>(this->_function_state_map[app_func]);
-    NICC_CHECK_POINTER(func_state);
-
-    // remove from state map
-    this->_function_state_map.erase(app_func);
+    NICC_CHECK_POINTER( this->_function_state );
 
     // deallocate resource for event handler
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__deallocate_device_resources(app_func, func_state))
+        (retval = this->__deallocate_device_resources( 
+                        reinterpret_cast<ComponentFuncState_DPA_t*> (this->_function_state) ))
     )){
         NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
         goto exit;
@@ -204,14 +110,15 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(AppFunction *app_func)
 
     // unregister event handler
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__unregister_event_handler(func_state))
+        (retval = this->__unregister_event_handler( 
+                        reinterpret_cast<ComponentFuncState_DPA_t*> (this->_function_state) ))
     )){
         NICC_WARN_C("failed to unregister event handler on DPA block: retval(%u)", retval);
         goto exit;
     }
 
     // delete the function state
-    delete func_state;
+    delete this->_function_state;
 
 exit:
     return retval;
@@ -987,15 +894,13 @@ exit:
 /*!
  *  \brief  deallocate on-device resource for handlers running on DPA
  *  \note   this function is called within unregister_app_function
- *  \param  app_func    application function which the event handler comes from
  *  \param  func_state  state of the function on this DPA block
  *  \return NICC_SUCCESS for successful deallocation
  */
-nicc_retval_t ComponentBlock_DPA::__deallocate_device_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state){
+nicc_retval_t ComponentBlock_DPA::__deallocate_device_resources(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
 
-    NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
     // deallocate SQ/CQ

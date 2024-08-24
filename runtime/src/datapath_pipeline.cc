@@ -70,12 +70,19 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool)
         NICC_CHECK_POINTER(app_func = this->_app_cxt->functions[i]);
 
         component_block = nullptr;
+        switch (app_func->component_id) {
+            case kComponent_DPA:
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_DPA);
+                break;
+            default:
+                NICC_ERROR_C("unknown component id: component_id(%u)", app_func->component_id);
+                break;
+        }
 
         retval = rpool.allocate(
             /* cid */ app_func->component_id,
             /* desp */ app_func->cb_desp,
-            /* app_cxt */ this->_app_cxt,
-            /* cb */ &component_block
+            /* cb */ component_block
         );
         if(unlikely(NICC_SUCCESS != retval)){
             NICC_WARN_C(
@@ -97,8 +104,7 @@ exit:
             NICC_CHECK_POINTER(cb_map_iter->second);
             retval = rpool.deallocate(
                 /* cid */ cb_map_iter->first->component_id,
-                /* cb */ cb_map_iter->second,
-                /* app_cxt */ this->_app_cxt
+                /* cb */ cb_map_iter->second
             );
             if(unlikely(NICC_SUCCESS != retval)){
                 NICC_WARN_C(
@@ -127,8 +133,7 @@ nicc_retval_t DatapathPipeline::__deallocate_component_blocks(ResourcePool& rpoo
         NICC_CHECK_POINTER(cb_map_iter->second);
         retval = rpool.deallocate(
             /* cid */ cb_map_iter->first->component_id,
-            /* cb */ cb_map_iter->second,
-            /* app_cxt */ this->_app_cxt
+            /* cb */ cb_map_iter->second
         );
         if(unlikely(NICC_SUCCESS != retval)){
             NICC_WARN_C(
@@ -177,7 +182,7 @@ exit:
             NICC_CHECK_POINTER(component_block = cb_map_iter->second);
 
             if(unlikely(NICC_SUCCESS != (
-                retval = component_block->unregister_app_function(app_func)
+                retval = component_block->unregister_app_function()
             ))){
                 NICC_WARN_C(
                     "failed to unregister app function on the component block: retval(%u), component_id(%u)",
