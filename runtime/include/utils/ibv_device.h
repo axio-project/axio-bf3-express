@@ -9,6 +9,13 @@
 
 namespace nicc {
 
+
+typedef struct device_state {
+    struct ibv_context *ibv_ctx;
+    const char *device_name;
+} device_state_t;
+
+
 /*!
  * \brief   Opens the device and returns the device context
  * \param   device_name [in]: device name

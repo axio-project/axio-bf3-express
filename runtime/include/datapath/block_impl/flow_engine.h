@@ -2,15 +2,84 @@
 
 #include <iostream>
 
-#if defined(NICC_DOCA_ENABLED)
-    #include <doca_flow.h>
-#else
-    #include <rte_flow.h>
-#endif // NICC_DOCA_ENABLED
+#include <doca_flow.h>
+#include <infiniband/mlx5dv.h>
+#include <infiniband/mlx5_api.h>
 
-#include "resources/component.h"
+#include "common.h"
+#include "log.h"
+#include "app_context.h"
 #include "datapath/component_block.h"
 
+
 namespace nicc {
+
+
+/*!
+*  \brief  state of FlowEngine
+*/
+typedef struct ComponentState_FlowEngine {
+    // basic state
+    ComponentBaseState_t base_state;
+
+    // state of FlowEngine
+    uint8_t mock_state;
+} ComponentState_FlowEngine_t;
+
+/*!
+*  \brief  descriptor of FlowEngine
+*/
+typedef struct ComponentDesp_FlowEngine {
+    /* ========== Common fields ========== */
+    // basic desriptor
+    ComponentBaseDesp_t base_desp;
+} ComponentDesp_FlowEngine_t;
+
+
+/*!
+ *  \brief  basic state of the function register 
+            into the component
+ *  \note   this structure should be inherited and 
+ *          implenented by each component
+ */
+typedef struct ComponentFuncState_FlowEngine {
+    ComponentFuncBaseState_t base_state;
+
+    struct mlx5dv_dr_domain *domain;
+} ComponentFuncState_FlowEngine_t;
+
+
+class ComponentBlock_FlowEngine : public ComponentBlock {
+ public:
+    ComponentBlock_FlowEngine() {
+        NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentBaseDesp_t*> (new ComponentDesp_FlowEngine_t));
+        NICC_CHECK_POINTER(this->_state = reinterpret_cast<ComponentBaseState_t*> (new ComponentState_FlowEngine_t));
+    }
+    ~ComponentBlock_FlowEngine(){};
+
+    /*!
+     *  \brief  typeid of handlers register into FlowEngine
+     */
+    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
+
+    /*!
+     *  \brief  register a new application function into this component
+     *  \param  app_func  the function to be registered into this component
+     *  \param  device_state        global device state
+     *  \return NICC_SUCCESS for successful registeration
+     */
+    nicc_retval_t register_app_function(AppFunction *app_func, device_state_t &device_state) override;
+
+    /*!
+     *  \brief  deregister a application function
+     *  \return NICC_SUCCESS for successful unregisteration
+     */
+    nicc_retval_t unregister_app_function() override;
+
+    friend class Component_FlowEngine;
+ 
+ private:
+};
+
 
 } // namespace nicc

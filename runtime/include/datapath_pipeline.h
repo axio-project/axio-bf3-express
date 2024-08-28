@@ -5,10 +5,11 @@
 #include "common.h"
 #include "log.h"
 #include "resources/resource_pool.h"
-
+#include "utils/ibv_device.h"
 #include "datapath/block_impl/dpa.h"
 
 namespace nicc {
+
 
 class DatapathPipeline {
  public:
@@ -16,8 +17,9 @@ class DatapathPipeline {
      *  \brief  initialization of datapath pipeline
      *  \param  rpool               global resource pool
      *  \param  app_cxt             the application context of this datapath pipeline
+     *  \param  device_state        global device state
      */
-    DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt);
+    DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt, device_state_t &device_state);
     ~DatapathPipeline();
 
  private:
@@ -35,9 +37,10 @@ class DatapathPipeline {
 
     /*!
      *  \brief  register all functions onto the component block after allocation
+     *  \param  device_state        global device state
      *  \return NICC_SUCCESS for successfully registration
      */ 
-    nicc_retval_t __register_functions();
+    nicc_retval_t __register_functions(device_state_t &device_state);
 
     /*!
      *  \brief  return allocated component block to the resource pool

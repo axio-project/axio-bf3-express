@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include "app_context.h"
+#include "utils/ibv_device.h"
 
 namespace nicc {
 
@@ -15,9 +16,10 @@ class ComponentBlock {
     /*!
      *  \brief  register a new application function into this component
      *  \param  app_func  the function to be registered into this component
+     *  \param  device_state        global device state
      *  \return NICC_SUCCESS for successful registeration
      */
-    virtual nicc_retval_t register_app_function(AppFunction *app_func){
+    virtual nicc_retval_t register_app_function(AppFunction *app_func, device_state_t &device_state){
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 

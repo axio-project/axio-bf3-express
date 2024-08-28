@@ -34,6 +34,11 @@ class AppHandler {
 
     // binary of the handler
     union {
+        // for flow engine
+        void *match_field;
+        void *action_space;
+        
+        // for DPA
         flexio_app  *dpa_binary;
     } binary;
 

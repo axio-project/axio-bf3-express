@@ -2,16 +2,20 @@
 
 namespace nicc {
 
-/**
- * \brief  initialization of datapath pipeline
- * \param  rpool               global resource pool
- * \param  app_cxt             the application context of this datapath 
- */
-DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt) 
-                                    : _app_cxt(app_cxt) {
+
+ /*! 
+  *  \brief  initialization of datapath pipeline
+  *  \param  rpool               global resource pool
+  *  \param  app_cxt             the application context of this datapath pipeline
+  *  \param  device_state        global device state
+  */
+DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt, device_state_t &device_state)
+    : _app_cxt(app_cxt) 
+{                                    
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(app_cxt);
+    NICC_CHECK_POINTER(device_state.ibv_ctx);
 
     // allocate component block from resource pool
     if(unlikely(NICC_SUCCESS != (
@@ -23,7 +27,7 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt)
 
     // register functions onto each component block
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__register_functions()
+        retval = this->__register_functions(device_state)
     ))){
         NICC_WARN_C("failed to register functions onto component blocks: retval(%u)", retval);
         goto deallocate_cb;
@@ -149,9 +153,10 @@ nicc_retval_t DatapathPipeline::__deallocate_component_blocks(ResourcePool& rpoo
 
 /*!
  *  \brief  register all functions onto the component block after allocation
+ *  \param  device_state        global device state
  *  \return NICC_SUCCESS for successfully registration
  */ 
-nicc_retval_t DatapathPipeline::__register_functions(){
+nicc_retval_t DatapathPipeline::__register_functions(device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     typename std::map<AppFunction*, ComponentBlock*>::iterator cb_map_iter;
     AppFunction *app_func;
@@ -163,7 +168,7 @@ nicc_retval_t DatapathPipeline::__register_functions(){
         NICC_CHECK_POINTER(component_block = cb_map_iter->second);
 
         if(unlikely(NICC_SUCCESS != (
-            retval = component_block->register_app_function(app_func)
+            retval = component_block->register_app_function(app_func, device_state)
         ))){
             NICC_WARN_C(
                 "failed to register app function onto the component block: retval(%u), component_id(%u)",

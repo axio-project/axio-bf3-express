@@ -26,6 +26,10 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 #endif
 
 int main(){
+    nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
+    dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
+    NICC_CHECK_POINTER(dev_state.ibv_ctx);
+
     /**
      * \brief  STEP 1: parse config file, create all component descriptors
      * \note   options: kComponent_FlowEngine | kComponent_DPA
@@ -81,7 +85,7 @@ int main(){
     /*!
      *  \brief  STEP 4: create the datapath pipeline
      */
-    nicc::DatapathPipeline dp_pipeline(rpool, &app_cxt);
+    nicc::DatapathPipeline dp_pipeline(rpool, &app_cxt, dev_state);
     
 
     /* Init control path, including user-request channel, just-in-time verifier, and rule loader (SONiC) */

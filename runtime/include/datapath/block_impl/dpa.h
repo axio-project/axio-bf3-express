@@ -10,7 +10,6 @@
 #include "log.h"
 #include "app_context.h"
 #include "datapath/component_block.h"
-#include "utils/ibv_device.h"
 
 namespace nicc {
 
@@ -95,7 +94,6 @@ typedef struct ComponentFuncState_DPA {
     ComponentFuncBaseState_t base_state;
 
     // IB Verbs resources
-    struct ibv_context		    *ibv_ctx;		    // IB device context
     struct ibv_pd			    *pd;			    // Protection domain
     struct mlx5dv_devx_uar      *uar;			    // user access region
 
@@ -119,6 +117,9 @@ typedef struct ComponentFuncState_DPA {
 
     /* ========== on-device metadata ========== */
     flexio_uintptr_t		    d_dev_queues;		// mirror of dev_queues on device
+
+    /* ========== global device metadata ========== */
+    struct ibv_context          *ibv_ctx;		    // IB device context
 } ComponentFuncState_DPA_t;
 
 
@@ -138,9 +139,10 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  register a new application function into this component
      *  \param  app_func  the function to be registered into this component
+     *  \param  device_state        global device state
      *  \return NICC_SUCCESS for successful registeration
      */
-    nicc_retval_t register_app_function(AppFunction *app_func) override;
+    nicc_retval_t register_app_function(AppFunction *app_func, device_state_t &device_state) override;
 
     /*!
      *  \brief  deregister a application function

@@ -7,23 +7,33 @@ namespace nicc {
  *  \param  app_func    the function to be registered into this component
  *  \return NICC_SUCCESS for successful registeration
  */
-nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func){
+ 
+/*!
+ *  \brief  register a new application function into this component
+ *  \param  app_func  the function to be registered into this component
+ *  \param  device_state        global device state
+ *  \return NICC_SUCCESS for successful registeration
+ */
+nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint8_t i;
     AppHandler *app_handler = nullptr, *init_handler = nullptr, *event_handler = nullptr;
     ComponentFuncState_DPA_t *func_state; 
 
     NICC_CHECK_POINTER(app_func);
-
+    
     // create and init function state on this component
     NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t());
+
+    // this is ugly
+    NICC_CHECK_POINTER(func_state->ibv_ctx = device_state.ibv_ctx);
     if(unlikely(
         NICC_SUCCESS != (retval = this->__setup_ibv_device(func_state))
     )){
         NICC_WARN_C("failed to setu ibv device for newly applocated function, abort");
         goto exit;
     }
-    
+
     if(unlikely(app_func->handlers.size() == 0)){
         NICC_WARN_C("no handlers included in app_func context, nothing registered");
         goto exit;
@@ -139,13 +149,6 @@ nicc_retval_t ComponentBlock_DPA::__setup_ibv_device(ComponentFuncState_DPA_t *f
 
     dpa_desp = reinterpret_cast<ComponentDesp_DPA_t*>(this->_desp);
     NICC_CHECK_POINTER(dpa_desp);
-
-    func_state->ibv_ctx = utils_ibv_open_device(dpa_desp->device_name);
-    if (unlikely(func_state->ibv_ctx == nullptr)) {
-        NICC_WARN_C("failed open ibv device %s", dpa_desp->device_name);
-        retval = NICC_ERROR_NOT_FOUND;
-        goto exit;
-    }
 
     func_state->uar = mlx5dv_devx_alloc_uar(func_state->ibv_ctx, MLX5DV_UAR_ALLOC_TYPE_NC);
     if (unlikely(func_state->uar == nullptr)) {
