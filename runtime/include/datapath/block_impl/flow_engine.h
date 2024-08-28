@@ -45,7 +45,13 @@ typedef struct ComponentDesp_FlowEngine {
 typedef struct ComponentFuncState_FlowEngine {
     ComponentFuncBaseState_t base_state;
 
-    struct mlx5dv_dr_domain *domain;
+    struct dr_flow_table		*rx_flow_table;
+	struct dr_flow_table		*tx_flow_table;
+	struct dr_flow_table		*tx_flow_root_table;
+
+	struct dr_flow_rule		*rx_rule;
+	struct dr_flow_rule		*tx_rule;
+	struct dr_flow_rule		*tx_root_rule;
 } ComponentFuncState_FlowEngine_t;
 
 
@@ -79,6 +85,9 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
     friend class Component_FlowEngine;
  
  private:
+    nicc_retval_t __create_rx_steering_rule(AppFunction *app_func, device_state_t &device_state);
+
+    nicc_retval_t __create_tx_steering_rule(AppFunction *app_func, device_state_t &device_state);
 };
 
 

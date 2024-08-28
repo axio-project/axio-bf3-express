@@ -27,8 +27,16 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 
 int main(){
     nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
+    
+    // TODO: package below inside a function
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
     NICC_CHECK_POINTER(dev_state.ibv_ctx);
+    dev_state.rx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_RX);
+    NICC_CHECK_POINTER(dev_state.rx_domain);
+    dev_state.tx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_TX);
+    NICC_CHECK_POINTER(dev_state.tx_domain);
+    dev_state.fdb_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_FDB);
+    NICC_CHECK_POINTER(dev_state.fdb_domain);
 
     /**
      * \brief  STEP 1: parse config file, create all component descriptors

@@ -25,7 +25,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     // create and init function state on this component
     NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t());
 
-    // this is ugly
+    // TODO: this is ugly, remove ibv_ctx from func_state!
     NICC_CHECK_POINTER(func_state->ibv_ctx = device_state.ibv_ctx);
     if(unlikely(
         NICC_SUCCESS != (retval = this->__setup_ibv_device(func_state))
