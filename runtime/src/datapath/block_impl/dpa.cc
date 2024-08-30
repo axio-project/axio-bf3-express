@@ -90,7 +90,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     }
 
     // insert to function map
-    this->_function_state = reinterpret_cast<ComponentFuncBaseState_t*>(func_state);
+    this->_function_state = func_state;
 
  exit:
     // TODO: destory if failed
@@ -112,7 +112,7 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     // deallocate resource for event handler
     if(unlikely(NICC_SUCCESS !=
         (retval = this->__deallocate_device_resources( 
-                        reinterpret_cast<ComponentFuncState_DPA_t*> (this->_function_state) ))
+                        this->_function_state ))
     )){
         NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
         goto exit;
@@ -121,7 +121,7 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     // unregister event handler
     if(unlikely(NICC_SUCCESS !=
         (retval = this->__unregister_event_handler( 
-                        reinterpret_cast<ComponentFuncState_DPA_t*> (this->_function_state) ))
+                        this->_function_state ))
     )){
         NICC_WARN_C("failed to unregister event handler on DPA block: retval(%u)", retval);
         goto exit;
@@ -143,16 +143,12 @@ exit:
  */
 nicc_retval_t ComponentBlock_DPA::__setup_ibv_device(ComponentFuncState_DPA_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentDesp_DPA_t *dpa_desp;
 
     NICC_CHECK_POINTER(func_state);
 
-    dpa_desp = reinterpret_cast<ComponentDesp_DPA_t*>(this->_desp);
-    NICC_CHECK_POINTER(dpa_desp);
-
     func_state->uar = mlx5dv_devx_alloc_uar(func_state->ibv_ctx, MLX5DV_UAR_ALLOC_TYPE_NC);
     if (unlikely(func_state->uar == nullptr)) {
-        NICC_WARN_C("failed to allocate UAR on device %s", dpa_desp->device_name);
+        NICC_WARN_C("failed to allocate UAR on device %s", this->_desp->device_name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -191,8 +187,6 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
 ){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status res;
-    ComponentDesp_DPA_t *dpa_desp;
-    ComponentState_DPA_t *dpa_state;
     struct flexio_event_handler_attr event_handler_attr = {0};
 
     NICC_CHECK_POINTER(app_func);
@@ -200,11 +194,6 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     NICC_CHECK_POINTER(func_state);
     NICC_CHECK_POINTER(app_handler->binary.dpa_binary);
     NICC_CHECK_POINTER(app_handler->host_stub.dpa_host_stub);
-    
-    dpa_desp = reinterpret_cast<ComponentDesp_DPA_t*>(this->_desp);
-    NICC_CHECK_POINTER(dpa_desp);
-    dpa_state = reinterpret_cast<ComponentState_DPA_t*>(this->_state);
-    NICC_CHECK_POINTER(dpa_state);
 
     // create flexio process
     if(unlikely(FLEXIO_STATUS_SUCCESS != 
@@ -226,7 +215,7 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     // creat event handler
     event_handler_attr.host_stub_func = app_handler->host_stub.dpa_host_stub;
     event_handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-    event_handler_attr.affinity.id = dpa_desp->core_id;
+    event_handler_attr.affinity.id = this->_desp->core_id;
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
         (res = flexio_event_handler_create(func_state->flexio_process, &event_handler_attr, &func_state->event_handler))
     )){

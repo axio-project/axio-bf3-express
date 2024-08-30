@@ -13,7 +13,7 @@
 
 namespace nicc {
 
-
+/*! \todo move below defines and structures to lib */
 /* Logarithm ring size */
 #define DPA_LOG_SQ_RING_DEPTH       7       // 2^7 entries
 #define DPA_LOG_RQ_RING_DEPTH       7       // 2^7 entries
@@ -56,38 +56,38 @@ struct dpa_data_queues {
 } __attribute__((__packed__, aligned(8)));
 
 
-/*!
-*  \brief  block state of DPA, used for control plane
-*/
+/**
+ * \brief  block state of DPA, used for control plane
+ */
 typedef struct ComponentState_DPA {
-    // basic state
+    /* ========== Common fields ========== */
     ComponentBaseState_t base_state;
-    // state of DPA
+    /* ========== ComponentBlock_DPA fields ========== */
     uint8_t mock_state;
 } ComponentState_DPA_t;
 
-/*!
-*  \brief  descriptor of DPA, used for resource allocation & schedule
-*/
+/**
+ * \brief  descriptor of DPA, used for resource allocation & 
+ *         re-allocation
+ */
 typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
 
+    /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;
-
-    /* ========== ComponentBlock_DPA fields ========== */
     // core id
     //! \todo support EU group
     uint8_t core_id;
 } ComponentDesp_DPA_t;
 
-/*!
+/**
  *  \brief  basic state of the function register 
-            into the component
- *  \note   this structure should be inherited and 
- *          implenented by each component
+ *          into the component block, 
+ *          using for running the function on this component block
+ *  \note   [1] func state can be modify by other component blocks
  */
 typedef struct ComponentFuncState_DPA {
     /* ========== on-host metadata ========== */
@@ -126,8 +126,8 @@ typedef struct ComponentFuncState_DPA {
 class ComponentBlock_DPA : public ComponentBlock {
  public:
     ComponentBlock_DPA() {
-        NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentBaseDesp_t*> (new ComponentDesp_DPA_t));
-        NICC_CHECK_POINTER(this->_state = reinterpret_cast<ComponentBaseState_t*> (new ComponentState_DPA_t));
+        NICC_CHECK_POINTER(this->_desp = new ComponentDesp_DPA_t);
+        NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
     }
     ~ComponentBlock_DPA(){};
 
@@ -150,8 +150,9 @@ class ComponentBlock_DPA : public ComponentBlock {
      */
     nicc_retval_t unregister_app_function() override;
 
-    friend class Component_DPA;
-
+/**
+ * ----------------------Internel Methonds----------------------
+ */ 
  private:
     /*!
      *  \brief  setup mlnx_device for this DPA block
@@ -305,6 +306,29 @@ class ComponentBlock_DPA : public ComponentBlock {
     nicc_retval_t __create_dpa_mkey(
         struct flexio_process *process, struct ibv_pd *pd, flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
     );
+/**
+ * ----------------------Internel Parameters----------------------
+ */ 
+    friend class Component_DPA;
+ protected:
+    /**
+     * descriptor of the component block, recording total 
+     * hardware resources allocated from the component
+     */
+    ComponentDesp_DPA_t *_desp;
+
+    /**
+     * state of the component block, recording runtime state 
+     * for rescheduling, inter-block communication channel, and MT
+     */
+    ComponentState_DPA_t *_state;
+
+    /**
+     * basic state of the function register into the component  
+     * block, using for running the function on this component block
+     */
+    ComponentFuncState_DPA_t *_function_state = nullptr;
+
 };
 
 } // namespace nicc
