@@ -42,7 +42,7 @@ nicc_retval_t ComponentBlock_FlowEngine::__create_rx_steering_rule(
 
     NICC_CHECK_POINTER(func_state);
 
-    func_state->rx_flow_table = mlx5dv_dr_table_create(device_state.rx_domain, 0);
+    // func_state->rx_flow_table = mlx5dv_dr_table_create(device_state.rx_domain, 0);
     if(unlikely(func_state->rx_flow_table == nullptr)){
         NICC_WARN_C("failed to create rx flow table on rx domain");
         retval = NICC_ERROR_HARDWARE_FAILURE;
@@ -52,7 +52,7 @@ nicc_retval_t ComponentBlock_FlowEngine::__create_rx_steering_rule(
  exit:
     if(unlikely(retval != NICC_SUCCESS)){
         if(func_state->rx_flow_table != nullptr){
-            mlx5dv_dr_table_destory(func_state->rx_flow_table);
+            // mlx5dv_dr_table_destory(func_state->rx_flow_table);
         }
 
     }

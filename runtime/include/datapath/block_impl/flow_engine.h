@@ -36,7 +36,7 @@ typedef struct ComponentDesp_FlowEngine {
     /* ========== ComponentBlock_DPA fields ========== */
     struct mlx5dv_flow_match_parameters *tx_match_mask;
     struct mlx5dv_flow_match_parameters *rx_match_mask;
-    //! \todo use correct table level and priority
+    //! \todo use correct table level and priority, below are fake values
     uint8_t table_level = 0;
     uint32_t matcher_priority = 0;
 
@@ -92,9 +92,9 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
     friend class Component_FlowEngine;
  
  private:
-    nicc_retval_t __create_rx_steering_rule(AppFunction *app_func, device_state_t &device_state);
+    nicc_retval_t __create_rx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
 
-    nicc_retval_t __create_tx_steering_rule(AppFunction *app_func, device_state_t &device_state);
+    nicc_retval_t __create_tx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
 };
 
 

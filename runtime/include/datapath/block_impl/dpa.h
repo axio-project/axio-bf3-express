@@ -57,7 +57,7 @@ struct dpa_data_queues {
 
 
 /*!
-*  \brief  state of DPA
+*  \brief  block state of DPA, used for control plane
 */
 typedef struct ComponentState_DPA {
     // basic state
@@ -67,7 +67,7 @@ typedef struct ComponentState_DPA {
 } ComponentState_DPA_t;
 
 /*!
-*  \brief  descriptor of DPA
+*  \brief  descriptor of DPA, used for resource allocation & schedule
 */
 typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */

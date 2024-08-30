@@ -11,11 +11,17 @@
 namespace nicc {
 
 class ResourcePool {
+/**
+ * ----------------------Public Methods----------------------
+ */ 
  public:
-    /*!
+    /**
      *  \brief  initialization of resource pool
      *  \param  enabled_components  identify which component to be activated
-     *  \param  config_map          component id -> component configuration
+     *  \param  config_map          component id -> component configuration,
+     *                              the configuration is a component 
+     *                              descriptor, recording total component 
+     *                              hardware resources
      */
     ResourcePool(
         component_typeid_t enabled_components, 
@@ -26,12 +32,14 @@ class ResourcePool {
         // TODO: deinit components
     }
 
-
-    /*!
-     *  \brief  allocate resource from enabled components
-     *  \param  cid     index of the component to allocate resource on
-     *  \param  desp    configration description of the block to be allocated
+    /**
+     *  \brief  allocate a component block from corresponding component
+     *  \param  cid     component type
+     *  \param  desp    description of the block to be allocated
      *  \param  cb      the allocated component block
+     *  \return NICC_SUCCESS for successful allocation
+     *  \note   an allocate_block() function is defined in each component,
+     *          called by this function
      */
     nicc_retval_t allocate(
         component_typeid_t cid, ComponentBaseDesp_t *desp, ComponentBlock* cb
@@ -47,7 +55,9 @@ class ResourcePool {
     nicc_retval_t deallocate(
         component_typeid_t cid, ComponentBlock* cb
     );
-
+/**
+ * ----------------------Internel Parameters----------------------
+ */ 
  private:
     // maskable code that identify which components are enabled
     component_typeid_t _enabled_components;

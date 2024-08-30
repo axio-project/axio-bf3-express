@@ -95,7 +95,7 @@ int main(){
     nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
     NICC_CHECK_POINTER(flow_engine_desp);
     flow_engine_desp->base_desp.quota = 2;      // need 2 flow entries
-    size_t flow_match_size = sizeof(*flow_engine_desp->match_mask) + 64;  // 64 bytes for match mask
+    size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
     flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
     NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
     flow_engine_desp->tx_match_mask->match_sz = 64;

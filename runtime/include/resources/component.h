@@ -17,14 +17,13 @@ class AppHandler;
 class AppFunction;
 class AppContext;
 
-/**
- * ----------------------General Structures----------------------
- */ 
-
 /*!
  *  \brief  dataplane component
  */
 class Component {
+/**
+ * ----------------------Public Methods----------------------
+ */ 
  public:
     /*!
      *  \brief  constructor
@@ -34,7 +33,7 @@ class Component {
     virtual ~Component(){}
     
     /*!
-     *  \brief  initialization of the components
+     *  \brief  initialization of the components, called by ResourcePool
      *  \param  desp    descriptor to initialize the component
      *  \return NICC_SUCCESS for successful initialization
      */
@@ -61,15 +60,17 @@ class Component {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
-
+/**
+ * ----------------------Internel Parameters----------------------
+ */ 
  protected:
     // component id
     component_typeid_t _cid;
 
-    // descriptor of the component
+    // descriptor of the component, recording total hardware resources
     ComponentBaseDesp_t *_desp;
 
-    // state of the component
+    // state of the component, recording remained hardware resources
     ComponentBaseState_t *_state;
 
     /*!

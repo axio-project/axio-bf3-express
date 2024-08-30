@@ -41,7 +41,7 @@ class ComponentBlock {
     // state of the component block
     ComponentBaseState_t *_state;
 
-    // map of function states which has been registered in to this component block
+    // state of the function register into the component block
     ComponentFuncBaseState_t *_function_state = nullptr;
 };
 

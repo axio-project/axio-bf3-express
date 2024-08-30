@@ -13,8 +13,8 @@ class Component_TEMPLATE : public Component {
     }
     ~Component_TEMPLATE(){}
 
-    /*!
-     *  \brief  initialization of the components
+    /**
+     *  \brief  init the component
      *  \param  desp    descriptor to initialize the component
      *  \return NICC_SUCCESS for successful initialization
      */
