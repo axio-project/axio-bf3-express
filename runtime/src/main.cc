@@ -27,18 +27,14 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 
 int main(){
     /**
-     * \brief  STEP 0: initialize device state
+     * \brief  STEP 0: initialize the device
+     * \todo;  these descriptors should be parsed by the resource pool, which
+     *         queries the device and creates the descriptors
      */
     nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
     nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
-    /**
-     * \brief  STEP 1: parse config file, create all component descriptors
-     * \note   options: kComponent_FlowEngine | kComponent_DPA
-     *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
-     * \todo;  add more components   
-     */
     nicc::ComponentDesp_DPA_t *dpa_desp = new nicc::ComponentDesp_DPA_t;
     NICC_CHECK_POINTER(dpa_desp);
     dpa_desp->base_desp.quota = 128;
@@ -48,7 +44,13 @@ int main(){
     nicc::ComponentDesp_FlowEngine_t *flow_engine_desp = new nicc::ComponentDesp_FlowEngine_t;
     NICC_CHECK_POINTER(flow_engine_desp);
     flow_engine_desp->base_desp.quota = 2000;   // 2000 flow entries      
-
+    /*----------------------------------------------------------------*/
+    /**
+     * \brief  STEP 1: parse config file
+     * \note   options: kComponent_FlowEngine | kComponent_DPA
+     *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
+     * \todo   use a struct to store the config file
+     */
     nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
     /*----------------------------------------------------------------*/
     /**

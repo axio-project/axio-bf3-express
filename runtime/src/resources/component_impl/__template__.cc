@@ -4,24 +4,52 @@ namespace nicc {
 
 nicc_retval_t Component_TEMPLATE::init(ComponentBaseDesp_t* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentState_TEMPLATE_t *state;
     /* Step 1: init desp, recording all hardware resources*/
-    NICC_CHECK_POINTER(this->_desp = desp);
+    NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentDesp_TEMPLATE_t*>(desp));
     /* Step 2: init state, recording remained hardware resources*/
-    NICC_CHECK_POINTER(state = new ComponentState_TEMPLATE_t);
-    this->_state = reinterpret_cast<ComponentBaseState_t*>(state);
+    NICC_CHECK_POINTER(this->_state = new ComponentState_TEMPLATE_t);
+    this->_state->base_state.quota = desp->quota;
     return retval;
 }
 
-
-/*!
- *  \brief  apply block of resource from the component
- *  \param  desp    descriptor for allocation
- *  \param  cb      the handle of the allocated block
- *  \return NICC_SUCCESS for successful allocation
- */
 nicc_retval_t Component_TEMPLATE::allocate_block(ComponentBaseDesp_t* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
+    ComponentDesp_DPA_t *func_input_desp;
+    ComponentBlock_DPA *desired_cb;
+
+    NICC_CHECK_POINTER(func_input_desp = reinterpret_cast<ComponentDesp_TEMPLATE_t*>(desp));
+    NICC_CHECK_POINTER(desired_cb = reinterpret_cast<ComponentBlock_TEMPLATE*>(cb));
+    /* Step 1: Based on func_input_desp, update local state */
+    /// base state
+    // check quota
+    if(unlikely(this->_state->base_state.quota < desp->quota)){
+        NICC_WARN_C(
+            "failed to allocate block due to unsufficient resource remained:"
+            " component_id(%u), request(%lu), remain(%lu)",
+            this->_cid, desp->quota, this->_state->quota
+        )
+        retval = NICC_ERROR_EXSAUSTED;
+        goto exit;
+    }
+    this->_state->base_state.quota -= desp->quota;
+    /// specific state
+    /* ...... */
+
+    /* Step 2: allocate quota to the block (update desp) */
+    /// base descriptor
+    desired_cb->_desp->quota = desp->quota;
+    /// specific descriptor
+    /* ...... */
+
+    /* Step 3: set target cb's state to default */
+    /// reset block state
+    memset(desired_cb->_state, 0, sizeof(ComponentState_TEMPLATE_t));
+
+    NICC_DEBUG_C(
+        "allocate block to application context: "
+        "component_id(%u), cb(%p), request(%lu), remain(%lu)",
+        this->_cid, desired_cb, func_input_desp->quota, this->_state->quota
+    );
 exit:
     return retval;
 }
@@ -34,7 +62,15 @@ exit:
  */
 nicc_retval_t Component_TEMPLATE::deallocate_block(ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
-   
+    ComponentBlock_TEMPLATE *desired_cb = reinterpret_cast<ComponentBlock_TEMPLATE*>(cb);
+    NICC_CHECK_POINTER(desired_cb);
+    NICC_CHECK_POINTER(this->_state);
+    /* Step 1: Based on cb, update local state */
+    /// base state
+    this->_state->quota += cb->_desp->quota;
+    /// specific state
+    /* ...... */
+    delete desired_cb;
 exit:
     return retval;
 }
