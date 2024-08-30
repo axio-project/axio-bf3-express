@@ -26,17 +26,12 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 #endif
 
 int main(){
+    /**
+     * \brief  STEP 0: initialize device state
+     */
     nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
-    
-    // TODO: package below inside a function
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
-    NICC_CHECK_POINTER(dev_state.ibv_ctx);
-    dev_state.rx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_RX);
-    NICC_CHECK_POINTER(dev_state.rx_domain);
-    dev_state.tx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_TX);
-    NICC_CHECK_POINTER(dev_state.tx_domain);
-    dev_state.fdb_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_FDB);
-    NICC_CHECK_POINTER(dev_state.fdb_domain);
+    nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
     /**
      * \brief  STEP 1: parse config file, create all component descriptors
@@ -50,7 +45,11 @@ int main(){
     dpa_desp->device_name = "mlx5_0";
     dpa_desp->core_id = 0;
 
-    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
+    nicc::ComponentDesp_FlowEngine_t *flow_engine_desp = new nicc::ComponentDesp_FlowEngine_t;
+    NICC_CHECK_POINTER(flow_engine_desp);
+    flow_engine_desp->base_desp.quota = 2000;   // 2000 flow entries      
+
+    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 2: initialize resource pool, created all enabld components
@@ -59,7 +58,8 @@ int main(){
     nicc::ResourcePool rpool(
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
+            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) }
         }
     );
     /*----------------------------------------------------------------*/
@@ -67,6 +67,9 @@ int main(){
      * \brief  STEP 3: create app contexts, including corresponding 
      *          functions and handlers
      */
+    nicc::AppContext app_cxt;
+
+    /// DPA app context
     nicc::AppHandler app_init_handler;
     app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
     app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
@@ -86,9 +89,19 @@ int main(){
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
-
-    nicc::AppContext app_cxt;
     app_cxt.functions.push_back(&app_func);
+
+    /// Flow Engine app context
+    nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
+    NICC_CHECK_POINTER(flow_engine_desp);
+    flow_engine_desp->base_desp.quota = 2;      // need 2 flow entries
+    size_t flow_match_size = sizeof(*flow_engine_desp->match_mask) + 64;  // 64 bytes for match mask
+    flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
+    flow_engine_desp->tx_match_mask->match_sz = 64;
+    flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
+    flow_engine_desp->rx_match_mask->match_sz = 64;
     /*----------------------------------------------------------------*/
     /*!
      *  \brief  STEP 4: create the datapath pipeline

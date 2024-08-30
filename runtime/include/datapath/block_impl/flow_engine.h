@@ -33,6 +33,13 @@ typedef struct ComponentDesp_FlowEngine {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
+    /* ========== ComponentBlock_DPA fields ========== */
+    struct mlx5dv_flow_match_parameters *tx_match_mask;
+    struct mlx5dv_flow_match_parameters *rx_match_mask;
+    //! \todo use correct table level and priority
+    uint8_t table_level = 0;
+    uint32_t matcher_priority = 0;
+
 } ComponentDesp_FlowEngine_t;
 
 

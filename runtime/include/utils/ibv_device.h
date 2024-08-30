@@ -27,4 +27,11 @@ typedef struct device_state {
  */
 struct ibv_context* utils_ibv_open_device(const char *device_name);
 
+/**
+ * \brief  Create flow engine domains
+ * \param  dev_state [in]: device state
+ * \return NICC_SUCCESS on success and NICC_ERROR otherwise
+ */
+nicc_retval_t utils_create_flow_engine_domains(device_state_t &dev_state);
+
 } // namespace nicc
