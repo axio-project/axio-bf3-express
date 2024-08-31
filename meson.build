@@ -67,10 +67,11 @@ endif
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
 	doca_pc_path = '/opt/mellanox/doca/lib/x86_64-linux-gnu/pkgconfig/'
+	doca_modules = ['doca-libs']
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
 	doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+	doca_modules = ['doca-grpc-libs', 'doca-libs']
 endif
-doca_modules = ['doca-grpc-libs', 'doca-libs']
 founded_doca_modules = []
 message('>>> Detecting DOCA, assume pc file of DOCA is located at ' + doca_pc_path)
 env.set('PKG_CONFIG_PATH', doca_pc_path)

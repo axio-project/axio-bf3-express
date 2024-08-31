@@ -2,59 +2,53 @@
 
 namespace nicc {
 
-/*!
- *  \brief  initialization of the components
- *  \param  desp    descriptor to initialize the component
- *  \return NICC_SUCCESS for successful initialization
- */
 nicc_retval_t Component_DPA::init(ComponentBaseDesp_t* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentState_DPA_t *dpa_state;
-
-    // bind descriptor
-    NICC_CHECK_POINTER(this->_desp = desp);
-
-    // allocate and bind state
-    NICC_CHECK_POINTER(dpa_state = new ComponentState_DPA_t);
-    this->_state = reinterpret_cast<ComponentBaseState_t*>(dpa_state);
-    this->_state->quota = this->_desp->quota;
-
+    /* Step 1: init desp, recording all hardware resources*/
+    NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentDesp_DPA_t*>(desp));
+    /* Step 2: init state, recording remained hardware resources*/
+    NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
+    this->_state->base_state.quota = desp->quota;
+    /// specific state
+    this->_state->mock_state = 0;
     return retval;
 }
 
-
-/*!
- *  \brief  apply block of resource from the component
- *  \param  desp    descriptor for allocation
- *  \param  cb      the handle of the allocated block
- *  \return NICC_SUCCESS for successful allocation
- */
 nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentDesp_DPA_t *dpa_block_desp;
     ComponentDesp_DPA_t *func_input_desp;
-    ComponentState_DPA_t *dpa_block_state;
+    ComponentBlock_DPA *desired_cb;
 
-    NICC_CHECK_POINTER(desp);
-    NICC_CHECK_POINTER(cb);
-
-    // allocate from resource pool
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_block(desp, cb)
-    ))){
-        NICC_WARN_C("failed to allocate block: retval(%u)", retval);
+    NICC_CHECK_POINTER(func_input_desp = reinterpret_cast<ComponentDesp_DPA_t*>(desp));
+    NICC_CHECK_POINTER(desired_cb = reinterpret_cast<ComponentBlock_DPA*>(cb));
+    /* Step 1: Based on func_input_desp, update local state */
+    /// base state
+    // check quota
+    if(unlikely(this->_state->base_state.quota < desp->quota)){
+        NICC_WARN_C(
+            "failed to allocate block due to unsufficient resource remained:"
+            " component_id(%u), request(%lu), remain(%lu)",
+            this->_cid, desp->quota, this->_state->base_state.quota
+        )
+        retval = NICC_ERROR_EXSAUSTED;
         goto exit;
     }
+    this->_state->base_state.quota -= desp->quota;
+    /// specific state
+    this->_state->mock_state = 0;
 
-    // update DPA specific descriptor and state
-    func_input_desp = reinterpret_cast<ComponentDesp_DPA_t*>(desp);
-    dpa_block_desp = reinterpret_cast<ComponentDesp_DPA_t*>(cb->_desp);
-    dpa_block_desp->device_name = func_input_desp->device_name;
-    dpa_block_state = reinterpret_cast<ComponentState_DPA_t*>(cb->_state);
-    dpa_block_state->mock_state = 0;
-    // ComponentBlock_DPA *dpa_cb = reinterpret_cast<ComponentBlock_DPA*>(cb);
+    /* Step 2: allocate quota to the block (update desp) */
+    /// base descriptor
+    desired_cb->_base_desp->quota = desp->quota;
+    /// specific descriptor
+    desired_cb->_desp->device_name = func_input_desp->device_name;
+    desired_cb->_desp->core_id = 0; // \todo allocate core group
 
-    // cb->_state = reinterpret_cast<ComponentBaseState_t*>(dpa_block_state);
+    /* Step 3: set target cb's state to default */
+    /// reset block state
+    memset(desired_cb->_state, 0, sizeof(ComponentState_DPA_t));
+    desired_cb->_base_state->quota = desp->quota;
+
     ///!    \todo   transfer state between component and the created block
 
 exit:
@@ -69,16 +63,16 @@ exit:
  */
 nicc_retval_t Component_DPA::deallocate_block(ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentBlock_DPA *dpa_cb = reinterpret_cast<ComponentBlock_DPA*>(cb);
+    ComponentBlock_DPA *desired_cb = reinterpret_cast<ComponentBlock_DPA*>(cb);
 
-    NICC_CHECK_POINTER(dpa_cb);
-
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__deallocate_block(dpa_cb)
-    ))){
-        NICC_WARN_C("failed to deallocate block: retval(%u)", retval);
-        goto exit;
-    }
+    NICC_CHECK_POINTER(desired_cb);
+    NICC_CHECK_POINTER(this->_state);
+    /* Step 1: Based on cb, update local state */
+    /// base state
+    this->_state->base_state.quota += desired_cb->_base_state->quota;
+    /// specific state
+    /* ...... */
+    delete desired_cb;
 
 exit:
     return retval;

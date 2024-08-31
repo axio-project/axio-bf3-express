@@ -19,11 +19,14 @@
 #include "debug.h"
 
 namespace nicc {
+    
 
 /**
- * \brief  basic descriptor of the component
+ * \brief  basic descriptor of the component block,
+ *         using for allocating / deallocating component blocks
+ *         from the resource pool
  * \note   [1] this structure should be inherited and 
- *         implenented by each component
+ *         implenented by each component block
  *         [2] this structure could be used for describing
  *         either root component or component block
  */
@@ -33,9 +36,11 @@ typedef struct ComponentBaseDesp {
 } ComponentBaseDesp_t;
 
 /**
- * \brief  basic state of the component
+ * \brief  basic state of the component block,
+ *         using for control plane, including rescheduling,
+ *         inter-block communication channel, and MT
  * \note   [1] this structure should be inherited and
- *         implenented by each component
+ *         implenented by each component block
  *         [2] this structure could be used for describing
  *         either root component or component block
  */
@@ -44,11 +49,13 @@ typedef struct ComponentBaseState {
     uint64_t quota;
 } ComponentBaseState_t;
 
-/*!
+/**
  *  \brief  basic state of the function register 
-            into the component
- *  \note   this structure should be inherited and 
- *          implenented by each component
+ *          into the component block, 
+ *          using for running the function on this component block
+ *  \note   [1] this structure should be inherited and 
+ *          implenented by each component block
+ *          [2] func state can be modify by other component blocks
  */
 typedef struct ComponentFuncBaseState {
     // basic state

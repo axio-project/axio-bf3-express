@@ -2,11 +2,6 @@
 
 namespace nicc {
 
-/*!
- *  \brief  initialization of resource pool
- *  \param  enabled_components  identify which component to be activated
- *  \param  config_map          component id -> component configuration
- */
 ResourcePool::ResourcePool(
     component_typeid_t enabled_components, std::map<component_typeid_t, ComponentBaseDesp_t*> &&config_map
 ){
@@ -53,13 +48,6 @@ ResourcePool::ResourcePool(
     }
 }
 
-/*!
- *  \brief  allocate resource from enabled components
- *  \param  cid     index of the componen to allocate resource on
- *  \param  desp    configration description of the block to be allocated
- *  \param  cb      the allocated component block
- *  \return NICC_SUCCESS for succesfully allocation
- */
 nicc_retval_t ResourcePool::allocate(
     component_typeid_t cid, ComponentBaseDesp_t *desp, ComponentBlock* cb
 ){

@@ -33,6 +33,13 @@ typedef struct ComponentDesp_FlowEngine {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
+    /* ========== ComponentBlock_DPA fields ========== */
+    struct mlx5dv_flow_match_parameters *tx_match_mask;
+    struct mlx5dv_flow_match_parameters *rx_match_mask;
+    //! \todo use correct table level and priority, below are fake values
+    uint8_t table_level = 0;
+    uint32_t matcher_priority = 0;
+
 } ComponentDesp_FlowEngine_t;
 
 
@@ -45,15 +52,23 @@ typedef struct ComponentDesp_FlowEngine {
 typedef struct ComponentFuncState_FlowEngine {
     ComponentFuncBaseState_t base_state;
 
-    struct mlx5dv_dr_domain *domain;
+    struct dr_flow_table		*rx_flow_table;
+	struct dr_flow_table		*tx_flow_table;
+	struct dr_flow_table		*tx_flow_root_table;
+
+	struct dr_flow_rule		*rx_rule;
+	struct dr_flow_rule		*tx_rule;
+	struct dr_flow_rule		*tx_root_rule;
 } ComponentFuncState_FlowEngine_t;
 
 
 class ComponentBlock_FlowEngine : public ComponentBlock {
  public:
     ComponentBlock_FlowEngine() {
-        NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentBaseDesp_t*> (new ComponentDesp_FlowEngine_t));
-        NICC_CHECK_POINTER(this->_state = reinterpret_cast<ComponentBaseState_t*> (new ComponentState_FlowEngine_t));
+        NICC_CHECK_POINTER(this->_desp = new ComponentDesp_FlowEngine_t);
+        NICC_CHECK_POINTER(this->_state = new ComponentState_FlowEngine_t);
+        NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);
+        NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
     }
     ~ComponentBlock_FlowEngine(){};
 
@@ -79,7 +94,31 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
     friend class Component_FlowEngine;
  
  private:
-};
+    nicc_retval_t __create_rx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
 
+    nicc_retval_t __create_tx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
+/**
+ * ----------------------Protected Parameters----------------------
+ */ 
+    friend class Component_FlowEngine;
+ protected:
+    /**
+     * descriptor of the component block, recording total 
+     * hardware resources allocated from the component
+     */
+    ComponentDesp_FlowEngine_t *_desp;
+
+    /**
+     * state of the component block, recording runtime state 
+     * for rescheduling, inter-block communication channel, and MT
+     */
+    ComponentState_FlowEngine_t *_state;
+
+    /**
+     * basic state of the function register into the component  
+     * block, using for running the function on this component block
+     */
+    ComponentFuncState_FlowEngine_t *_function_state = nullptr;
+};
 
 } // namespace nicc

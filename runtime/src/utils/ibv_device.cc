@@ -47,4 +47,16 @@ exit:
     return ibv_ctx;
 }
 
+nicc_retval_t utils_create_flow_engine_domains(device_state_t &dev_state) {
+    NICC_CHECK_POINTER(dev_state.ibv_ctx);
+    dev_state.rx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_RX);
+    NICC_CHECK_POINTER(dev_state.rx_domain);
+    dev_state.tx_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_NIC_TX);
+    NICC_CHECK_POINTER(dev_state.tx_domain);
+    dev_state.fdb_domain = mlx5dv_dr_domain_create(dev_state.ibv_ctx, MLX5DV_DR_DOMAIN_TYPE_FDB);
+    NICC_CHECK_POINTER(dev_state.fdb_domain);
+
+    return NICC_SUCCESS;
+}
+
 } // namespace nicc
