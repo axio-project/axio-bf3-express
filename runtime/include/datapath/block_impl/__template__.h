@@ -55,6 +55,8 @@ class ComponentBlock_TEMPLATE : public ComponentBlock {
     ComponentBlock_TEMPLATE() {
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_TEMPLATE_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_TEMPLATE_t);
+        NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);
+        NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
     }
     ~ComponentBlock_TEMPLATE(){};
 

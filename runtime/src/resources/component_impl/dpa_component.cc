@@ -39,7 +39,7 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
 
     /* Step 2: allocate quota to the block (update desp) */
     /// base descriptor
-    cb->_desp->quota = desp->quota;
+    desired_cb->_base_desp->quota = desp->quota;
     /// specific descriptor
     desired_cb->_desp->device_name = func_input_desp->device_name;
     desired_cb->_desp->core_id = 0; // \todo allocate core group
@@ -47,6 +47,7 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
     /* Step 3: set target cb's state to default */
     /// reset block state
     memset(desired_cb->_state, 0, sizeof(ComponentState_DPA_t));
+    desired_cb->_base_state->quota = desp->quota;
 
     ///!    \todo   transfer state between component and the created block
 
@@ -68,7 +69,7 @@ nicc_retval_t Component_DPA::deallocate_block(ComponentBlock* cb) {
     NICC_CHECK_POINTER(this->_state);
     /* Step 1: Based on cb, update local state */
     /// base state
-    this->_state->base_state.quota += cb->_desp->quota;
+    this->_state->base_state.quota += desired_cb->_base_state->quota;
     /// specific state
     /* ...... */
     delete desired_cb;

@@ -38,6 +38,11 @@ class Component_DPA : public Component {
      *  \return NICC_SUCCESS for successful deallocation
      */
     nicc_retval_t deallocate_block(ComponentBlock* cb) override;
+
+/**
+ * ----------------------Util Methods----------------------
+ */ 
+
 /**
  * ----------------------Internel Parameters----------------------
  */ 

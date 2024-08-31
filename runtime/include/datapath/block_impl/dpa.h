@@ -74,7 +74,6 @@ typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
-
     /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;
@@ -128,6 +127,8 @@ class ComponentBlock_DPA : public ComponentBlock {
     ComponentBlock_DPA() {
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_DPA_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
+        NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);
+        NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
     }
     ~ComponentBlock_DPA(){};
 

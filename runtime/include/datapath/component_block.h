@@ -31,18 +31,18 @@ class ComponentBlock {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
-    friend class Component;
-    friend class Component_DPA;
-
+/**
+ * ----------------------Protected Parameters----------------------
+ */ 
  protected:
     // descriptor of the component block
-    ComponentBaseDesp_t *_desp;
+    ComponentBaseDesp_t *_base_desp;
 
     // state of the component block
-    ComponentBaseState_t *_state;
+    ComponentBaseState_t *_base_state;
 
     // state of the function register into the component block
-    ComponentFuncBaseState_t *_function_state = nullptr;
+    ComponentFuncBaseState_t *_base_function_state = nullptr;
 };
 
 } // namespace nicc

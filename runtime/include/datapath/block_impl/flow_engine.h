@@ -65,8 +65,10 @@ typedef struct ComponentFuncState_FlowEngine {
 class ComponentBlock_FlowEngine : public ComponentBlock {
  public:
     ComponentBlock_FlowEngine() {
-        NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentBaseDesp_t*> (new ComponentDesp_FlowEngine_t));
-        NICC_CHECK_POINTER(this->_state = reinterpret_cast<ComponentBaseState_t*> (new ComponentState_FlowEngine_t));
+        NICC_CHECK_POINTER(this->_desp = new ComponentDesp_FlowEngine_t);
+        NICC_CHECK_POINTER(this->_state = new ComponentState_FlowEngine_t);
+        NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);
+        NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
     }
     ~ComponentBlock_FlowEngine(){};
 
@@ -95,7 +97,28 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
     nicc_retval_t __create_rx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
 
     nicc_retval_t __create_tx_steering_rule(ComponentFuncState_FlowEngine_t *func_state, device_state_t &device_state);
-};
+/**
+ * ----------------------Protected Parameters----------------------
+ */ 
+    friend class Component_FlowEngine;
+ protected:
+    /**
+     * descriptor of the component block, recording total 
+     * hardware resources allocated from the component
+     */
+    ComponentDesp_FlowEngine_t *_desp;
 
+    /**
+     * state of the component block, recording runtime state 
+     * for rescheduling, inter-block communication channel, and MT
+     */
+    ComponentState_FlowEngine_t *_state;
+
+    /**
+     * basic state of the function register into the component  
+     * block, using for running the function on this component block
+     */
+    ComponentFuncState_FlowEngine_t *_function_state = nullptr;
+};
 
 } // namespace nicc
