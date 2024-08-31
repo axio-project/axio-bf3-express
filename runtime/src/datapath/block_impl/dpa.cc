@@ -21,11 +21,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     ComponentFuncState_DPA_t *func_state; 
 
     NICC_CHECK_POINTER(app_func);
-    
-    // create and init function state on this component
-    NICC_CHECK_POINTER(func_state = new ComponentFuncState_DPA_t());
-
-    NICC_DEBUG_C("[DPA] Allocating new function for DPA block, original quota(%lu), remain quota (%lu)", this->_base_desp->quota, this->_base_state->quota);
+    NICC_CHECK_POINTER(func_state = this->_function_state);
 
     // TODO: this is ugly, remove ibv_ctx from func_state!
     NICC_CHECK_POINTER(func_state->ibv_ctx = device_state.ibv_ctx);

@@ -127,8 +127,10 @@ class ComponentBlock_DPA : public ComponentBlock {
     ComponentBlock_DPA() {
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_DPA_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
+        NICC_CHECK_POINTER(this->_function_state = new ComponentFuncState_DPA_t);
         NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);
         NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
+        NICC_CHECK_POINTER(this->_base_function_state = &this->_function_state->base_state);
     }
     ~ComponentBlock_DPA(){};
 

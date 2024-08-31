@@ -51,17 +51,22 @@ int main(){
      *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
      * \todo   use a struct to store the config file
      */
-    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
+    // nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
+    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 2: initialize resource pool, created all enabld components
      *          based on descriptors
      */
     nicc::ResourcePool rpool(
+        // enabled_components,
+        // {
+        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
+        //     { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) }
+        // }
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
-            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) }
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
         }
     );
     /*----------------------------------------------------------------*/
