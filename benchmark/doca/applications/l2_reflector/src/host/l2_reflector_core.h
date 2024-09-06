@@ -24,7 +24,8 @@
 
 
 /* Source mac address to match packets in */
-#define SRC_MAC (0x001122334455)
+// #define SRC_MAC (0xa088c2bf464e)
+#define SRC_MAC (0x1070fd6b935d)
 
 struct mlx5_ifc_dr_match_spec_bits {
 	uint8_t smac_47_16[0x20];
