@@ -151,6 +151,7 @@ app_list = [
 	    'gpu_packet_processing',
 	    'ipsec_security_gw',
 	    'l2_reflector',
+		'l2_reflector_optimized',
 	    'nat',
 	    'pcc',
 	    'secure_channel',

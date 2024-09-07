@@ -55,6 +55,8 @@ option('enable_ipsec_security_gw', type: 'boolean', value: false,
 	description: 'Enable IPsec Security Gateway application.')
 option('enable_l2_reflector', type: 'boolean', value: false,
 	description: 'Enable L2 Reflector application.')
+option('enable_l2_reflector_optimized', type: 'boolean', value: false,
+	description: 'Enable L2 Reflector application.')
 option('enable_nat', type: 'boolean', value: false,
 	description: 'Enable NAT application.')
 option('enable_pcc', type: 'boolean', value: false,

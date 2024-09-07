@@ -7,7 +7,7 @@ if [ $# -lt 2 ]; then
 fi
 BENCHMARK=$1
 # check the benchmark name
-targets=("l2_reflector")
+targets=("l2_reflector" "l2_reflector_optimized")
 if [[ ! " ${targets[@]} " =~ " ${BENCHMARK} " ]]; then
     echo "Error: unsupported benchmark name: $BENCHMARK"
     exit 1
