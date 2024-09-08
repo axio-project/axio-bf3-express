@@ -16,9 +16,9 @@
 
 
 /* Logarithm ring size */
-#define L2_LOG_SQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_RQ_RING_DEPTH 7 /* 2^7 entries */
-#define L2_LOG_CQ_RING_DEPTH 7 /* 2^7 entries */
+#define L2_LOG_SQ_RING_DEPTH 9 /* 2^7 entries */
+#define L2_LOG_RQ_RING_DEPTH 9 /* 2^7 entries */
+#define L2_LOG_CQ_RING_DEPTH 9 /* 2^7 entries */
 
 #define L2_LOG_WQ_DATA_ENTRY_BSIZE 11 /* WQ buffer logarithmic size */
 

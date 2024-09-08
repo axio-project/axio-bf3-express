@@ -1,6 +1,6 @@
 #!/bin/bash
 dpaeumgmt='/opt/mellanox/doca/tools//dpaeumgmt'
-dev_name='mlx5_0'
+dev_name='mlx5_1'
 if [ $# -eq 0 ]; then
     echo "Error: No arguments provided"
     exit 1

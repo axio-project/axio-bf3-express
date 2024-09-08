@@ -278,12 +278,13 @@ __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 
 	if (dev_ctx.is_initalized == 0)
 		flexio_dev_thread_reschedule();
-
+		
 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit) {
 		__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 		process_packet(dtctx);
 		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
 	}
+	// printf("Handled %d CQEs\n", handled_cqe);
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
 	flexio_dev_thread_reschedule();

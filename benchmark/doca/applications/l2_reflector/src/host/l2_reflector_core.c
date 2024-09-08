@@ -103,8 +103,8 @@ l2_reflector_setup_device(struct l2_reflector_config *app_cfg)
 	app_cfg->flexio_uar = flexio_process_get_uar(app_cfg->flexio_process);
 
 	event_handler_attr.host_stub_func = l2_reflector_device_event_handler;
-	event_handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-	// event_handler_attr.affinity.type = FLEXIO_AFFINITY_GROUP;
+	// event_handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
+	event_handler_attr.affinity.type = FLEXIO_AFFINITY_GROUP;
 	event_handler_attr.affinity.id = 1;
 	result = flexio_event_handler_create(app_cfg->flexio_process, &event_handler_attr, &app_cfg->event_handler);
 	if (result != FLEXIO_STATUS_SUCCESS) {
@@ -170,7 +170,7 @@ allocate_cq_memory(struct flexio_process *process, int log_depth, struct app_tra
 
 	cqe = cq_ring_src;
 	for (i = 0; i < num_of_cqes; i++)
-		mlx5dv_set_cqe_owner(cqe++, 1);
+		mlx5dv_set_cqe_owner(cqe++, 1);		// Set the HW owner bit to 1, when this bit is 0, the CQE is owned by the SW
 
 	/* Copy CQEs from host to FlexIO CQ ring */
 	ret = flexio_copy_from_host(process, cq_ring_src, ring_bsize, &app_cq->cq_ring_daddr);

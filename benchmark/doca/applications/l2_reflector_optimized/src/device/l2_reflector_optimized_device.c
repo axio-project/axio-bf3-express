@@ -176,7 +176,7 @@ step_cq(struct cq_ctx_t *cq_ctx, uint32_t cq_idx_mask)
  * @dtctx [in]: This thread context
  */
 static void
-process_packet(struct flexio_dev_thread_ctx *dtctx)
+process_packet(struct flexio_dev_thread_ctx * __unused dtctx)
 {
 	uint32_t rq_wqe_idx;
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -231,13 +231,6 @@ process_packet(struct flexio_dev_thread_ctx *dtctx)
 
 	/* Send WQE is 4 WQEBBs need to skip the 4-th segment */
 	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
-
-	/* Ring DB */
-	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-	dev_ctx.sq_ctx.sq_pi++;
-	flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
-	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-	flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
 }
 
 /*
@@ -273,6 +266,7 @@ void
 __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 {
 	struct flexio_dev_thread_ctx *dtctx;
+	uint8_t handled_cqe = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
 
@@ -283,7 +277,17 @@ __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 		// __dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 		process_packet(dtctx);
 		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
+		handled_cqe++;
 	}
+	printf("Handled %d CQEs\n", handled_cqe);
+	/* Ring DB */
+	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	dev_ctx.sq_ctx.sq_pi += handled_cqe;
+	flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	for (uint8_t i = 0; i < handled_cqe; i++)
+		flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+	
 	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
 	flexio_dev_thread_reschedule();
