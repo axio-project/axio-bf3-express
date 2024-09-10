@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -28,8 +40,7 @@
 
 DOCA_LOG_REGISTER(COMMON);
 
-doca_error_t
-open_doca_device_with_pci(const char *pci_addr, tasks_check func, struct doca_dev **retval)
+doca_error_t open_doca_device_with_pci(const char *pci_addr, tasks_check func, struct doca_dev **retval)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs;
@@ -42,7 +53,7 @@ open_doca_device_with_pci(const char *pci_addr, tasks_check func, struct doca_de
 
 	res = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (res != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to load doca devices list. Doca_error value: %d", res);
+		DOCA_LOG_ERR("Failed to load doca devices list: %s", doca_error_get_descr(res));
 		return res;
 	}
 
@@ -70,9 +81,10 @@ open_doca_device_with_pci(const char *pci_addr, tasks_check func, struct doca_de
 	return res;
 }
 
-doca_error_t
-open_doca_device_with_ibdev_name(const uint8_t *value, size_t val_size, tasks_check func,
-					 struct doca_dev **retval)
+doca_error_t open_doca_device_with_ibdev_name(const uint8_t *value,
+					      size_t val_size,
+					      tasks_check func,
+					      struct doca_dev **retval)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs;
@@ -93,7 +105,7 @@ open_doca_device_with_ibdev_name(const uint8_t *value, size_t val_size, tasks_ch
 
 	res = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (res != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to load doca devices list. Doca_error value: %d", res);
+		DOCA_LOG_ERR("Failed to load doca devices list: %s", doca_error_get_descr(res));
 		return res;
 	}
 
@@ -121,9 +133,10 @@ open_doca_device_with_ibdev_name(const uint8_t *value, size_t val_size, tasks_ch
 	return res;
 }
 
-doca_error_t
-open_doca_device_with_iface_name(const uint8_t *value, size_t val_size, tasks_check func,
-				struct doca_dev **retval)
+doca_error_t open_doca_device_with_iface_name(const uint8_t *value,
+					      size_t val_size,
+					      tasks_check func,
+					      struct doca_dev **retval)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs;
@@ -144,7 +157,7 @@ open_doca_device_with_iface_name(const uint8_t *value, size_t val_size, tasks_ch
 
 	res = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (res != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to load doca devices list. Doca_error value: %d", res);
+		DOCA_LOG_ERR("Failed to load doca devices list: %s", doca_error_get_descr(res));
 		return res;
 	}
 
@@ -172,8 +185,7 @@ open_doca_device_with_iface_name(const uint8_t *value, size_t val_size, tasks_ch
 	return res;
 }
 
-doca_error_t
-open_doca_device_with_capabilities(tasks_check func, struct doca_dev **retval)
+doca_error_t open_doca_device_with_capabilities(tasks_check func, struct doca_dev **retval)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs;
@@ -185,7 +197,7 @@ open_doca_device_with_capabilities(tasks_check func, struct doca_dev **retval)
 
 	result = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to load doca devices list. Doca_error value: %d", result);
+		DOCA_LOG_ERR("Failed to load doca devices list: %s", doca_error_get_descr(result));
 		return result;
 	}
 
@@ -207,9 +219,11 @@ open_doca_device_with_capabilities(tasks_check func, struct doca_dev **retval)
 	return DOCA_ERROR_NOT_FOUND;
 }
 
-doca_error_t
-open_doca_device_rep_with_vuid(struct doca_dev *local, enum doca_devinfo_rep_filter filter, const uint8_t *value,
-				       size_t val_size, struct doca_dev_rep **retval)
+doca_error_t open_doca_device_rep_with_vuid(struct doca_dev *local,
+					    enum doca_devinfo_rep_filter filter,
+					    const uint8_t *value,
+					    size_t val_size,
+					    struct doca_dev_rep **retval)
 {
 	uint32_t nb_rdevs = 0;
 	struct doca_devinfo_rep **rep_dev_list = NULL;
@@ -231,7 +245,8 @@ open_doca_device_rep_with_vuid(struct doca_dev *local, enum doca_devinfo_rep_fil
 	/* Search */
 	result = doca_devinfo_rep_create_list(local, filter, &rep_dev_list, &nb_rdevs);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to create devinfo representor list. Representor devices are available only on DPU, do not run on Host");
+		DOCA_LOG_ERR(
+			"Failed to create devinfo representor list. Representor devices are available only on DPU, do not run on Host");
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
@@ -249,9 +264,10 @@ open_doca_device_rep_with_vuid(struct doca_dev *local, enum doca_devinfo_rep_fil
 	return DOCA_ERROR_NOT_FOUND;
 }
 
-doca_error_t
-open_doca_device_rep_with_pci(struct doca_dev *local, enum doca_devinfo_rep_filter filter, const char *pci_addr,
-			      struct doca_dev_rep **retval)
+doca_error_t open_doca_device_rep_with_pci(struct doca_dev *local,
+					   enum doca_devinfo_rep_filter filter,
+					   const char *pci_addr,
+					   struct doca_dev_rep **retval)
 {
 	uint32_t nb_rdevs = 0;
 	struct doca_devinfo_rep **rep_dev_list = NULL;
@@ -283,8 +299,7 @@ open_doca_device_rep_with_pci(struct doca_dev *local, enum doca_devinfo_rep_filt
 	return DOCA_ERROR_NOT_FOUND;
 }
 
-doca_error_t
-create_core_objects(struct program_core_objects *state, uint32_t max_bufs)
+doca_error_t create_core_objects(struct program_core_objects *state, uint32_t max_bufs)
 {
 	doca_error_t res;
 
@@ -349,8 +364,7 @@ destroy_src_mmap:
 	return res;
 }
 
-doca_error_t
-request_stop_ctx(struct doca_pe *pe, struct doca_ctx *ctx)
+doca_error_t request_stop_ctx(struct doca_pe *pe, struct doca_ctx *ctx)
 {
 	doca_error_t tmp_result, result = DOCA_SUCCESS;
 
@@ -375,8 +389,7 @@ request_stop_ctx(struct doca_pe *pe, struct doca_ctx *ctx)
 	return result;
 }
 
-doca_error_t
-destroy_core_objects(struct program_core_objects *state)
+doca_error_t destroy_core_objects(struct program_core_objects *state)
 {
 	doca_error_t tmp_result, result = DOCA_SUCCESS;
 
@@ -428,8 +441,7 @@ destroy_core_objects(struct program_core_objects *state)
 	return result;
 }
 
-char *
-hex_dump(const void *data, size_t size)
+char *hex_dump(const void *data, size_t size)
 {
 	/*
 	 * <offset>:     <Hex bytes: 1-8>        <Hex bytes: 9-16>         <Ascii>
@@ -454,13 +466,13 @@ hex_dump(const void *data, size_t size)
 	input_buffer = data;
 	read_index = 0;
 
-	for (i = 0; i < num_lines; i++)	{
+	for (i = 0; i < num_lines; i++) {
 		/* Offset */
 		snprintf(write_head, buffer_size, "%08lX: ", i * 16);
 		write_head += 8 + 2;
 		buffer_size -= 8 + 2;
 		/* Hex print - 2 chunks of 8 bytes */
-		for (r = 0; r < 2 ; r++) {
+		for (r = 0; r < 2; r++) {
 			for (j = 0; j < 8; j++) {
 				/* If there is content to print */
 				if (read_index < size) {
@@ -472,7 +484,7 @@ hex_dump(const void *data, size_t size)
 					/* Otherwise, use a '.' */
 					else
 						printable = '.';
-				/* Else, just use spaces */
+					/* Else, just use spaces */
 				} else {
 					snprintf(write_head, buffer_size, "   ");
 					printable = ' ';
@@ -495,4 +507,19 @@ hex_dump(const void *data, size_t size)
 	/* No need for the last '\n' */
 	write_head[-1] = '\0';
 	return buffer;
+}
+
+uint64_t align_up_uint64(uint64_t value, uint64_t alignment)
+{
+	uint64_t remainder = (value % alignment);
+
+	if (remainder == 0)
+		return value;
+
+	return value + (alignment - remainder);
+}
+
+uint64_t align_down_uint64(uint64_t value, uint64_t alignment)
+{
+	return value - (value % alignment);
 }

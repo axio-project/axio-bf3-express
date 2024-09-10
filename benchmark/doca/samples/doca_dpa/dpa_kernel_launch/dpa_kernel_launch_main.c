@@ -1,20 +1,30 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #include <stdlib.h>
 #include <unistd.h>
-
-#include <infiniband/mlx5dv.h>
 
 #include <doca_error.h>
 #include <doca_log.h>
@@ -33,8 +43,7 @@ doca_error_t kernel_launch(struct dpa_resources *resources);
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	struct dpa_config cfg = {{0}};
 	struct dpa_resources resources = {0};
@@ -43,7 +52,7 @@ main(int argc, char **argv)
 	int exit_status = EXIT_FAILURE;
 
 	/* Set default value for device name */
-	strcpy(cfg.device_name, IB_DEVICE_DEFAULT_NAME);
+	strcpy(cfg.device_name, DEVICE_DEFAULT_NAME);
 
 	/* Register a logger backend */
 	result = doca_log_backend_create_standard();
@@ -80,7 +89,7 @@ main(int argc, char **argv)
 	}
 
 	/* Allocating resources */
-	result = allocate_dpa_resources(&resources, &cfg);
+	result = allocate_dpa_resources(&cfg, &resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to Allocate DPA Resources: %s", doca_error_get_descr(result));
 		goto argp_cleanup;

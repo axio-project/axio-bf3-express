@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -22,7 +34,6 @@
 #include <doca_dma.h>
 #include <doca_types.h>
 #include <doca_log.h>
-#include <doca_dma.h>
 #include <doca_pe.h>
 
 #include <samples/common.h>
@@ -45,20 +56,21 @@ DOCA_LOG_REGISTER(PE_TASK_RESUBMIT::SAMPLE);
  * This macro is used to minimize code size.
  * The macro runs an expression and returns error if the expression status is not DOCA_SUCCESS
  */
-#define EXIT_ON_FAILURE(_expression_) { \
-	doca_error_t _status_ = _expression_; \
-	\
-	if (_status_ != DOCA_SUCCESS) { \
-		DOCA_LOG_ERR("%s failed with status %s", __func__, doca_error_get_descr(_status_)); \
-		return _status_; \
-	} \
-}
+#define EXIT_ON_FAILURE(_expression_) \
+	{ \
+		doca_error_t _status_ = _expression_; \
+\
+		if (_status_ != DOCA_SUCCESS) { \
+			DOCA_LOG_ERR("%s failed with status %s", __func__, doca_error_get_descr(_status_)); \
+			return _status_; \
+		} \
+	}
 
-#define NUM_TASKS			(4)
-#define NUM_BUFFER_PAIRS		(NUM_TASKS * 4)
-#define DMA_BUFFER_SIZE			(1024)
-#define BUFFER_SIZE			(DMA_BUFFER_SIZE * 2 * NUM_BUFFER_PAIRS)
-#define BUF_INVENTORY_SIZE		(NUM_BUFFER_PAIRS * 2)
+#define NUM_TASKS (4)
+#define NUM_BUFFER_PAIRS (NUM_TASKS * 4)
+#define DMA_BUFFER_SIZE (1024)
+#define BUFFER_SIZE (DMA_BUFFER_SIZE * 2 * NUM_BUFFER_PAIRS)
+#define BUF_INVENTORY_SIZE (NUM_BUFFER_PAIRS * 2)
 
 /**
  * This struct defines the program context.
@@ -77,14 +89,13 @@ struct pe_task_resubmit_sample_state {
 /*
  * Resubmit task
  *
- * @details This function resubmits a task. The function sets a new set of buffers every time that it is called, assuming
- * that the old buffers were released.
+ * @details This function resubmits a task. The function sets a new set of buffers every time that it is called,
+ * assuming that the old buffers were released.
  *
  * @state [in]: sample state
  * @dma_task [in]: task to resubmit
  */
-void
-dma_task_resubmit(struct pe_task_resubmit_sample_state *state, struct doca_dma_task_memcpy *dma_task)
+void dma_task_resubmit(struct pe_task_resubmit_sample_state *state, struct doca_dma_task_memcpy *dma_task)
 {
 	doca_error_t status = DOCA_SUCCESS;
 	struct doca_task *task = doca_dma_task_memcpy_as_task(dma_task);
@@ -124,9 +135,9 @@ dma_task_resubmit(struct pe_task_resubmit_sample_state *state, struct doca_dma_t
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			      union doca_data ctx_user_data)
+static void dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task,
+					  union doca_data task_user_data,
+					  union doca_data ctx_user_data)
 {
 	uint8_t expected_value = (uint8_t)task_user_data.u64;
 	struct pe_task_resubmit_sample_state *state = (struct pe_task_resubmit_sample_state *)ctx_user_data.ptr;
@@ -134,8 +145,8 @@ dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_
 	state->base.num_completed_tasks++;
 
 	/**
-	 * process_completed_dma_memcpy_task returns doca_error_t to be able to use EXIT_ON_FAILURE, but there is nothing to do
-	 * with the return value.
+	 * process_completed_dma_memcpy_task returns doca_error_t to be able to use EXIT_ON_FAILURE, but there is
+	 * nothing to do with the return value.
 	 */
 	(void)process_completed_dma_memcpy_task(dma_task, expected_value);
 
@@ -151,9 +162,9 @@ dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			  union doca_data ctx_user_data)
+static void dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task,
+				      union doca_data task_user_data,
+				      union doca_data ctx_user_data)
 {
 	struct pe_task_resubmit_sample_state *state = (struct pe_task_resubmit_sample_state *)ctx_user_data.ptr;
 	struct doca_task *task = doca_dma_task_memcpy_as_task(dma_task);
@@ -176,8 +187,7 @@ dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_dma(struct pe_task_resubmit_sample_state *state)
+doca_error_t create_dma(struct pe_task_resubmit_sample_state *state)
 {
 	union doca_data ctx_user_data = {0};
 
@@ -197,8 +207,10 @@ create_dma(struct pe_task_resubmit_sample_state *state)
 	ctx_user_data.ptr = state;
 	EXIT_ON_FAILURE(doca_ctx_set_user_data(state->dma_ctx, ctx_user_data));
 
-	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma, dma_memcpy_completed_callback,
-						      dma_memcpy_error_callback, NUM_TASKS));
+	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma,
+						      dma_memcpy_completed_callback,
+						      dma_memcpy_error_callback,
+						      NUM_TASKS));
 
 	return DOCA_SUCCESS;
 }
@@ -209,8 +221,7 @@ create_dma(struct pe_task_resubmit_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_doca_bufs(struct pe_task_resubmit_sample_state *state)
+doca_error_t allocate_doca_bufs(struct pe_task_resubmit_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -218,15 +229,19 @@ allocate_doca_bufs(struct pe_task_resubmit_sample_state *state)
 
 	for (i = 0; i < NUM_BUFFER_PAIRS; i++) {
 		/* Use doca_buf_inventory_buf_get_by_data to initialize the source buffer */
-		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->base.inventory, state->base.mmap,
-								   state->base.available_buffer, DMA_BUFFER_SIZE,
+		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->base.inventory,
+								   state->base.mmap,
+								   state->base.available_buffer,
+								   DMA_BUFFER_SIZE,
 								   &state->src_buffers[i]));
 
 		memset(state->base.available_buffer, (i + 1), DMA_BUFFER_SIZE);
 		state->base.available_buffer += DMA_BUFFER_SIZE;
 
-		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(state->base.inventory, state->base.mmap,
-								   state->base.available_buffer, DMA_BUFFER_SIZE,
+		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(state->base.inventory,
+								   state->base.mmap,
+								   state->base.available_buffer,
+								   DMA_BUFFER_SIZE,
 								   &state->dst_buffers[i]));
 
 		memset(state->base.available_buffer, 0, DMA_BUFFER_SIZE);
@@ -243,8 +258,7 @@ allocate_doca_bufs(struct pe_task_resubmit_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_tasks_for_resubmit(struct pe_task_resubmit_sample_state *state)
+doca_error_t allocate_tasks_for_resubmit(struct pe_task_resubmit_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -254,9 +268,11 @@ allocate_tasks_for_resubmit(struct pe_task_resubmit_sample_state *state)
 		union doca_data user_data = {0};
 
 		user_data.u64 = (state->buff_pair_index + 1);
-		EXIT_ON_FAILURE(doca_dma_task_memcpy_alloc_init(state->dma, state->src_buffers[state->buff_pair_index],
+		EXIT_ON_FAILURE(doca_dma_task_memcpy_alloc_init(state->dma,
+								state->src_buffers[state->buff_pair_index],
 								state->dst_buffers[state->buff_pair_index],
-								user_data, &state->tasks[i]));
+								user_data,
+								&state->tasks[i]));
 
 		DOCA_LOG_INFO("Task %p allocated with buffers index %d", state->tasks[i], state->buff_pair_index);
 
@@ -274,8 +290,7 @@ allocate_tasks_for_resubmit(struct pe_task_resubmit_sample_state *state)
  *
  * @state [in]: sample state
  */
-void
-cleanup(struct pe_task_resubmit_sample_state *state)
+void cleanup(struct pe_task_resubmit_sample_state *state)
 {
 	/* A context must be stopped before it is destroyed */
 	if (state->dma_ctx != NULL)
@@ -296,8 +311,7 @@ cleanup(struct pe_task_resubmit_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run(struct pe_task_resubmit_sample_state *state)
+doca_error_t run(struct pe_task_resubmit_sample_state *state)
 {
 	memset(state, 0, sizeof(*state));
 
@@ -324,8 +338,7 @@ run(struct pe_task_resubmit_sample_state *state)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run_pe_task_resubmit_sample(void)
+doca_error_t run_pe_task_resubmit_sample(void)
 {
 	struct pe_task_resubmit_sample_state state;
 	doca_error_t status = run(&state);

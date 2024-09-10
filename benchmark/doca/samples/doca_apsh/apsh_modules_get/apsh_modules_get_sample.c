@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 #include <doca_apsh.h>
@@ -25,8 +37,7 @@ DOCA_LOG_REGISTER(MODULES_GET);
  * @os_type [in]: Indicates the OS type of the target system
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-modules_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_system_os os_type)
+doca_error_t modules_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_system_os os_type)
 {
 	doca_error_t result;
 	int num_modules, i;
@@ -64,7 +75,7 @@ modules_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_sy
 	/* Print names of some modules */
 	DOCA_LOG_INFO("System modules (showing only 5 or less):");
 	for (i = 0; i < 5 && i < num_modules; ++i) {
-		mod_name = (DOCA_APSH_MODULES_NAME_TYPE) doca_apsh_module_info_get(modules[i], DOCA_APSH_MODULES_NAME);
+		mod_name = (DOCA_APSH_MODULES_NAME_TYPE)doca_apsh_module_info_get(modules[i], DOCA_APSH_MODULES_NAME);
 		DOCA_LOG_INFO("\t%s", mod_name);
 	}
 

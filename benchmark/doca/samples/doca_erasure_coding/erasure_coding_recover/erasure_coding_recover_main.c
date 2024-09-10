@@ -1,16 +1,29 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,21 +43,27 @@ DOCA_LOG_REGISTER(EC_RECOVER::MAIN);
 
 /* Configuration struct */
 struct ec_cfg {
-	char input_path[MAX_PATH_NAME];			/* input file to encode or input blocks dir to decode */
-	char output_path[MAX_PATH_NAME];		/* output might be a file or a folder - depends on the input and do_both */
-	char pci_address[DOCA_DEVINFO_PCI_ADDR_SIZE];	/* device PCI address */
-	bool do_both;					/* to do full process - encoding & decoding */
-	enum doca_ec_matrix_type matrix;		/* ec matrix type */
-	uint32_t data_block_count;			/* data block count */
-	uint32_t rdnc_block_count;			/* redundancy block count */
-	size_t n_delete_block;				/* number of deleted block indices */
-	uint32_t delete_block_indices[MAX_BLOCKS];	/* indices of data blocks to delete */
+	char input_path[MAX_PATH_NAME];	 /* input file to encode or input blocks dir to decode */
+	char output_path[MAX_PATH_NAME]; /* output might be a file or a folder - depends on the input and do_both */
+	char pci_address[DOCA_DEVINFO_PCI_ADDR_SIZE]; /* device PCI address */
+	bool do_both;				      /* to do full process - encoding & decoding */
+	enum doca_ec_matrix_type matrix;	      /* ec matrix type */
+	uint32_t data_block_count;		      /* data block count */
+	uint32_t rdnc_block_count;		      /* redundancy block count */
+	size_t n_delete_block;			      /* number of deleted block indices */
+	uint32_t delete_block_indices[MAX_BLOCKS];    /* indices of data blocks to delete */
 };
 
 /* Sample's Logic */
-doca_error_t ec_recover(const char *pci_addr, const char *input_path, const char *output_path, bool do_both,
-			enum doca_ec_matrix_type matrix_type, uint32_t data_block_count, uint32_t rdnc_block_count,
-			uint32_t *missing_indices, size_t n_missing);
+doca_error_t ec_recover(const char *pci_addr,
+			const char *input_path,
+			const char *output_path,
+			bool do_both,
+			enum doca_ec_matrix_type matrix_type,
+			uint32_t data_block_count,
+			uint32_t rdnc_block_count,
+			uint32_t *missing_indices,
+			size_t n_missing);
 
 /*
  * ARGP Callback - Handle PCI device address parameter
@@ -53,8 +72,7 @@ doca_error_t ec_recover(const char *pci_addr, const char *input_path, const char
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-pci_address_callback(void *param, void *config)
+static doca_error_t pci_address_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 	char *pci_address = (char *)param;
@@ -62,7 +80,8 @@ pci_address_callback(void *param, void *config)
 
 	len = strnlen(pci_address, DOCA_DEVINFO_PCI_ADDR_SIZE);
 	if (len >= DOCA_DEVINFO_PCI_ADDR_SIZE) {
-		DOCA_LOG_ERR("Entered device PCI address exceeding the maximum size of %d", DOCA_DEVINFO_PCI_ADDR_SIZE - 1);
+		DOCA_LOG_ERR("Entered device PCI address exceeding the maximum size of %d",
+			     DOCA_DEVINFO_PCI_ADDR_SIZE - 1);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 	strncpy(ec_cfg->pci_address, pci_address, len + 1);
@@ -76,8 +95,7 @@ pci_address_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-input_path_callback(void *param, void *config)
+static doca_error_t input_path_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 	char *path = (char *)param;
@@ -103,8 +121,7 @@ input_path_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-output_path_callback(void *param, void *config)
+static doca_error_t output_path_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 	char *file = (char *)param;
@@ -130,8 +147,7 @@ output_path_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-do_both_callback(void *param, void *config)
+static doca_error_t do_both_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 
@@ -147,8 +163,7 @@ do_both_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-matrix_callback(void *param, void *config)
+static doca_error_t matrix_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 	char *matrix = (char *)param;
@@ -171,8 +186,7 @@ matrix_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-data_block_count_callback(void *param, void *config)
+static doca_error_t data_block_count_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 
@@ -191,8 +205,7 @@ data_block_count_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-rdnc_block_count_callback(void *param, void *config)
+static doca_error_t rdnc_block_count_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 
@@ -211,8 +224,7 @@ rdnc_block_count_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-delete_block_indices_callback(void *param, void *config)
+static doca_error_t delete_block_indices_callback(void *param, void *config)
 {
 	struct ec_cfg *ec_cfg = (struct ec_cfg *)config;
 	char *ind = (char *)param;
@@ -226,8 +238,10 @@ delete_block_indices_callback(void *param, void *config)
 			return DOCA_ERROR_INVALID_VALUE;
 		}
 		if (ec_cfg->n_delete_block + 1 > MAX_BLOCKS) {
-			DOCA_LOG_ERR("Delete block indices count is bigger then max: %d, requested: %ld", MAX_BLOCKS, ec_cfg->n_delete_block);
-				return DOCA_ERROR_INVALID_VALUE;
+			DOCA_LOG_ERR("Delete block indices count is bigger then max: %d, requested: %ld",
+				     MAX_BLOCKS,
+				     ec_cfg->n_delete_block);
+			return DOCA_ERROR_INVALID_VALUE;
 		}
 		ec_cfg->delete_block_indices[ec_cfg->n_delete_block++] = num;
 		while (*ind == ',')
@@ -241,8 +255,7 @@ delete_block_indices_callback(void *param, void *config)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-register_ec_params(void)
+static doca_error_t register_ec_params(void)
 {
 	doca_error_t result;
 	struct doca_argp_param *pci_param, *input_path_param, *output_path_param, *do_both_param, *matrix_param,
@@ -366,7 +379,7 @@ register_ec_params(void)
 		return result;
 	}
 	doca_argp_param_set_short_name(delete_block_indices_param, "d");
-	doca_argp_param_set_long_name(delete_block_indices_param, "delete_index");
+	doca_argp_param_set_long_name(delete_block_indices_param, "delete-index");
 	doca_argp_param_set_description(delete_block_indices_param,
 					"Indices of data blocks to delete comma separated i.e. 0,3,4 - default: 0");
 	doca_argp_param_set_callback(delete_block_indices_param, delete_block_indices_callback);
@@ -387,8 +400,7 @@ register_ec_params(void)
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	doca_error_t result;
 	int exit_status = EXIT_FAILURE;
@@ -444,8 +456,14 @@ main(int argc, char **argv)
 		goto argp_cleanup;
 	}
 
-	result = ec_recover(ec_cfg.pci_address, ec_cfg.input_path, ec_cfg.output_path, ec_cfg.do_both, ec_cfg.matrix,
-			    ec_cfg.data_block_count, ec_cfg.rdnc_block_count, ec_cfg.delete_block_indices,
+	result = ec_recover(ec_cfg.pci_address,
+			    ec_cfg.input_path,
+			    ec_cfg.output_path,
+			    ec_cfg.do_both,
+			    ec_cfg.matrix,
+			    ec_cfg.data_block_count,
+			    ec_cfg.rdnc_block_count,
+			    ec_cfg.delete_block_indices,
 			    ec_cfg.n_delete_block);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("ec_recover() encountered an error: %s", doca_error_get_descr(result));

@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -28,33 +40,51 @@ DOCA_LOG_REGISTER(FLOW_MULTI_FWD);
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_multi_fwd_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
+doca_error_t create_multi_fwd_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	struct doca_flow_fwd fwd = {.type = DOCA_FLOW_FWD_CHANGEABLE};
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "HAIRPIN_PIPE";
-	pipe_cfg.attr.type = DOCA_FLOW_PIPE_BASIC;
-	pipe_cfg.match = &match;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* match on outer source IP address */
 	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
 	match.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
 	match.outer.ip4.src_ip = 0xffffffff;
 
-	/* send fwd=NULL for choosing different forward per entry */
-	return doca_flow_pipe_create(&pipe_cfg, NULL, NULL, pipe);
+	actions_arr[0] = &actions;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "HAIRPIN_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
+	/* set fwd type = DOCA_FLOW_FWD_CHANGEABLE for choosing different forward per entry */
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -65,8 +95,7 @@ create_multi_fwd_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-add_multi_fwd_pipe_entries(struct doca_flow_pipe *pipe, int port_id, struct entries_status *status)
+doca_error_t add_multi_fwd_pipe_entries(struct doca_flow_pipe *pipe, int port_id, struct entries_status *status)
 {
 	struct doca_flow_fwd fwd;
 	struct doca_flow_match match;
@@ -113,26 +142,27 @@ add_multi_fwd_pipe_entries(struct doca_flow_pipe *pipe, int port_id, struct entr
  * @nb_queues [in]: number of queues the sample will use
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-flow_multi_fwd(int nb_queues)
+doca_error_t flow_multi_fwd(int nb_queues)
 {
 	int nb_ports = 2;
-	struct doca_flow_resources resource = {0};
-	uint32_t nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_MAX] = {0};
+	struct flow_resources resource = {0};
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
+	struct doca_dev *dev_arr[nb_ports];
 	struct doca_flow_pipe *pipe;
 	int port_id;
 	struct entries_status status;
 	int num_of_entries = 2;
 	doca_error_t result;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", resource, nr_shared_resources);
+	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = init_doca_flow_ports(nb_ports, ports, true);
+	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports");
 		doca_flow_destroy();
@@ -176,7 +206,7 @@ flow_multi_fwd(int nb_queues)
 	DOCA_LOG_INFO("Wait few seconds for packets to arrive");
 	sleep(5);
 
-	stop_doca_flow_ports(nb_ports, ports);
+	result = stop_doca_flow_ports(nb_ports, ports);
 	doca_flow_destroy();
-	return DOCA_SUCCESS;
+	return result;
 }

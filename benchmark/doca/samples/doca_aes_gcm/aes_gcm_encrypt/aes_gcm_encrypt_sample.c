@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -36,8 +48,7 @@ DOCA_LOG_REGISTER(AES_GCM_ENCRYPT);
  * @file_size [in]: file size
  * @return: DOCA_SUCCESS on success, DOCA_ERROR otherwise.
  */
-doca_error_t
-aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
+doca_error_t aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 {
 	struct aes_gcm_resources resources = {0};
 	struct program_core_objects *state = NULL;
@@ -54,7 +65,6 @@ aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 	doca_error_t result = DOCA_SUCCESS;
 	doca_error_t tmp_result = DOCA_SUCCESS;
 	uint64_t max_encrypt_buf_size = 0;
-
 
 	out_file = fopen(cfg->output_path, "wr");
 	if (out_file == NULL) {
@@ -121,8 +131,8 @@ aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 	}
 
 	/* Construct DOCA buffer for each address range */
-	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv, state->src_mmap,
-						    file_data, file_size, &src_doca_buf);
+	result =
+		doca_buf_inventory_buf_get_by_addr(state->buf_inv, state->src_mmap, file_data, file_size, &src_doca_buf);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing source buffer: %s",
 			     doca_error_get_descr(result));
@@ -130,7 +140,10 @@ aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 	}
 
 	/* Construct DOCA buffer for each address range */
-	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv, state->dst_mmap, dst_buffer, max_encrypt_buf_size,
+	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv,
+						    state->dst_mmap,
+						    dst_buffer,
+						    max_encrypt_buf_size,
 						    &dst_doca_buf);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing destination buffer: %s",
@@ -154,8 +167,14 @@ aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 	}
 
 	/* Submit AES-GCM encrypt task */
-	result = submit_aes_gcm_encrypt_task(&resources, src_doca_buf, dst_doca_buf, key, (uint8_t *)cfg->iv,
-					     cfg->iv_length, cfg->tag_size, cfg->aad_size);
+	result = submit_aes_gcm_encrypt_task(&resources,
+					     src_doca_buf,
+					     dst_doca_buf,
+					     key,
+					     (uint8_t *)cfg->iv,
+					     cfg->iv_length,
+					     cfg->tag_size,
+					     cfg->aad_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("AES-GCM encrypt task failed: %s", doca_error_get_descr(result));
 		goto destroy_key;
@@ -169,6 +188,12 @@ aes_gcm_encrypt(struct aes_gcm_cfg *cfg, char *file_data, size_t file_size)
 
 	/* Print destination buffer data */
 	dump = hex_dump(resp_head, data_len);
+	if (dump == NULL) {
+		DOCA_LOG_ERR("Failed to allocate memory for printing buffer content");
+		result = DOCA_ERROR_NO_MEMORY;
+		goto destroy_key;
+	}
+
 	DOCA_LOG_INFO("AES-GCM encrypted data:\n%s", dump);
 	free(dump);
 

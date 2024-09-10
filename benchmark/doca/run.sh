@@ -16,4 +16,4 @@ fi
 CUR_DIR=$(cd `dirname $0`; pwd)
 cd $CUR_DIR
 
-sudo ./applications/build/$BENCHMARK/src/host/$BENCHMARK -d $2
+sudo ./applications/build/$BENCHMARK/host/$BENCHMARK -d $2

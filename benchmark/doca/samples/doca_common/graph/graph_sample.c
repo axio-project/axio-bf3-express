@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -56,7 +68,7 @@ DOCA_LOG_REGISTER(GRAPH::SAMPLE);
 #define EXIT_ON_FAILURE(_expression_) \
 	{ \
 		doca_error_t _status_ = _expression_; \
-		\
+\
 		if (_status_ != DOCA_SUCCESS) { \
 			DOCA_LOG_ERR("%s failed with status %s", __func__, doca_error_get_descr(_status_)); \
 			return _status_; \
@@ -135,8 +147,7 @@ struct graph_sample_state {
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-allocate_buffer(struct graph_sample_state *state)
+static doca_error_t allocate_buffer(struct graph_sample_state *state)
 {
 	DOCA_LOG_INFO("Allocating buffer");
 
@@ -155,8 +166,7 @@ allocate_buffer(struct graph_sample_state *state)
  * @devinfo [in]: Device to check
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-check_dev_dma_capable(struct doca_devinfo *devinfo)
+static doca_error_t check_dev_dma_capable(struct doca_devinfo *devinfo)
 {
 	return doca_dma_cap_task_memcpy_is_supported(devinfo);
 }
@@ -167,8 +177,7 @@ check_dev_dma_capable(struct doca_devinfo *devinfo)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-open_device(struct graph_sample_state *state)
+static doca_error_t open_device(struct graph_sample_state *state)
 {
 	DOCA_LOG_INFO("Opening device");
 
@@ -183,8 +192,7 @@ open_device(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_pe(struct graph_sample_state *state)
+static doca_error_t create_pe(struct graph_sample_state *state)
 {
 	DOCA_LOG_INFO("Creating progress engine");
 
@@ -199,8 +207,7 @@ create_pe(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_mmap(struct graph_sample_state *state)
+static doca_error_t create_mmap(struct graph_sample_state *state)
 {
 	DOCA_LOG_INFO("Creating MMAP");
 
@@ -219,8 +226,7 @@ create_mmap(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_buf_inventory(struct graph_sample_state *state)
+static doca_error_t create_buf_inventory(struct graph_sample_state *state)
 {
 	DOCA_LOG_INFO("Creating buf inventory");
 
@@ -240,9 +246,9 @@ create_buf_inventory(struct graph_sample_state *state)
  * @task_user_data [in]: Task user data
  * @ctx_user_data [in]: context user data
  */
-static void
-dma_task_completed_callback(struct doca_dma_task_memcpy *task, union doca_data task_user_data,
-			    union doca_data ctx_user_data)
+static void dma_task_completed_callback(struct doca_dma_task_memcpy *task,
+					union doca_data task_user_data,
+					union doca_data ctx_user_data)
 {
 	(void)task;
 	(void)task_user_data;
@@ -256,8 +262,7 @@ dma_task_completed_callback(struct doca_dma_task_memcpy *task, union doca_data t
  * @idx [in]: context index
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_dma(struct graph_sample_state *state, uint32_t idx)
+static doca_error_t create_dma(struct graph_sample_state *state, uint32_t idx)
 {
 	DOCA_LOG_INFO("Creating DMA %d", idx);
 
@@ -266,8 +271,10 @@ create_dma(struct graph_sample_state *state, uint32_t idx)
 
 	EXIT_ON_FAILURE(doca_pe_connect_ctx(state->pe, state->contexts[idx]));
 
-	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma[idx], dma_task_completed_callback,
-						      dma_task_completed_callback, NUM_GRAPH_INSTANCES));
+	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma[idx],
+						      dma_task_completed_callback,
+						      dma_task_completed_callback,
+						      NUM_GRAPH_INSTANCES));
 
 	return DOCA_SUCCESS;
 }
@@ -278,8 +285,7 @@ create_dma(struct graph_sample_state *state, uint32_t idx)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_dmas(struct graph_sample_state *state)
+static doca_error_t create_dmas(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -296,8 +302,7 @@ create_dmas(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-start_contexts(struct graph_sample_state *state)
+static doca_error_t start_contexts(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -315,8 +320,7 @@ start_contexts(struct graph_sample_state *state)
  *
  * @state [in]: sample state
  */
-static void
-stop_contexts(struct graph_sample_state *state)
+static void stop_contexts(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -334,8 +338,7 @@ stop_contexts(struct graph_sample_state *state)
  * @cookie [in]: callback cookie
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-user_node_callback(void *cookie)
+static doca_error_t user_node_callback(void *cookie)
 {
 	uint32_t i = 0;
 
@@ -348,8 +351,7 @@ user_node_callback(void *cookie)
 		EXIT_ON_FAILURE(doca_buf_get_data_len(instance->dma_dest[i], &dma_length));
 
 		if (dma_length != DMA_BUFFER_SIZE) {
-			DOCA_LOG_ERR("DMA destination buffer length %zu should be %d", dma_length,
-				     DMA_BUFFER_SIZE);
+			DOCA_LOG_ERR("DMA destination buffer length %zu should be %d", dma_length, DMA_BUFFER_SIZE);
 			return DOCA_ERROR_BAD_STATE;
 		}
 
@@ -368,8 +370,7 @@ user_node_callback(void *cookie)
  * @state [in]: sample state
  * @index [in]: the graph instance index
  */
-static void
-destroy_graph_instance(struct graph_sample_state *state, uint32_t index)
+static void destroy_graph_instance(struct graph_sample_state *state, uint32_t index)
 {
 	struct graph_instance_data *instance = &state->instances[index];
 	uint32_t i = 0;
@@ -404,9 +405,9 @@ destroy_graph_instance(struct graph_sample_state *state, uint32_t index)
  * @instance_user_data [in]: graph instance user data
  * @graph_user_data [in]: graph user data
  */
-static void
-graph_completion_callback(struct doca_graph_instance *graph_instance, union doca_data instance_user_data,
-			  union doca_data graph_user_data)
+static void graph_completion_callback(struct doca_graph_instance *graph_instance,
+				      union doca_data instance_user_data,
+				      union doca_data graph_user_data)
 {
 	struct graph_sample_state *state = (struct graph_sample_state *)graph_user_data.ptr;
 	(void)graph_instance;
@@ -427,8 +428,7 @@ graph_completion_callback(struct doca_graph_instance *graph_instance, union doca
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_graph(struct graph_sample_state *state)
+static doca_error_t create_graph(struct graph_sample_state *state)
 {
 	union doca_data graph_user_data = {};
 	uint32_t i = 0;
@@ -448,7 +448,9 @@ create_graph(struct graph_sample_state *state)
 	}
 
 	/* Notice that the sample uses the same callback for success & failure. Program can supply different cb */
-	EXIT_ON_FAILURE(doca_graph_set_conf(state->graph, graph_completion_callback, graph_completion_callback,
+	EXIT_ON_FAILURE(doca_graph_set_conf(state->graph,
+					    graph_completion_callback,
+					    graph_completion_callback,
 					    NUM_GRAPH_INSTANCES));
 
 	graph_user_data.ptr = state;
@@ -465,8 +467,7 @@ create_graph(struct graph_sample_state *state)
  *
  * @state [in]: sample state
  */
-static void
-destroy_graph(struct graph_sample_state *state)
+static void destroy_graph(struct graph_sample_state *state)
 {
 	if (state->graph == NULL)
 		return;
@@ -483,8 +484,7 @@ destroy_graph(struct graph_sample_state *state)
  * @index [in]: the graph instance index
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_graph_instance(struct graph_sample_state *state, uint32_t index)
+static doca_error_t create_graph_instance(struct graph_sample_state *state, uint32_t index)
 {
 	struct graph_instance_data *instance = &state->instances[index];
 	union doca_data task_user_data = {};
@@ -496,23 +496,33 @@ create_graph_instance(struct graph_sample_state *state, uint32_t index)
 	EXIT_ON_FAILURE(doca_graph_instance_create(state->graph, &instance->graph_instance));
 
 	/* Use doca_buf_inventory_buf_get_by_data to initialize the source buffer */
-	EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->inventory, state->mmap, state->available_buffer,
-							   DMA_BUFFER_SIZE, &instance->source));
+	EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->inventory,
+							   state->mmap,
+							   state->available_buffer,
+							   DMA_BUFFER_SIZE,
+							   &instance->source));
 	memset(state->available_buffer, (index + 1), DMA_BUFFER_SIZE);
 	instance->source_addr = state->available_buffer;
 	state->available_buffer += DMA_BUFFER_SIZE;
 
 	/* Initialize DMA tasks */
 	for (i = 0; i < NUM_DMA_NODES; i++) {
-		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(state->inventory, state->mmap,
-								   state->available_buffer, DMA_BUFFER_SIZE,
+		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(state->inventory,
+								   state->mmap,
+								   state->available_buffer,
+								   DMA_BUFFER_SIZE,
 								   &instance->dma_dest[i]));
 		instance->dma_dest_addr[i] = state->available_buffer;
 		state->available_buffer += DMA_BUFFER_SIZE;
 
-		EXIT_ON_FAILURE(doca_dma_task_memcpy_alloc_init(state->dma[i], instance->source, instance->dma_dest[i],
-								task_user_data, &instance->dma_task[i]));
-		EXIT_ON_FAILURE(doca_graph_instance_set_ctx_node_data(instance->graph_instance, state->dma_node[i],
+		EXIT_ON_FAILURE(doca_dma_task_memcpy_alloc_init(state->dma[i],
+								instance->source,
+								instance->dma_dest[i],
+								task_user_data,
+								&instance->dma_task[i]));
+		EXIT_ON_FAILURE(
+			doca_graph_instance_set_ctx_node_data(instance->graph_instance,
+							      state->dma_node[i],
 							      doca_dma_task_memcpy_as_task(instance->dma_task[i])));
 	}
 
@@ -532,8 +542,7 @@ create_graph_instance(struct graph_sample_state *state, uint32_t index)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_graph_instances(struct graph_sample_state *state)
+static doca_error_t create_graph_instances(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -550,8 +559,7 @@ create_graph_instances(struct graph_sample_state *state)
  *
  * @state [in]: sample state
  */
-static void
-destroy_graph_instances(struct graph_sample_state *state)
+static void destroy_graph_instances(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -565,8 +573,7 @@ destroy_graph_instances(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-submit_instances(struct graph_sample_state *state)
+static doca_error_t submit_instances(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -583,8 +590,7 @@ submit_instances(struct graph_sample_state *state)
  *
  * @state [in]: sample state
  */
-static void
-poll_for_completion(struct graph_sample_state *state)
+static void poll_for_completion(struct graph_sample_state *state)
 {
 	state->num_completed_instances = 0;
 
@@ -603,8 +609,7 @@ poll_for_completion(struct graph_sample_state *state)
  *
  * @state [in]: sample state
  */
-static void
-cleanup(struct graph_sample_state *state)
+static void cleanup(struct graph_sample_state *state)
 {
 	uint32_t i = 0;
 
@@ -646,8 +651,7 @@ cleanup(struct graph_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-run(struct graph_sample_state *state)
+static doca_error_t run(struct graph_sample_state *state)
 {
 	EXIT_ON_FAILURE(allocate_buffer(state));
 	EXIT_ON_FAILURE(open_device(state));
@@ -669,8 +673,7 @@ run(struct graph_sample_state *state)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run_graph_sample(void)
+doca_error_t run_graph_sample(void)
 {
 	struct graph_sample_state state = {0};
 	doca_error_t status = run(&state);

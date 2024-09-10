@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -51,8 +63,7 @@ DOCA_LOG_REGISTER(PE::COMMON);
  * @expected_value [in]: Expected value in the destination.
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t expected_value)
+doca_error_t process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t expected_value)
 {
 	const struct doca_buf *dest = doca_dma_task_memcpy_get_dst(dma_task);
 	uint8_t *dst = NULL;
@@ -79,8 +90,7 @@ process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t
  *
  * @dma_task [in]: task
  */
-doca_error_t
-free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task)
+doca_error_t free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task)
 {
 	const struct doca_buf *src = doca_dma_task_memcpy_get_src(dma_task);
 	struct doca_buf *dst = doca_dma_task_memcpy_get_dst(dma_task);
@@ -95,8 +105,7 @@ free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task)
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-dma_task_free(struct doca_dma_task_memcpy *dma_task)
+doca_error_t dma_task_free(struct doca_dma_task_memcpy *dma_task)
 {
 	/**
 	 * A DOCA task should be freed once it is no longer used. It can be freed during a completion or error callback,
@@ -119,8 +128,7 @@ dma_task_free(struct doca_dma_task_memcpy *dma_task)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_buffer(struct pe_sample_state_base *state)
+doca_error_t allocate_buffer(struct pe_sample_state_base *state)
 {
 	DOCA_LOG_INFO("Allocating buffer with size of %zu", state->buffer_size);
 
@@ -144,9 +152,11 @@ allocate_buffer(struct pe_sample_state_base *state)
  * @tasks [in]: tasks to allocate
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uint32_t num_tasks, size_t dma_buffer_size,
-		   struct doca_dma_task_memcpy **tasks)
+doca_error_t allocate_dma_tasks(struct pe_sample_state_base *state,
+				struct doca_dma *dma,
+				uint32_t num_tasks,
+				size_t dma_buffer_size,
+				struct doca_dma_task_memcpy **tasks)
 {
 	uint32_t task_id = 0;
 
@@ -161,8 +171,11 @@ allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uin
 		user_data.u64 = (task_id + 1);
 
 		/* Use doca_buf_inventory_buf_get_by_data to initialize the source buffer */
-		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->inventory, state->mmap,
-								   state->available_buffer, dma_buffer_size, &source));
+		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_data(state->inventory,
+								   state->mmap,
+								   state->available_buffer,
+								   dma_buffer_size,
+								   &source));
 
 		memset(state->available_buffer, (task_id + 1), dma_buffer_size);
 		state->available_buffer += dma_buffer_size;
@@ -171,8 +184,11 @@ allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uin
 		 * Using doca_buf_inventory_buf_get_by_addr leaves the buffer head uninitialized. The DMA context will
 		 * set the head and length at the task completion.
 		 */
-		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(
-			state->inventory, state->mmap, state->available_buffer, dma_buffer_size, &destination));
+		EXIT_ON_FAILURE(doca_buf_inventory_buf_get_by_addr(state->inventory,
+								   state->mmap,
+								   state->available_buffer,
+								   dma_buffer_size,
+								   &destination));
 
 		memset(state->available_buffer, 0, dma_buffer_size);
 		state->available_buffer += dma_buffer_size;
@@ -192,8 +208,7 @@ allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uin
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks)
+doca_error_t submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks)
 {
 	uint32_t task_id = 0;
 
@@ -211,8 +226,7 @@ submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks)
  * @devinfo [in]: Device to check
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-check_dev_dma_capable(struct doca_devinfo *devinfo)
+static doca_error_t check_dev_dma_capable(struct doca_devinfo *devinfo)
 {
 	doca_error_t status = doca_dma_cap_task_memcpy_is_supported(devinfo);
 
@@ -228,8 +242,7 @@ check_dev_dma_capable(struct doca_devinfo *devinfo)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-open_device(struct pe_sample_state_base *state)
+doca_error_t open_device(struct pe_sample_state_base *state)
 {
 	DOCA_LOG_INFO("Opening device");
 
@@ -244,8 +257,7 @@ open_device(struct pe_sample_state_base *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_pe(struct pe_sample_state_base *state)
+doca_error_t create_pe(struct pe_sample_state_base *state)
 {
 	DOCA_LOG_INFO("Creating PE");
 
@@ -260,8 +272,7 @@ create_pe(struct pe_sample_state_base *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_mmap(struct pe_sample_state_base *state)
+doca_error_t create_mmap(struct pe_sample_state_base *state)
 {
 	DOCA_LOG_INFO("Creating MMAP");
 
@@ -280,8 +291,7 @@ create_mmap(struct pe_sample_state_base *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_buf_inventory(struct pe_sample_state_base *state)
+doca_error_t create_buf_inventory(struct pe_sample_state_base *state)
 {
 	DOCA_LOG_INFO("Creating buf inventory");
 
@@ -298,8 +308,7 @@ create_buf_inventory(struct pe_sample_state_base *state)
  * it means that some contexts are still added or even that there are still in flight tasks in the progress engine).
  * @state [in]: sample state
  */
-void
-pe_sample_base_cleanup(struct pe_sample_state_base *state)
+void pe_sample_base_cleanup(struct pe_sample_state_base *state)
 {
 	if (state->pe != NULL)
 		(void)doca_pe_destroy(state->pe);
@@ -328,8 +337,7 @@ pe_sample_base_cleanup(struct pe_sample_state_base *state)
  * @num_tasks [in] number of expected tasks
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-poll_for_completion(struct pe_sample_state_base *state, uint32_t num_tasks)
+doca_error_t poll_for_completion(struct pe_sample_state_base *state, uint32_t num_tasks)
 {
 	DOCA_LOG_INFO("Polling until all tasks are completed");
 

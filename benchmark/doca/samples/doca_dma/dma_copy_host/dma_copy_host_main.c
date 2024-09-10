@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -23,8 +35,11 @@
 DOCA_LOG_REGISTER(DMA_COPY_HOST::MAIN);
 
 /* Sample's Logic */
-doca_error_t dma_copy_host(const char *pcie_addr, char *src_buffer, size_t src_buffer_size,
-				  char *export_desc_file_path, char *buffer_info_file_path);
+doca_error_t dma_copy_host(const char *pcie_addr,
+			   char *src_buffer,
+			   size_t src_buffer_size,
+			   char *export_desc_file_path,
+			   char *buffer_info_file_path);
 
 /*
  * Sample main function
@@ -33,8 +48,7 @@ doca_error_t dma_copy_host(const char *pcie_addr, char *src_buffer, size_t src_b
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	struct dma_config dma_conf;
 	char *src_buffer;
@@ -94,7 +108,11 @@ main(int argc, char **argv)
 
 	memcpy(src_buffer, dma_conf.cpy_txt, length);
 
-	result = dma_copy_host(dma_conf.pci_address, src_buffer, length, dma_conf.export_desc_path, dma_conf.buf_info_path);
+	result = dma_copy_host(dma_conf.pci_address,
+			       src_buffer,
+			       length,
+			       dma_conf.export_desc_path,
+			       dma_conf.buf_info_path);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("dma_copy_host() encountered an error: %s", doca_error_get_descr(result));
 		goto src_buf_cleanup;

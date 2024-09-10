@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -25,7 +37,7 @@
 
 DOCA_LOG_REGISTER(FLOW_LOOPBACK);
 
-#define PACKET_BURST 128	/* The number of packets in the rx queue */
+#define PACKET_BURST 128 /* The number of packets in the rx queue */
 
 static bool force_quit = false;
 
@@ -34,8 +46,7 @@ static bool force_quit = false;
  *
  * @signum [in]: The signal received to handle
  */
-static void
-signal_handler(int signum)
+static void signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
 		DOCA_LOG_INFO("Signal %d received, preparing to exit", signum);
@@ -48,8 +59,7 @@ signal_handler(int signum)
  *
  * @ingress_port [in]: port id for dequeue packets
  */
-static void
-process_packets(int ingress_port)
+static void process_packets(int ingress_port)
 {
 	struct rte_mbuf *packets[PACKET_BURST];
 	int queue_index = 0;
@@ -77,29 +87,22 @@ process_packets(int ingress_port)
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_rss_tcp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe *miss_pipe, struct doca_flow_pipe **pipe)
+static doca_error_t create_rss_tcp_ip_pipe(struct doca_flow_port *port,
+					   struct doca_flow_pipe *miss_pipe,
+					   struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
 	struct doca_flow_fwd fwd_miss;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
 	uint16_t rss_queues[1];
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
 	memset(&fwd_miss, 0, sizeof(fwd_miss));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "RSS_TCP_IPv4_PIPE";
-	pipe_cfg.match = &match;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* changeable TCP over IPv4 source and destination addresses */
 	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_TCP;
@@ -112,6 +115,30 @@ create_rss_tcp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe *miss_
 	match.outer.tcp.l4_port.src_port = 0xffff;
 	match.outer.tcp.l4_port.dst_port = 0xffff;
 
+	actions_arr[0] = &actions;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "RSS_TCP_IPv4_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
 	/* RSS queue - send matched traffic to queue 0 */
 	rss_queues[0] = 0;
 	fwd.type = DOCA_FLOW_FWD_RSS;
@@ -123,7 +150,10 @@ create_rss_tcp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe *miss_
 	fwd_miss.type = DOCA_FLOW_FWD_PIPE;
 	fwd_miss.next_pipe = miss_pipe;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, &fwd_miss, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, &fwd_miss, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -133,8 +163,7 @@ create_rss_tcp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe *miss_
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-add_rss_tcp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_rss_tcp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -165,37 +194,30 @@ add_rss_tcp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *st
 /*
  * Create DOCA Flow pipe where it matches UDP over IPv4 traffic
  * with changeable source and destination IPv4 addresses.
- * The actions of the pipe is only setting a chageable metadata, forward is RSS and forward miss is drop.
+ * The actions of the pipe is only setting a changeable metadata, forward is RSS and forward miss is drop.
  *
  * @port [in]: port of the pipe
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_rss_udp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
+static doca_error_t create_rss_udp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
 	struct doca_flow_fwd fwd_miss;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
 	uint16_t rss_queues[1];
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
 	memset(&fwd_miss, 0, sizeof(fwd_miss));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
 
 	/* set mask value */
 	actions.meta.pkt_meta = UINT32_MAX;
-
-	pipe_cfg.attr.name = "RSS_UDP_IP_PIPE";
-	pipe_cfg.match = &match;
 	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* changeable IPv4 source and destination addresses */
 	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
@@ -203,6 +225,28 @@ create_rss_udp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe
 	match.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
 	match.outer.ip4.src_ip = 0xffffffff;
 	match.outer.ip4.dst_ip = 0xffffffff;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "RSS_UDP_IP_PIPE", DOCA_FLOW_PIPE_BASIC, false);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* RSS queue - send matched traffic to queue 0 */
 	rss_queues[0] = 0;
@@ -214,7 +258,10 @@ create_rss_udp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe
 	/* In case of a miss match, drop the packet */
 	fwd_miss.type = DOCA_FLOW_FWD_DROP;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, &fwd_miss, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, &fwd_miss, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -224,8 +271,7 @@ create_rss_udp_ip_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-add_rss_rss_udp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_rss_rss_udp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -253,40 +299,27 @@ add_rss_rss_udp_ip_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status
  * Create DOCA Flow "loopback" pipe.
  * The "loopback" pipe is created on egress domain, and it
  * matches changeable TCP over IPv4 source and destination addresses (IP and port).
- * It also does changeable VXLAN enxapsulation.
+ * It also does changeable VXLAN encapsulation.
  *
  * @port [in]: port of the pipe
  * @port_id [in]: the port identifier to re-inject the packet to
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-create_loopback_pipe(struct doca_flow_port *port, uint16_t port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_loopback_pipe(struct doca_flow_port *port, uint16_t port_id, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
-	struct doca_flow_action_descs descs, *descs_arr[NB_ACTIONS_ARR];
-	struct doca_flow_action_desc desc_array[NB_ACTIONS_ARR] = {0};
 
 	struct doca_flow_fwd fwd;
 	struct doca_flow_fwd fwd_miss;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
 	memset(&fwd_miss, 0, sizeof(fwd_miss));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "LOOPBACK_PIPE";
-	pipe_cfg.match = &match;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.action_descs = descs_arr;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.domain = DOCA_FLOW_PIPE_DOMAIN_EGRESS;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* changeable TCP over IPv4 source and destination addresses */
 	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_TCP;
@@ -300,23 +333,46 @@ create_loopback_pipe(struct doca_flow_port *port, uint16_t port_id, struct doca_
 	match.outer.tcp.l4_port.dst_port = 0xffff;
 
 	/* build basic outer VXLAN encap data */
-	actions.has_encap = true;
-	SET_MAC_ADDR(actions.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions.encap.outer.ip4.src_ip = 0xffffffff;
-	actions.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions.encap.outer.ip4.ttl = 0xff;
-	actions.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_VXLAN_DEFAULT_PORT);
-	actions.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
-	actions.encap.tun.vxlan_tun_id = 0xffffffff;
+	actions.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions.encap_cfg.is_l2 = true;
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_DEFAULT_PORT);
+	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
+	actions.encap_cfg.encap.tun.vxlan_tun_id = 0xffffffff;
+	actions_arr[0] = &actions;
 
-	desc_array[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array[0].decap_encap.is_l2 = true;
-	descs.desc_array = desc_array;
-	descs.nb_action_desc = NB_ACTIONS_ARR;
-	descs_arr[0] = &descs;
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "LOOPBACK_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_EGRESS);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg domain: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id;
@@ -324,7 +380,10 @@ create_loopback_pipe(struct doca_flow_port *port, uint16_t port_id, struct doca_
 	/* In cade of a miss, drop the packet */
 	fwd_miss.type = DOCA_FLOW_FWD_DROP;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, &fwd_miss, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, &fwd_miss, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -338,8 +397,9 @@ create_loopback_pipe(struct doca_flow_port *port, uint16_t port_id, struct doca_
  * @dst_mac [in]: MAC address used for the encapsulation
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-add_loopback_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status, uint8_t dst_mac[6])
+static doca_error_t add_loopback_pipe_entry(struct doca_flow_pipe *pipe,
+					    struct entries_status *status,
+					    uint8_t dst_mac[6])
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -365,15 +425,26 @@ add_loopback_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *stat
 	match.outer.tcp.l4_port.dst_port = dst_port;
 	match.outer.tcp.l4_port.src_port = src_port;
 
-	actions.has_encap = true;
-	SET_MAC_ADDR(actions.encap.outer.eth.src_mac, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
-	SET_MAC_ADDR(actions.encap.outer.eth.dst_mac, dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5]);
-	actions.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions.encap.outer.ip4.src_ip = encap_src_ip_addr;
-	actions.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
-	actions.encap.outer.ip4.ttl = encap_ttl;
-	actions.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
-	actions.encap.tun.vxlan_tun_id = encap_vxlan_tun_id;
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac,
+		     src_mac[0],
+		     src_mac[1],
+		     src_mac[2],
+		     src_mac[3],
+		     src_mac[4],
+		     src_mac[5]);
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.dst_mac,
+		     dst_mac[0],
+		     dst_mac[1],
+		     dst_mac[2],
+		     dst_mac[3],
+		     dst_mac[4],
+		     dst_mac[5]);
+	actions.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions.encap_cfg.encap.outer.ip4.src_ip = encap_src_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.ttl = encap_ttl;
+	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
+	actions.encap_cfg.encap.tun.vxlan_tun_id = encap_vxlan_tun_id;
 
 	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, NULL, NULL, 0, status, &entry);
 	if (result != DOCA_SUCCESS)
@@ -389,26 +460,27 @@ add_loopback_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *stat
  * @mac_addresses [in]: MAC addresses of each port used for encapsulation
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-flow_loopback(int nb_queues, uint8_t mac_addresses[2][6])
+doca_error_t flow_loopback(int nb_queues, uint8_t mac_addresses[2][6])
 {
 	const int nb_ports = 2;
-	struct doca_flow_resources resource = {0};
-	uint32_t nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_MAX] = {0};
+	struct flow_resources resource = {0};
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
+	struct doca_dev *dev_arr[nb_ports];
 	struct doca_flow_pipe *pipe, *miss_pipe;
 	struct entries_status status;
 	int num_of_entries = 3;
 	doca_error_t result;
 	int port_id;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", resource, nr_shared_resources);
+	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return -1;
 	}
 
-	result = init_doca_flow_ports(nb_ports, ports, true);
+	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -489,7 +561,7 @@ flow_loopback(int nb_queues, uint8_t mac_addresses[2][6])
 	for (port_id = 0; port_id < nb_ports; port_id++)
 		process_packets(port_id);
 
-	stop_doca_flow_ports(nb_ports, ports);
+	result = stop_doca_flow_ports(nb_ports, ports);
 	doca_flow_destroy();
-	return DOCA_SUCCESS;
+	return result;
 }

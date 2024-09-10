@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -19,16 +31,20 @@
 
 #include <doca_buf.h>
 #include <doca_buf_inventory.h>
+#include <doca_ctx.h>
+#include <doca_dev.h>
 #include <doca_dma.h>
 #include <doca_error.h>
 #include <doca_log.h>
+#include <doca_mmap.h>
+#include <doca_pe.h>
 
 #include "dma_common.h"
 
 DOCA_LOG_REGISTER(DMA_COPY_DPU);
 
-#define SLEEP_IN_NANOS (10 * 1000)	/* Sample the task every 10 microseconds  */
-#define RECV_BUF_SIZE  (512)		/* Buffer which contains config information */
+#define SLEEP_IN_NANOS (10 * 1000) /* Sample the task every 10 microseconds  */
+#define RECV_BUF_SIZE (512)	   /* Buffer which contains config information */
 
 /*
  * Saves export descriptor and buffer information content into memory buffers
@@ -41,9 +57,12 @@ DOCA_LOG_REGISTER(DMA_COPY_DPU);
  * @remote_addr_len [in]: Remote buffer total length
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-save_config_info_to_buffers(const char *export_desc_file_path, const char *buffer_info_file_path, char *export_desc,
-			    size_t *export_desc_len, char **remote_addr, size_t *remote_addr_len)
+static doca_error_t save_config_info_to_buffers(const char *export_desc_file_path,
+						const char *buffer_info_file_path,
+						char *export_desc,
+						size_t *export_desc_len,
+						char **remote_addr,
+						size_t *remote_addr_len)
 {
 	FILE *fp;
 	long file_size;
@@ -138,8 +157,7 @@ save_config_info_to_buffers(const char *export_desc_file_path, const char *buffe
  * @pcie_addr [in]: Device PCI address
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const char *pcie_addr)
+doca_error_t dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const char *pcie_addr)
 {
 	struct dma_resources resources;
 	struct program_core_objects *state = &resources.state;
@@ -188,8 +206,12 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 	}
 
 	/* Copy all relevant information into local buffers */
-	result = save_config_info_to_buffers(export_desc_file_path, buffer_info_file_path, export_desc,
-					     &export_desc_len, &remote_addr, &remote_addr_len);
+	result = save_config_info_to_buffers(export_desc_file_path,
+					     buffer_info_file_path,
+					     export_desc,
+					     &export_desc_len,
+					     &remote_addr,
+					     &remote_addr_len);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to read memory configuration from file: %s", doca_error_get_descr(result));
 		goto stop_dma;
@@ -202,7 +224,8 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 	} else if (remote_addr_len > max_buffer_size) {
 		result = DOCA_ERROR_TOO_BIG;
 		DOCA_LOG_ERR("Remote buffer from Host exceeds max allowed buffer: %zu > %zu",
-			     remote_addr_len, max_buffer_size);
+			     remote_addr_len,
+			     max_buffer_size);
 		goto stop_dma;
 	}
 
@@ -228,15 +251,18 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 	}
 
 	/* Create a local DOCA mmap from exported data */
-	result = doca_mmap_create_from_export(NULL, (const void *)export_desc, export_desc_len, state->dev,
-					      &remote_mmap);
+	result =
+		doca_mmap_create_from_export(NULL, (const void *)export_desc, export_desc_len, state->dev, &remote_mmap);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create mmap from export: %s", doca_error_get_descr(result));
 		goto free_dpu_buffer;
 	}
 
 	/* Construct DOCA buffer for each address range */
-	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv, remote_mmap, remote_addr, remote_addr_len,
+	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv,
+						    remote_mmap,
+						    remote_addr,
+						    remote_addr_len,
 						    &src_doca_buf);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing remote buffer: %s",
@@ -245,7 +271,10 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 	}
 
 	/* Construct DOCA buffer for each address range */
-	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv, state->dst_mmap, dpu_buffer, dst_buffer_size,
+	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv,
+						    state->dst_mmap,
+						    dpu_buffer,
+						    dst_buffer_size,
 						    &dst_doca_buf);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing destination buffer: %s",
@@ -265,7 +294,10 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 	task_user_data.ptr = &task_result;
 
 	/* Allocate and construct DMA task */
-	result = doca_dma_task_memcpy_alloc_init(resources.dma_ctx, src_doca_buf, dst_doca_buf, task_user_data,
+	result = doca_dma_task_memcpy_alloc_init(resources.dma_ctx,
+						 src_doca_buf,
+						 dst_doca_buf,
+						 task_user_data,
 						 &dma_task);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to allocate DMA memcpy task: %s", doca_error_get_descr(result));
@@ -284,10 +316,10 @@ dma_copy_dpu(char *export_desc_file_path, char *buffer_info_file_path, const cha
 		goto destroy_dst_buf;
 	}
 
-	resources.run_main_loop = true;
+	resources.run_pe_progress = true;
 
 	/* Wait for all tasks to be completed and context stopped */
-	while (resources.run_main_loop) {
+	while (resources.run_pe_progress) {
 		if (doca_pe_progress(state->pe) == 0)
 			nanosleep(&ts, &ts);
 	}
@@ -309,13 +341,15 @@ destroy_dst_buf:
 	tmp_result = doca_buf_dec_refcount(dst_doca_buf, NULL);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
-		DOCA_LOG_ERR("Failed to decrease DOCA destination buffer reference count: %s", doca_error_get_descr(tmp_result));
+		DOCA_LOG_ERR("Failed to decrease DOCA destination buffer reference count: %s",
+			     doca_error_get_descr(tmp_result));
 	}
 destroy_src_buf:
 	tmp_result = doca_buf_dec_refcount(src_doca_buf, NULL);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
-		DOCA_LOG_ERR("Failed to decrease DOCA source buffer reference count: %s", doca_error_get_descr(tmp_result));
+		DOCA_LOG_ERR("Failed to decrease DOCA source buffer reference count: %s",
+			     doca_error_get_descr(tmp_result));
 	}
 destroy_remote_mmap:
 	tmp_result = doca_mmap_destroy(remote_mmap);

@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -25,12 +37,12 @@ DOCA_LOG_REGISTER(FLOW_SHARED_COUNTER);
 
 /* Set match l4 port */
 #define SET_L4_PORT(layer, port, value) \
-do {\
-	if (match.layer.l4_type_ext == DOCA_FLOW_L4_TYPE_EXT_TCP)\
-		match.layer.tcp.l4_port.port = (value);\
-	else if (match.layer.l4_type_ext == DOCA_FLOW_L4_TYPE_EXT_UDP)\
-		match.layer.udp.l4_port.port = (value);\
-} while (0)
+	do { \
+		if (match.layer.l4_type_ext == DOCA_FLOW_L4_TYPE_EXT_TCP) \
+			match.layer.tcp.l4_port.port = (value); \
+		else if (match.layer.l4_type_ext == DOCA_FLOW_L4_TYPE_EXT_UDP) \
+			match.layer.udp.l4_port.port = (value); \
+	} while (0)
 
 /*
  * Create DOCA Flow pipe with 5 tuple match and monitor with shared counter ID
@@ -41,31 +53,22 @@ do {\
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_shared_counter_pipe(struct doca_flow_port *port, int port_id, enum doca_flow_l4_type_ext out_l4_type,
-			   struct doca_flow_pipe **pipe)
+static doca_error_t create_shared_counter_pipe(struct doca_flow_port *port,
+					       int port_id,
+					       enum doca_flow_l4_type_ext out_l4_type,
+					       struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_monitor monitor;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&monitor, 0, sizeof(monitor));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "SHARED_COUNTER_PIPE";
-	pipe_cfg.attr.type = DOCA_FLOW_PIPE_BASIC;
-	pipe_cfg.match = &match;
-	pipe_cfg.monitor = &monitor;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.is_root = false;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* 5 tuple match */
 	match.outer.l4_type_ext = out_l4_type;
@@ -75,15 +78,47 @@ create_shared_counter_pipe(struct doca_flow_port *port, int port_id, enum doca_f
 	SET_L4_PORT(outer, src_port, 0xffff);
 	SET_L4_PORT(outer, dst_port, 0xffff);
 
+	actions_arr[0] = &actions;
+
 	/* monitor with changeable shared counter ID */
 	monitor.counter_type = DOCA_FLOW_RESOURCE_TYPE_SHARED;
 	monitor.shared_counter.shared_counter_id = 0xffffffff;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "SHARED_COUNTER_PIPE", DOCA_FLOW_PIPE_BASIC, false);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_monitor(pipe_cfg, &monitor);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg monitor: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* forwarding traffic to other port */
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id ^ 1;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -95,9 +130,10 @@ create_shared_counter_pipe(struct doca_flow_port *port, int port_id, enum doca_f
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_shared_counter_pipe_entry(struct doca_flow_pipe *pipe, enum doca_flow_l4_type_ext out_l4_type,
-			      uint32_t shared_counter_id, struct entries_status *status)
+static doca_error_t add_shared_counter_pipe_entry(struct doca_flow_pipe *pipe,
+						  enum doca_flow_l4_type_ext out_l4_type,
+						  uint32_t shared_counter_id,
+						  struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -140,19 +176,27 @@ add_shared_counter_pipe_entry(struct doca_flow_pipe *pipe, enum doca_flow_l4_typ
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_control_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
+static doca_error_t create_control_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
 {
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
 
-	pipe_cfg.attr.name = "CONTROL_PIPE";
-	pipe_cfg.attr.type = DOCA_FLOW_PIPE_CONTROL;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.port = port;
+	result = set_flow_pipe_cfg(pipe_cfg, "CONTROL_PIPE", DOCA_FLOW_PIPE_CONTROL, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
-	return doca_flow_pipe_create(&pipe_cfg, NULL, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, NULL, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -165,9 +209,10 @@ create_control_pipe(struct doca_flow_port *port, struct doca_flow_pipe **pipe)
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_control_pipe_entries(struct doca_flow_pipe *control_pipe, struct doca_flow_pipe *tcp_pipe,
-			 struct doca_flow_pipe *udp_pipe, struct entries_status *status)
+static doca_error_t add_control_pipe_entries(struct doca_flow_pipe *control_pipe,
+					     struct doca_flow_pipe *tcp_pipe,
+					     struct doca_flow_pipe *udp_pipe,
+					     struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_fwd fwd;
@@ -183,8 +228,19 @@ add_control_pipe_entries(struct doca_flow_pipe *control_pipe, struct doca_flow_p
 	fwd.type = DOCA_FLOW_FWD_PIPE;
 	fwd.next_pipe = udp_pipe;
 
-	result = doca_flow_pipe_control_add_entry(0, priority, control_pipe, &match,
-						  NULL, NULL, NULL, NULL, NULL, &fwd, status, NULL);
+	result = doca_flow_pipe_control_add_entry(0,
+						  priority,
+						  control_pipe,
+						  &match,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  &fwd,
+						  status,
+						  NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add control pipe entry: %s", doca_error_get_descr(result));
 		return result;
@@ -199,8 +255,19 @@ add_control_pipe_entries(struct doca_flow_pipe *control_pipe, struct doca_flow_p
 	fwd.type = DOCA_FLOW_FWD_PIPE;
 	fwd.next_pipe = tcp_pipe;
 
-	result = doca_flow_pipe_control_add_entry(0, priority, control_pipe, &match,
-						  NULL, NULL, NULL, NULL, NULL, &fwd, status, NULL);
+	result = doca_flow_pipe_control_add_entry(0,
+						  priority,
+						  control_pipe,
+						  &match,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  NULL,
+						  &fwd,
+						  status,
+						  NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add control pipe entry: %s", doca_error_get_descr(result));
 		return result;
@@ -214,31 +281,32 @@ add_control_pipe_entries(struct doca_flow_pipe *control_pipe, struct doca_flow_p
  * @nb_queues [in]: number of queues the sample will use
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-doca_error_t
-flow_shared_counter(int nb_queues)
+doca_error_t flow_shared_counter(int nb_queues)
 {
 	int nb_ports = 2;
-	struct doca_flow_resources resource = {0};
-	uint32_t nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_MAX] = {0};
+	struct flow_resources resource = {0};
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
+	struct doca_dev *dev_arr[nb_ports];
 	struct doca_flow_pipe *tcp_pipe, *udp_pipe, *pipe;
 	int port_id;
 	uint32_t shared_counter_ids[] = {0, 1};
-	struct doca_flow_shared_resource_result query_results_array[nb_ports];
+	struct doca_flow_resource_query query_results_array[nb_ports];
 	struct doca_flow_shared_resource_cfg cfg = {.domain = DOCA_FLOW_PIPE_DOMAIN_DEFAULT};
 	struct entries_status status;
 	int num_of_entries = 4;
 	doca_error_t result;
 
-	nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_COUNT] = 2;
+	nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_COUNTER] = 2;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", resource, nr_shared_resources);
+	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = init_doca_flow_ports(nb_ports, ports, true);
+	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -248,7 +316,7 @@ flow_shared_counter(int nb_queues)
 	for (port_id = 0; port_id < nb_ports; port_id++) {
 		memset(&status, 0, sizeof(status));
 		/* config and bind shared counter to port */
-		result = doca_flow_shared_resource_cfg(DOCA_FLOW_SHARED_RESOURCE_COUNT, port_id, &cfg);
+		result = doca_flow_shared_resource_set_cfg(DOCA_FLOW_SHARED_RESOURCE_COUNTER, port_id, &cfg);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to configure shared counter to port %d", port_id);
 			stop_doca_flow_ports(nb_ports, ports);
@@ -256,8 +324,10 @@ flow_shared_counter(int nb_queues)
 			return result;
 		}
 
-		result = doca_flow_shared_resources_bind(DOCA_FLOW_SHARED_RESOURCE_COUNT,
-							 &shared_counter_ids[port_id], 1, ports[port_id]);
+		result = doca_flow_shared_resources_bind(DOCA_FLOW_SHARED_RESOURCE_COUNTER,
+							 &shared_counter_ids[port_id],
+							 1,
+							 ports[port_id]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to bind shared counter to pipe");
 			stop_doca_flow_ports(nb_ports, ports);
@@ -273,7 +343,10 @@ flow_shared_counter(int nb_queues)
 			return result;
 		}
 
-		result = add_shared_counter_pipe_entry(tcp_pipe, DOCA_FLOW_L4_TYPE_EXT_TCP, shared_counter_ids[port_id], &status);
+		result = add_shared_counter_pipe_entry(tcp_pipe,
+						       DOCA_FLOW_L4_TYPE_EXT_TCP,
+						       shared_counter_ids[port_id],
+						       &status);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -289,7 +362,10 @@ flow_shared_counter(int nb_queues)
 			return result;
 		}
 
-		result = add_shared_counter_pipe_entry(udp_pipe, DOCA_FLOW_L4_TYPE_EXT_UDP, shared_counter_ids[port_id], &status);
+		result = add_shared_counter_pipe_entry(udp_pipe,
+						       DOCA_FLOW_L4_TYPE_EXT_UDP,
+						       shared_counter_ids[port_id],
+						       &status);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -330,8 +406,10 @@ flow_shared_counter(int nb_queues)
 	DOCA_LOG_INFO("Wait few seconds for packets to arrive");
 	sleep(5);
 
-	result = doca_flow_shared_resources_query(DOCA_FLOW_SHARED_RESOURCE_COUNT, shared_counter_ids,
-						  query_results_array, nb_ports);
+	result = doca_flow_shared_resources_query(DOCA_FLOW_SHARED_RESOURCE_COUNTER,
+						  shared_counter_ids,
+						  query_results_array,
+						  nb_ports);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to query entry: %s", doca_error_get_descr(result));
 		stop_doca_flow_ports(nb_ports, ports);
@@ -345,7 +423,7 @@ flow_shared_counter(int nb_queues)
 		DOCA_LOG_INFO("Total packets: %ld", query_results_array[port_id].counter.total_pkts);
 	}
 
-	stop_doca_flow_ports(nb_ports, ports);
+	result = stop_doca_flow_ports(nb_ports, ports);
 	doca_flow_destroy();
-	return DOCA_SUCCESS;
+	return result;
 }

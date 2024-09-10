@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -29,26 +41,17 @@ DOCA_LOG_REGISTER(FLOW_GENEVE_ENCAP);
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "MATCH_PIPE";
-	pipe_cfg.match = &match;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* 5 tuple match */
 	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_TCP;
@@ -62,12 +65,38 @@ create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pip
 
 	/* set meta data to match on the egress domain */
 	actions.meta.pkt_meta = UINT32_MAX;
+	actions_arr[0] = &actions;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "MATCH_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* forwarding traffic to other port */
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id ^ 1;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -78,20 +107,15 @@ create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pip
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_geneve_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_geneve_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_match match_mask;
 	struct doca_flow_actions actions1, actions2, actions3, actions4, *actions_arr[4];
-	struct doca_flow_action_desc desc_array1[1], desc_array2[1], desc_array3[1], desc_array4[1];
-	struct doca_flow_action_descs descs1 = {.desc_array = desc_array1, .nb_action_desc = 1},
-				      descs2 = {.desc_array = desc_array2, .nb_action_desc = 1},
-				      descs3 = {.desc_array = desc_array3, .nb_action_desc = 1},
-				      descs4 = {.desc_array = desc_array4, .nb_action_desc = 1}, *descs_arr[4];
 	struct doca_flow_fwd fwd;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
 	int i;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&match_mask, 0, sizeof(match_mask));
@@ -100,105 +124,115 @@ create_geneve_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_f
 	memset(&actions3, 0, sizeof(actions3));
 	memset(&actions4, 0, sizeof(actions4));
 	memset(&fwd, 0, sizeof(fwd));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "GENEVE_ENCAP_PIPE";
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.domain = DOCA_FLOW_PIPE_DOMAIN_EGRESS;
-	pipe_cfg.match = &match;
-	pipe_cfg.match_mask = &match_mask;
-	actions_arr[0] = &actions1;
-	actions_arr[1] = &actions2;
-	actions_arr[2] = &actions3;
-	actions_arr[3] = &actions4;
-	pipe_cfg.actions = actions_arr;
-	descs_arr[0] = &descs1;
-	descs_arr[1] = &descs2;
-	descs_arr[2] = &descs3;
-	descs_arr[3] = &descs4;
-	pipe_cfg.action_descs = descs_arr;
-	pipe_cfg.attr.nb_actions = 4;
-	pipe_cfg.port = port;
 
 	/* match on pkt meta */
 	match_mask.meta.pkt_meta = UINT32_MAX;
 
 	/* build basic outer GENEVE L3 encap data */
-	actions1.has_encap = true;
-	SET_MAC_ADDR(actions1.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions1.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions1.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions1.encap.outer.ip4.src_ip = 0xffffffff;
-	actions1.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions1.encap.outer.ip4.ttl = 0xff;
-	actions1.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions1.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
-	actions1.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
-	actions1.encap.tun.geneve.vni = 0xffffffff;
-	actions1.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_IPV4);
-	desc_array1[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array1[0].decap_encap.is_l2 = false;
+	actions1.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions1.encap_cfg.is_l2 = false;
+	SET_MAC_ADDR(actions1.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions1.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions1.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions1.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions1.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions1.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions1.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions1.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
+	actions1.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
+	actions1.encap_cfg.encap.tun.geneve.vni = 0xffffffff;
+	actions1.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_IPV4);
+	actions_arr[0] = &actions1;
 
 	/* build basic outer GENEVE + options L3 encap data */
-	actions2.has_encap = true;
-	SET_MAC_ADDR(actions2.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions2.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions2.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions2.encap.outer.ip4.src_ip = 0xffffffff;
-	actions2.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions2.encap.outer.ip4.ttl = 0xff;
-	actions2.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions2.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
-	actions2.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
-	actions2.encap.tun.geneve.vni = 0xffffffff;
-	actions2.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_IPV4);
-	actions2.encap.tun.geneve.ver_opt_len = 5;
-	for (i = 0; i < actions2.encap.tun.geneve.ver_opt_len; i++)
-		actions2.encap.tun.geneve_options[i].data = 0xffffffff;
-
-	desc_array2[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array2[0].decap_encap.is_l2 = false;
+	actions2.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions2.encap_cfg.is_l2 = false;
+	SET_MAC_ADDR(actions2.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions2.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions2.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions2.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions2.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions2.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions2.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions2.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
+	actions2.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
+	actions2.encap_cfg.encap.tun.geneve.vni = 0xffffffff;
+	actions2.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_IPV4);
+	actions2.encap_cfg.encap.tun.geneve.ver_opt_len = 5;
+	for (i = 0; i < actions2.encap_cfg.encap.tun.geneve.ver_opt_len; i++)
+		actions2.encap_cfg.encap.tun.geneve_options[i].data = 0xffffffff;
+	actions_arr[1] = &actions2;
 
 	/* build basic outer GENEVE L2 encap data */
-	actions3.has_encap = true;
-	SET_MAC_ADDR(actions3.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions3.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions3.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions3.encap.outer.ip4.src_ip = 0xffffffff;
-	actions3.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions3.encap.outer.ip4.ttl = 0xff;
-	actions3.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions3.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
-	actions3.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
-	actions3.encap.tun.geneve.vni = 0xffffffff;
-	actions3.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_TEB);
-	desc_array3[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array3[0].decap_encap.is_l2 = true;
+	actions3.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions3.encap_cfg.is_l2 = true;
+	SET_MAC_ADDR(actions3.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions3.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions3.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions3.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions3.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions3.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions3.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions3.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
+	actions3.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
+	actions3.encap_cfg.encap.tun.geneve.vni = 0xffffffff;
+	actions3.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_TEB);
+	actions_arr[2] = &actions3;
 
 	/* build basic outer GENEVE + options L2 encap data */
-	actions4.has_encap = true;
-	SET_MAC_ADDR(actions4.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions4.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions4.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions4.encap.outer.ip4.src_ip = 0xffffffff;
-	actions4.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions4.encap.outer.ip4.ttl = 0xff;
-	actions4.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
-	actions4.encap.tun.geneve.vni = 0xffffffff;
-	actions4.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions4.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
-	actions4.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_TEB);
-	actions4.encap.tun.geneve.ver_opt_len = 5;
-	desc_array4[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array4[0].decap_encap.is_l2 = true;
-	for (i = 0; i < actions4.encap.tun.geneve.ver_opt_len; i++)
-		actions4.encap.tun.geneve_options[i].data = 0xffffffff;
+	actions4.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions4.encap_cfg.is_l2 = true;
+	SET_MAC_ADDR(actions4.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions4.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions4.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions4.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions4.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions4.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions4.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
+	actions4.encap_cfg.encap.tun.geneve.vni = 0xffffffff;
+	actions4.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions4.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_GENEVE_DEFAULT_PORT);
+	actions4.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_TEB);
+	actions4.encap_cfg.encap.tun.geneve.ver_opt_len = 5;
+	for (i = 0; i < actions4.encap_cfg.encap.tun.geneve.ver_opt_len; i++)
+		actions4.encap_cfg.encap.tun.geneve_options[i].data = 0xffffffff;
+	actions_arr[3] = &actions4;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "GENEVE_ENCAP_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_EGRESS);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg domain: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, 4);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* forwarding traffic to the wire */
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -208,8 +242,7 @@ create_geneve_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_f
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_match_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_match_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -262,8 +295,7 @@ add_match_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status *statu
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -279,18 +311,29 @@ add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 
-	actions.has_encap = true;
-	SET_MAC_ADDR(actions.encap.outer.eth.src_mac, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
-	SET_MAC_ADDR(actions.encap.outer.eth.dst_mac, dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5]);
-	actions.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions.encap.outer.ip4.src_ip = encap_src_ip_addr;
-	actions.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
-	actions.encap.outer.ip4.ttl = encap_ttl;
-	actions.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac,
+		     src_mac[0],
+		     src_mac[1],
+		     src_mac[2],
+		     src_mac[3],
+		     src_mac[4],
+		     src_mac[5]);
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.dst_mac,
+		     dst_mac[0],
+		     dst_mac[1],
+		     dst_mac[2],
+		     dst_mac[3],
+		     dst_mac[4],
+		     dst_mac[5]);
+	actions.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions.encap_cfg.encap.outer.ip4.src_ip = encap_src_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.ttl = encap_ttl;
+	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_GENEVE;
 
 	/* L3 encap - GENEVE header only */
-	actions.encap.tun.geneve.vni = BUILD_VNI(0xadadad);
-	actions.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_IPV4);
+	actions.encap_cfg.encap.tun.geneve.vni = BUILD_VNI(0xadadad);
+	actions.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_IPV4);
 	actions.action_idx = 0;
 	match.meta.pkt_meta = 1;
 
@@ -299,20 +342,20 @@ add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status
 		return result;
 
 	/* L3 encap - GENEVE header */
-	actions.encap.tun.geneve.vni = BUILD_VNI(0xcdcdcd);
-	actions.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_IPV4);
-	actions.encap.tun.geneve.ver_opt_len = 5;
+	actions.encap_cfg.encap.tun.geneve.vni = BUILD_VNI(0xcdcdcd);
+	actions.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_IPV4);
+	actions.encap_cfg.encap.tun.geneve.ver_opt_len = 5;
 	/* First option */
-	actions.encap.tun.geneve_options[0].class_id = rte_cpu_to_be_16(0x0107);
-	actions.encap.tun.geneve_options[0].type = 1;
-	actions.encap.tun.geneve_options[0].length = 2;
-	actions.encap.tun.geneve_options[1].data = rte_cpu_to_be_32(0x01234567);
-	actions.encap.tun.geneve_options[2].data = rte_cpu_to_be_32(0x89abcdef);
+	actions.encap_cfg.encap.tun.geneve_options[0].class_id = rte_cpu_to_be_16(0x0107);
+	actions.encap_cfg.encap.tun.geneve_options[0].type = 1;
+	actions.encap_cfg.encap.tun.geneve_options[0].length = 2;
+	actions.encap_cfg.encap.tun.geneve_options[1].data = rte_cpu_to_be_32(0x01234567);
+	actions.encap_cfg.encap.tun.geneve_options[2].data = rte_cpu_to_be_32(0x89abcdef);
 	/* Second option */
-	actions.encap.tun.geneve_options[3].class_id = rte_cpu_to_be_16(0x0107);
-	actions.encap.tun.geneve_options[3].type = 2;
-	actions.encap.tun.geneve_options[3].length = 1;
-	actions.encap.tun.geneve_options[4].data = rte_cpu_to_be_32(0xabbadeba);
+	actions.encap_cfg.encap.tun.geneve_options[3].class_id = rte_cpu_to_be_16(0x0107);
+	actions.encap_cfg.encap.tun.geneve_options[3].type = 2;
+	actions.encap_cfg.encap.tun.geneve_options[3].length = 1;
+	actions.encap_cfg.encap.tun.geneve_options[4].data = rte_cpu_to_be_32(0xabbadeba);
 	actions.action_idx = 1;
 	match.meta.pkt_meta = 2;
 
@@ -321,9 +364,9 @@ add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status
 		return result;
 
 	/* L2 encap - GENEVE header only */
-	actions.encap.tun.geneve.vni = BUILD_VNI(0xefefef);
-	actions.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_TEB);
-	actions.encap.tun.geneve.ver_opt_len = 0;
+	actions.encap_cfg.encap.tun.geneve.vni = BUILD_VNI(0xefefef);
+	actions.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_TEB);
+	actions.encap_cfg.encap.tun.geneve.ver_opt_len = 0;
 	actions.action_idx = 2;
 	match.meta.pkt_meta = 3;
 
@@ -332,18 +375,18 @@ add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status
 		return result;
 
 	/* L2 encap - GENEVE header */
-	actions.encap.tun.geneve.vni = BUILD_VNI(0x123456);
-	actions.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_ETHER_TYPE_TEB);
-	actions.encap.tun.geneve.ver_opt_len = 5;
+	actions.encap_cfg.encap.tun.geneve.vni = BUILD_VNI(0x123456);
+	actions.encap_cfg.encap.tun.geneve.next_proto = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_TEB);
+	actions.encap_cfg.encap.tun.geneve.ver_opt_len = 5;
 	/* Option header */
-	actions.encap.tun.geneve_options[0].class_id = rte_cpu_to_be_16(0x0107);
-	actions.encap.tun.geneve_options[0].type = 3;
-	actions.encap.tun.geneve_options[0].length = 4;
+	actions.encap_cfg.encap.tun.geneve_options[0].class_id = rte_cpu_to_be_16(0x0107);
+	actions.encap_cfg.encap.tun.geneve_options[0].type = 3;
+	actions.encap_cfg.encap.tun.geneve_options[0].length = 4;
 	/* Option data */
-	actions.encap.tun.geneve_options[1].data = rte_cpu_to_be_32(0x11223344);
-	actions.encap.tun.geneve_options[2].data = rte_cpu_to_be_32(0x55667788);
-	actions.encap.tun.geneve_options[3].data = rte_cpu_to_be_32(0x99aabbcc);
-	actions.encap.tun.geneve_options[4].data = rte_cpu_to_be_32(0xddeeff00);
+	actions.encap_cfg.encap.tun.geneve_options[1].data = rte_cpu_to_be_32(0x11223344);
+	actions.encap_cfg.encap.tun.geneve_options[2].data = rte_cpu_to_be_32(0x55667788);
+	actions.encap_cfg.encap.tun.geneve_options[3].data = rte_cpu_to_be_32(0x99aabbcc);
+	actions.encap_cfg.encap.tun.geneve_options[4].data = rte_cpu_to_be_32(0xddeeff00);
 	actions.action_idx = 3;
 	match.meta.pkt_meta = 4;
 
@@ -360,28 +403,29 @@ add_geneve_encap_pipe_entries(struct doca_flow_pipe *pipe, struct entries_status
  * @nb_queues [in]: number of queues the sample will use
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-doca_error_t
-flow_geneve_encap(int nb_queues)
+doca_error_t flow_geneve_encap(int nb_queues)
 {
 	int nb_ports = 2;
-	struct doca_flow_resources resource = {0};
-	uint32_t nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_MAX] = {0};
+	struct flow_resources resource = {0};
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
+	struct doca_dev *dev_arr[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct entries_status status_ingress;
-	int num_of_entries_ingress = 4;
+	uint32_t num_of_entries_ingress = 4;
 	struct entries_status status_egress;
-	int num_of_entries_egress = 4;
+	uint32_t num_of_entries_egress = 4;
 	doca_error_t result;
 	int port_id;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", resource, nr_shared_resources);
+	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = init_doca_flow_ports(nb_ports, ports, true);
+	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -424,41 +468,27 @@ flow_geneve_encap(int nb_queues)
 			return result;
 		}
 
-		result = doca_flow_entries_process(ports[port_id], 0, DEFAULT_TIMEOUT_US, num_of_entries_ingress);
+		result = flow_process_entries(ports[port_id], &status_ingress, num_of_entries_ingress);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Failed to process ingress entries: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
 			doca_flow_destroy();
 			return result;
 		}
 
-		if (status_ingress.nb_processed != num_of_entries_ingress || status_ingress.failure) {
-			DOCA_LOG_ERR("Failed to process entries");
-			stop_doca_flow_ports(nb_ports, ports);
-			doca_flow_destroy();
-			return DOCA_ERROR_BAD_STATE;
-		}
-
-		result = doca_flow_entries_process(ports[port_id ^ 1], 0, DEFAULT_TIMEOUT_US, num_of_entries_egress);
+		result = flow_process_entries(ports[port_id ^ 1], &status_egress, num_of_entries_egress);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Failed to process egress entries: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
 			doca_flow_destroy();
 			return result;
-		}
-
-		if (status_egress.nb_processed != num_of_entries_egress || status_egress.failure) {
-			DOCA_LOG_ERR("Failed to process entries");
-			stop_doca_flow_ports(nb_ports, ports);
-			doca_flow_destroy();
-			return DOCA_ERROR_BAD_STATE;
 		}
 	}
 
 	DOCA_LOG_INFO("Wait few seconds for packets to arrive");
 	sleep(5);
 
-	stop_doca_flow_ports(nb_ports, ports);
+	result = stop_doca_flow_ports(nb_ports, ports);
 	doca_flow_destroy();
-	return DOCA_SUCCESS;
+	return result;
 }

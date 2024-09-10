@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -32,12 +44,11 @@ doca_error_t flow_loopback(int nb_queues, uint8_t mac_addresses[2][6]);
  * @opaque [in/out]: MAC address
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-mac_addresses_callback(void *param, void *opaque)
+static doca_error_t mac_addresses_callback(void *param, void *opaque)
 {
 	char mac1[18];
 	char mac2[18];
-	uint8_t (*mac_addresses)[MAC_ADDR_LEN] = (uint8_t (*)[MAC_ADDR_LEN])opaque;
+	uint8_t(*mac_addresses)[MAC_ADDR_LEN] = (uint8_t(*)[MAC_ADDR_LEN])opaque;
 	char *mac_addresses_param = (char *)param;
 
 	/* Split the input into two MAC addresses */
@@ -47,20 +58,29 @@ mac_addresses_callback(void *param, void *opaque)
 	}
 
 	/* Parse the first MAC address */
-	if (sscanf(mac1, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-		&mac_addresses[0][0], &mac_addresses[0][1], &mac_addresses[0][2],
-		&mac_addresses[0][3], &mac_addresses[0][4], &mac_addresses[0][5]) != MAC_ADDR_LEN) {
+	if (sscanf(mac1,
+		   "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+		   &mac_addresses[0][0],
+		   &mac_addresses[0][1],
+		   &mac_addresses[0][2],
+		   &mac_addresses[0][3],
+		   &mac_addresses[0][4],
+		   &mac_addresses[0][5]) != MAC_ADDR_LEN) {
 		DOCA_LOG_ERR("Invalid MAC address format: %s", mac1);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
 	/*  Parse the second MAC address */
-	if (sscanf(mac2, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-		&mac_addresses[1][0], &mac_addresses[1][1], &mac_addresses[1][2], &mac_addresses[1][3],
-		&mac_addresses[1][4], &mac_addresses[1][5]) != MAC_ADDR_LEN) {
+	if (sscanf(mac2,
+		   "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+		   &mac_addresses[1][0],
+		   &mac_addresses[1][1],
+		   &mac_addresses[1][2],
+		   &mac_addresses[1][3],
+		   &mac_addresses[1][4],
+		   &mac_addresses[1][5]) != MAC_ADDR_LEN) {
 		DOCA_LOG_ERR("Invalid MAC address format: %s", mac2);
 		return DOCA_ERROR_INVALID_VALUE;
-
 	}
 	return DOCA_SUCCESS;
 }
@@ -70,8 +90,7 @@ mac_addresses_callback(void *param, void *opaque)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-register_flow_loopback_params(void)
+doca_error_t register_flow_loopback_params(void)
 {
 	doca_error_t result;
 	struct doca_argp_param *mac_addresses_param;
@@ -102,8 +121,7 @@ register_flow_loopback_params(void)
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	doca_error_t result;
 	struct doca_log_backend *sdk_log;

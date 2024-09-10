@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -51,8 +63,7 @@ struct pe_sample_state_base {
  * @expected_value [in]: Expected value in the destination.
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t expected_value);
+doca_error_t process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t expected_value);
 
 /*
  * Free task buffers
@@ -60,8 +71,7 @@ process_completed_dma_memcpy_task(struct doca_dma_task_memcpy *dma_task, uint8_t
  * @dma_task [in]: task
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task);
+doca_error_t free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task);
 
 /*
  * Free DMA task
@@ -69,8 +79,7 @@ free_dma_memcpy_task_buffers(struct doca_dma_task_memcpy *dma_task);
  * @dma_task [in]: task
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-dma_task_free(struct doca_dma_task_memcpy *dma_task);
+doca_error_t dma_task_free(struct doca_dma_task_memcpy *dma_task);
 
 /**
  * Allocates a buffer that will be used for the source and destination buffers.
@@ -78,8 +87,7 @@ dma_task_free(struct doca_dma_task_memcpy *dma_task);
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_buffer(struct pe_sample_state_base *state);
+doca_error_t allocate_buffer(struct pe_sample_state_base *state);
 
 /**
  * This method allocate the DMA tasks but does not submit them.
@@ -92,9 +100,11 @@ allocate_buffer(struct pe_sample_state_base *state);
  * @tasks [in]: tasks to allocate
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uint32_t num_tasks, size_t dma_buffer_size,
-		   struct doca_dma_task_memcpy **tasks);
+doca_error_t allocate_dma_tasks(struct pe_sample_state_base *state,
+				struct doca_dma *dma,
+				uint32_t num_tasks,
+				size_t dma_buffer_size,
+				struct doca_dma_task_memcpy **tasks);
 
 /**
  * This method submits all the tasks (@see allocate_dma_tasks).
@@ -103,8 +113,7 @@ allocate_dma_tasks(struct pe_sample_state_base *state, struct doca_dma *dma, uin
  * @tasks [in]: tasks to submit
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks);
+doca_error_t submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks);
 
 /**
  * Opens a device that supports SHA and DMA
@@ -112,8 +121,7 @@ submit_dma_tasks(uint32_t num_tasks, struct doca_dma_task_memcpy **tasks);
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-open_device(struct pe_sample_state_base *state);
+doca_error_t open_device(struct pe_sample_state_base *state);
 
 /**
  * Creates a progress engine
@@ -121,8 +129,7 @@ open_device(struct pe_sample_state_base *state);
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_pe(struct pe_sample_state_base *state);
+doca_error_t create_pe(struct pe_sample_state_base *state);
 
 /**
  * Create MMAP, initialize and start it.
@@ -130,8 +137,7 @@ create_pe(struct pe_sample_state_base *state);
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_mmap(struct pe_sample_state_base *state);
+doca_error_t create_mmap(struct pe_sample_state_base *state);
 
 /**
  * Create buffer inventory, initialize and start it.
@@ -139,8 +145,7 @@ create_mmap(struct pe_sample_state_base *state);
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_buf_inventory(struct pe_sample_state_base *state);
+doca_error_t create_buf_inventory(struct pe_sample_state_base *state);
 
 /**
  * Poll the PE until all tasks are completed.
@@ -149,8 +154,7 @@ create_buf_inventory(struct pe_sample_state_base *state);
  * @num_tasks [in]: number of expected tasks
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-poll_for_completion(struct pe_sample_state_base *state, uint32_t num_tasks);
+doca_error_t poll_for_completion(struct pe_sample_state_base *state, uint32_t num_tasks);
 
 /**
  * This method cleans up the sample resources in reverse order of their creation.
@@ -160,7 +164,6 @@ poll_for_completion(struct pe_sample_state_base *state, uint32_t num_tasks);
  *
  * @state [in]: sample state
  */
-void
-pe_sample_base_cleanup(struct pe_sample_state_base *state);
+void pe_sample_base_cleanup(struct pe_sample_state_base *state);
 
 #endif /* PE_COMMON_H_ */

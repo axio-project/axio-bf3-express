@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -29,26 +41,17 @@ DOCA_LOG_REGISTER(FLOW_VXLAN_ENCAP);
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
-	struct doca_flow_pipe_cfg pipe_cfg;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "MATCH_PIPE";
-	pipe_cfg.match = &match;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* 5 tuple match */
 	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
@@ -63,12 +66,38 @@ create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pip
 	actions.meta.pkt_meta = UINT32_MAX;
 	actions.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TRANSPORT;
 	actions.outer.transport.src_port = 0xffff;
+	actions_arr[0] = &actions;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "MATCH_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg monitor: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* forwarding traffic to other port */
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id ^ 1;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -76,64 +105,98 @@ create_match_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pip
  *
  * @port [in]: port of the pipe
  * @port_id [in]: pipe port ID
+ * @vxlan_type [in]: vxlan type
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-create_vxlan_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_vxlan_encap_pipe(struct doca_flow_port *port,
+					    int port_id,
+					    enum doca_flow_tun_ext_vxlan_type vxlan_type,
+					    struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_match match_mask;
 	struct doca_flow_actions actions, *actions_arr[NB_ACTIONS_ARR];
 	struct doca_flow_fwd fwd;
-	struct doca_flow_pipe_cfg pipe_cfg;
-	struct doca_flow_action_descs descs, *descs_arr[NB_ACTIONS_ARR];
-	struct doca_flow_action_desc desc_array[NB_ACTIONS_ARR] = {0};
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
 	memset(&match_mask, 0, sizeof(match_mask));
 	memset(&actions, 0, sizeof(actions));
 	memset(&fwd, 0, sizeof(fwd));
-	memset(&pipe_cfg, 0, sizeof(pipe_cfg));
-
-	pipe_cfg.attr.name = "VXLAN_ENCAP_PIPE";
-	pipe_cfg.attr.is_root = true;
-	pipe_cfg.attr.domain = DOCA_FLOW_PIPE_DOMAIN_EGRESS;
-	pipe_cfg.match = &match;
-	pipe_cfg.match_mask = &match_mask;
-	actions_arr[0] = &actions;
-	pipe_cfg.actions = actions_arr;
-	pipe_cfg.action_descs = descs_arr;
-	pipe_cfg.attr.nb_actions = NB_ACTIONS_ARR;
-	pipe_cfg.port = port;
 
 	/* match on pkt meta */
 	match_mask.meta.pkt_meta = UINT32_MAX;
 
 	/* build basic outer VXLAN encap data*/
-	actions.has_encap = true;
-	SET_MAC_ADDR(actions.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	SET_MAC_ADDR(actions.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
-	actions.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions.encap.outer.ip4.src_ip = 0xffffffff;
-	actions.encap.outer.ip4.dst_ip = 0xffffffff;
-	actions.encap.outer.ip4.ttl = 0xff;
-	actions.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
-	actions.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_VXLAN_DEFAULT_PORT);
-	actions.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
-	actions.encap.tun.vxlan_tun_id = 0xffffffff;
+	actions.encap_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	actions.encap_cfg.is_l2 = true;
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.dst_mac, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+	actions.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions.encap_cfg.encap.outer.ip4.src_ip = 0xffffffff;
+	actions.encap_cfg.encap.outer.ip4.dst_ip = 0xffffffff;
+	actions.encap_cfg.encap.outer.ip4.ttl = 0xff;
+	actions.encap_cfg.encap.outer.ip4.flags_fragment_offset = 0xffff;
+	actions.encap_cfg.encap.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	actions.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_DEFAULT_PORT);
+	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
+	actions.encap_cfg.encap.tun.vxlan_tun_id = 0xffffffff;
+	actions_arr[0] = &actions;
 
-	desc_array[0].type = DOCA_FLOW_ACTION_DECAP_ENCAP;
-	desc_array[0].decap_encap.is_l2 = true;
-	descs.desc_array = desc_array;
-	descs.nb_action_desc = NB_ACTIONS_ARR;
-	descs_arr[0] = &descs;
+	switch (vxlan_type) {
+	case DOCA_FLOW_TUN_EXT_VXLAN_GBP:
+		actions.encap_cfg.encap.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GBP;
+		actions.encap_cfg.encap.tun.vxlan_group_policy_id = 0xffff;
+		break;
+	case DOCA_FLOW_TUN_EXT_VXLAN_GPE:
+		actions.encap_cfg.encap.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GPE;
+		actions.encap_cfg.encap.tun.vxlan_next_protocol = 0xff;
+		actions.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_GPE_DEFAULT_PORT);
+		break;
+	case DOCA_FLOW_TUN_EXT_VXLAN_STANDARD:
+		break;
+	default:
+		DOCA_LOG_ERR("Failed to create vxlan encap pipe: invalid vxlan type %d", vxlan_type);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "VXLAN_ENCAP_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_EGRESS);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg domain: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, NB_ACTIONS_ARR);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
 
 	/* forwarding traffic to the wire */
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id;
 
-	return doca_flow_pipe_create(&pipe_cfg, &fwd, NULL, pipe);
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
 }
 
 /*
@@ -143,8 +206,7 @@ create_vxlan_encap_pipe(struct doca_flow_port *port, int port_id, struct doca_fl
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_match_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_match_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -179,11 +241,13 @@ add_match_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
  * Add DOCA Flow pipe entry with example encap values
  *
  * @pipe [in]: pipe of the entry
+ * @vxlan_type [in]: vxlan type
  * @status [in]: user context for adding entry
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
+static doca_error_t add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe,
+					       enum doca_flow_tun_ext_vxlan_type vxlan_type,
+					       struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
@@ -192,6 +256,7 @@ add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *s
 
 	doca_be32_t encap_dst_ip_addr = BE_IPV4_ADDR(81, 81, 81, 81);
 	doca_be32_t encap_src_ip_addr = BE_IPV4_ADDR(11, 21, 31, 41);
+	doca_be16_t encap_flags_fragment_offset = RTE_BE16(DOCA_FLOW_IP4_FLAG_DONT_FRAGMENT);
 	uint8_t encap_ttl = 17;
 	doca_be32_t encap_vxlan_tun_id = BUILD_VNI(0xadadad);
 	uint8_t src_mac[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
@@ -202,16 +267,42 @@ add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *s
 
 	match.meta.pkt_meta = 1;
 
-	actions.has_encap = true;
-	SET_MAC_ADDR(actions.encap.outer.eth.src_mac, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
-	SET_MAC_ADDR(actions.encap.outer.eth.dst_mac, dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5]);
-	actions.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	actions.encap.outer.ip4.src_ip = encap_src_ip_addr;
-	actions.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
-	actions.encap.outer.ip4.ttl = encap_ttl;
-	actions.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
-	actions.encap.tun.vxlan_tun_id = encap_vxlan_tun_id;
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac,
+		     src_mac[0],
+		     src_mac[1],
+		     src_mac[2],
+		     src_mac[3],
+		     src_mac[4],
+		     src_mac[5]);
+	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.dst_mac,
+		     dst_mac[0],
+		     dst_mac[1],
+		     dst_mac[2],
+		     dst_mac[3],
+		     dst_mac[4],
+		     dst_mac[5]);
+	actions.encap_cfg.encap.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
+	actions.encap_cfg.encap.outer.ip4.src_ip = encap_src_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.dst_ip = encap_dst_ip_addr;
+	actions.encap_cfg.encap.outer.ip4.flags_fragment_offset = encap_flags_fragment_offset;
+	actions.encap_cfg.encap.outer.ip4.ttl = encap_ttl;
+	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
+	actions.encap_cfg.encap.tun.vxlan_tun_id = encap_vxlan_tun_id;
 	actions.action_idx = 0;
+
+	switch (vxlan_type) {
+	case DOCA_FLOW_TUN_EXT_VXLAN_GBP:
+		actions.encap_cfg.encap.tun.vxlan_group_policy_id = RTE_BE16(0x1234);
+		break;
+	case DOCA_FLOW_TUN_EXT_VXLAN_GPE:
+		actions.encap_cfg.encap.tun.vxlan_next_protocol = DOCA_FLOW_VXLAN_GPE_TYPE_ETH;
+		break;
+	case DOCA_FLOW_TUN_EXT_VXLAN_STANDARD:
+		break;
+	default:
+		DOCA_LOG_ERR("Failed to add vxlan encap entry: invalid vxlan type %d", vxlan_type);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
 
 	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, NULL, NULL, 0, status, &entry);
 	if (result != DOCA_SUCCESS)
@@ -224,15 +315,16 @@ add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *s
  * Run flow_vxlan_encap sample
  *
  * @nb_queues [in]: number of queues the sample will use
+ * @vxlan_type [in]: vxlan type
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-doca_error_t
-flow_vxlan_encap(int nb_queues)
+doca_error_t flow_vxlan_encap(int nb_queues, enum doca_flow_tun_ext_vxlan_type vxlan_type)
 {
 	int nb_ports = 2;
-	struct doca_flow_resources resource = {0};
-	uint32_t nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_MAX] = {0};
+	struct flow_resources resource = {0};
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
+	struct doca_dev *dev_arr[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct entries_status status_ingress;
 	int num_of_entries_ingress = 1;
@@ -241,13 +333,14 @@ flow_vxlan_encap(int nb_queues)
 	doca_error_t result;
 	int port_id;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", resource, nr_shared_resources);
+	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = init_doca_flow_ports(nb_ports, ports, true);
+	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -274,7 +367,7 @@ flow_vxlan_encap(int nb_queues)
 			return result;
 		}
 
-		result = create_vxlan_encap_pipe(ports[port_id ^ 1], port_id ^ 1, &pipe);
+		result = create_vxlan_encap_pipe(ports[port_id ^ 1], port_id ^ 1, vxlan_type, &pipe);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create vxlan encap pipe: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -282,7 +375,7 @@ flow_vxlan_encap(int nb_queues)
 			return result;
 		}
 
-		result = add_vxlan_encap_pipe_entry(pipe, &status_egress);
+		result = add_vxlan_encap_pipe_entry(pipe, vxlan_type, &status_egress);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry to vxlan encap pipe: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -324,7 +417,7 @@ flow_vxlan_encap(int nb_queues)
 	DOCA_LOG_INFO("Wait few seconds for packets to arrive");
 	sleep(10);
 
-	stop_doca_flow_ports(nb_ports, ports);
+	result = stop_doca_flow_ports(nb_ports, ports);
 	doca_flow_destroy();
-	return DOCA_SUCCESS;
+	return result;
 }

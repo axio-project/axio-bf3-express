@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -16,10 +28,12 @@
 
 #include <doca_buf_inventory.h>
 #include <doca_dev.h>
+#include <doca_ctx.h>
 #include <doca_dma.h>
 #include <doca_error.h>
 #include <doca_log.h>
 #include <doca_mmap.h>
+#include <doca_pe.h>
 #include <doca_argp.h>
 
 #include "dma_common.h"
@@ -33,8 +47,7 @@ DOCA_LOG_REGISTER(DMA_COMMON);
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-pci_callback(void *param, void *config)
+static doca_error_t pci_callback(void *param, void *config)
 {
 	struct dma_config *conf = (struct dma_config *)config;
 	const char *addr = (char *)param;
@@ -42,7 +55,8 @@ pci_callback(void *param, void *config)
 
 	/* Check using >= to make static code analysis satisfied */
 	if (addr_len >= DOCA_DEVINFO_PCI_ADDR_SIZE) {
-		DOCA_LOG_ERR("Entered device PCI address exceeding the maximum size of %d", DOCA_DEVINFO_PCI_ADDR_SIZE - 1);
+		DOCA_LOG_ERR("Entered device PCI address exceeding the maximum size of %d",
+			     DOCA_DEVINFO_PCI_ADDR_SIZE - 1);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
@@ -59,8 +73,7 @@ pci_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-text_callback(void *param, void *config)
+static doca_error_t text_callback(void *param, void *config)
 {
 	struct dma_config *conf = (struct dma_config *)config;
 	const char *txt = (char *)param;
@@ -85,8 +98,7 @@ text_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-descriptor_path_callback(void *param, void *config)
+static doca_error_t descriptor_path_callback(void *param, void *config)
 {
 	struct dma_config *conf = (struct dma_config *)config;
 	const char *path = (char *)param;
@@ -118,8 +130,7 @@ descriptor_path_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-buf_info_path_callback(void *param, void *config)
+static doca_error_t buf_info_path_callback(void *param, void *config)
 {
 	struct dma_config *conf = (struct dma_config *)config;
 	const char *path = (char *)param;
@@ -144,8 +155,7 @@ buf_info_path_callback(void *param, void *config)
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-register_dma_params(bool is_remote)
+doca_error_t register_dma_params(bool is_remote)
 {
 	doca_error_t result;
 	struct doca_argp_param *pci_address_param, *cpy_txt_param, *export_desc_path_param, *buf_info_path_param;
@@ -233,9 +243,9 @@ register_dma_params(bool is_remote)
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			      union doca_data ctx_user_data)
+static void dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task,
+					  union doca_data task_user_data,
+					  union doca_data ctx_user_data)
 {
 	struct dma_resources *resources = (struct dma_resources *)ctx_user_data.ptr;
 	doca_error_t *result = (doca_error_t *)task_user_data.ptr;
@@ -260,9 +270,9 @@ dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			  union doca_data ctx_user_data)
+static void dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task,
+				      union doca_data task_user_data,
+				      union doca_data ctx_user_data)
 {
 	struct dma_resources *resources = (struct dma_resources *)ctx_user_data.ptr;
 	struct doca_task *task = doca_dma_task_memcpy_as_task(dma_task);
@@ -289,9 +299,10 @@ dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data
  * @prev_state [in]: Previous context state
  * @next_state [in]: Next context state (context is already in this state when the callback is called)
  */
-static void
-dma_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx, enum doca_ctx_states prev_state,
-				enum doca_ctx_states next_state)
+static void dma_state_changed_callback(const union doca_data user_data,
+				       struct doca_ctx *ctx,
+				       enum doca_ctx_states prev_state,
+				       enum doca_ctx_states next_state)
 {
 	(void)ctx;
 	(void)prev_state;
@@ -301,8 +312,8 @@ dma_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx
 	switch (next_state) {
 	case DOCA_CTX_STATE_IDLE:
 		DOCA_LOG_INFO("DMA context has been stopped");
-		/* We can stop the main loop */
-		resources->run_main_loop = false;
+		/* We can stop progressing the PE */
+		resources->run_pe_progress = false;
 		break;
 	case DOCA_CTX_STATE_STARTING:
 		/**
@@ -315,18 +326,20 @@ dma_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx
 		break;
 	case DOCA_CTX_STATE_STOPPING:
 		/**
-		 * The context is in stopping due to failure encountered in one of the tasks, nothing to do at this stage.
-		 * doca_pe_progress() will cause all tasks to be flushed, and finally transition state to idle
+		 * doca_ctx_stop() has been called.
+		 * In this sample, this happens either due to a failure encountered, in which case doca_pe_progress()
+		 * will cause any inflight task to be flushed, or due to the successful compilation of the sample flow.
+		 * In both cases, in this sample, doca_pe_progress() will eventually transition the context to idle
+		 * state.
 		 */
-		DOCA_LOG_ERR("DMA context entered into stopping state. All inflight tasks will be flushed");
+		DOCA_LOG_INFO("DMA context entered into stopping state. Any inflight tasks will be flushed");
 		break;
 	default:
 		break;
 	}
 }
 
-doca_error_t
-allocate_dma_resources(const char *pcie_addr, struct dma_resources *resources)
+doca_error_t allocate_dma_resources(const char *pcie_addr, struct dma_resources *resources)
 {
 	memset(resources, 0, sizeof(*resources));
 	/* Two buffers for source and destination */
@@ -361,7 +374,9 @@ allocate_dma_resources(const char *pcie_addr, struct dma_resources *resources)
 		goto destroy_dma;
 	}
 
-	result = doca_dma_task_memcpy_set_conf(resources->dma_ctx, dma_memcpy_completed_callback, dma_memcpy_error_callback,
+	result = doca_dma_task_memcpy_set_conf(resources->dma_ctx,
+					       dma_memcpy_completed_callback,
+					       dma_memcpy_error_callback,
 					       NUM_DMA_TASKS);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set configurations for DMA memcpy task: %s", doca_error_get_descr(result));
@@ -396,8 +411,7 @@ close_device:
 	return result;
 }
 
-doca_error_t
-destroy_dma_resources(struct dma_resources *resources)
+doca_error_t destroy_dma_resources(struct dma_resources *resources)
 {
 	doca_error_t result, tmp_result;
 
@@ -420,8 +434,7 @@ destroy_dma_resources(struct dma_resources *resources)
 	return result;
 }
 
-doca_error_t
-allocate_dma_host_resources(const char *pcie_addr, struct program_core_objects *state)
+doca_error_t allocate_dma_host_resources(const char *pcie_addr, struct program_core_objects *state)
 {
 	doca_error_t result, tmp_result;
 
@@ -461,8 +474,7 @@ close_device:
 	return result;
 }
 
-doca_error_t
-destroy_dma_host_resources(struct program_core_objects *state)
+doca_error_t destroy_dma_host_resources(struct program_core_objects *state)
 {
 	doca_error_t result, tmp_result;
 
@@ -479,8 +491,7 @@ destroy_dma_host_resources(struct program_core_objects *state)
 	return result;
 }
 
-doca_error_t
-dma_task_is_supported(struct doca_devinfo *devinfo)
+doca_error_t dma_task_is_supported(struct doca_devinfo *devinfo)
 {
 	return doca_dma_cap_task_memcpy_is_supported(devinfo);
 }

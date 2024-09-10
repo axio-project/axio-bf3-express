@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -22,8 +34,74 @@
 DOCA_LOG_REGISTER(FLOW_VXLAN_ENCAP::MAIN);
 
 /* Sample's Logic */
-doca_error_t flow_vxlan_encap(int nb_queues);
+doca_error_t flow_vxlan_encap(int nb_queues, enum doca_flow_tun_ext_vxlan_type vxlan_type);
 
+/*
+ * Config for vxlan_encap params
+ */
+struct vxlan_encap_config {
+	/* vxlan_type to create flow */
+	enum doca_flow_tun_ext_vxlan_type vxlan_type;
+};
+
+/*
+ * Callback for arg vxlan-type
+ *
+ * @param [in]: parameter
+ * @config [in]: app dpdk config
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t vxlan_type_callback(void *param, void *config)
+{
+	struct vxlan_encap_config *app_config = (struct vxlan_encap_config *)config;
+	const char *str = (const char *)param;
+
+	if (strcmp(str, "gbp") == 0)
+		app_config->vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GBP;
+	else if (strcmp(str, "gpe") == 0)
+		app_config->vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GPE;
+	else if (strcmp(str, "vxlan") == 0)
+		app_config->vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_STANDARD;
+	else {
+		DOCA_LOG_ERR("Unknown vxlan_type '%s' was specified", str);
+		return DOCA_ERROR_NOT_SUPPORTED;
+	}
+
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Register for vxlan_encap params
+ *
+ * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
+ */
+static int register_vxlan_type_params(void)
+{
+	doca_error_t result;
+	struct doca_argp_param *vxlan_type_param;
+
+	/* Create and register vxlan-type para */
+	result = doca_argp_param_create(&vxlan_type_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create vxlan-type ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	doca_argp_param_set_short_name(vxlan_type_param, "type");
+	doca_argp_param_set_long_name(vxlan_type_param, "vxlan-type");
+	doca_argp_param_set_arguments(vxlan_type_param, "<vxlan-type>");
+	doca_argp_param_set_description(vxlan_type_param,
+					"Set vxlan-type (\"gpe\", \"gbp\", \"vxlan\") to create encap flows");
+	doca_argp_param_set_callback(vxlan_type_param, vxlan_type_callback);
+	doca_argp_param_set_type(vxlan_type_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(vxlan_type_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	return 0;
+}
 /*
  * Sample main function
  *
@@ -31,17 +109,19 @@ doca_error_t flow_vxlan_encap(int nb_queues);
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	doca_error_t result;
 	struct doca_log_backend *sdk_log;
 	int exit_status = EXIT_FAILURE;
 	struct application_dpdk_config dpdk_config = {
-	    .port_config.nb_ports = 2,
-	    .port_config.nb_queues = 4,
-	    .port_config.nb_hairpin_q = 1,
-	    .reserve_main_thread = true,
+		.port_config.nb_ports = 2,
+		.port_config.nb_queues = 4,
+		.port_config.nb_hairpin_q = 1,
+		.reserve_main_thread = true,
+	};
+	struct vxlan_encap_config app_cfg = {
+		.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_STANDARD,
 	};
 
 	/* Register a logger backend */
@@ -59,10 +139,15 @@ main(int argc, char **argv)
 
 	DOCA_LOG_INFO("Starting the sample");
 
-	result = doca_argp_init("doca_flow_vxlan_encap", NULL);
+	result = doca_argp_init("doca_flow_vxlan_encap", &app_cfg);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init ARGP resources: %s", doca_error_get_descr(result));
 		goto sample_exit;
+	}
+	result = register_vxlan_type_params();
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register Flow parameters: %s", doca_error_get_descr(result));
+		goto argp_cleanup;
 	}
 	doca_argp_set_dpdk_program(dpdk_init);
 	result = doca_argp_start(argc, argv);
@@ -79,7 +164,7 @@ main(int argc, char **argv)
 	}
 
 	/* run sample */
-	result = flow_vxlan_encap(dpdk_config.port_config.nb_queues);
+	result = flow_vxlan_encap(dpdk_config.port_config.nb_queues, app_cfg.vxlan_type);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("flow_vxlan_encap() encountered an error: %s", doca_error_get_descr(result));
 		goto dpdk_ports_queues_cleanup;

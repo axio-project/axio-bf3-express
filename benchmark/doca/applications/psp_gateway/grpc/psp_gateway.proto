@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) 2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
+syntax = "proto3";
+
+package psp_gateway;
+
+// General notes:
+// - All `request_id` fields are unique per initiating host.
+// - All `name` fields are for debug only and should not be
+//   depended on except for logging.
+// - Success/failure is encoded in the RPC return values, not
+//   in response message fields.
+//   See: https://grpc.github.io/grpc/core/md_doc_statuscodes.html
+
+message TunnelParameters
+{
+    string mac_addr = 1;
+    string ip_addr = 2;
+    uint32 psp_version = 3;
+    uint32 spi = 4;
+    bytes encryption_key = 5;
+    uint64 virt_cookie = 6;
+    uint32 encap_type = 7;
+}
+
+message SingleTunnelRequest
+{
+    string virt_src_ip = 1;
+    string virt_dst_ip = 2;
+
+    TunnelParameters reverse_params = 3;
+}
+
+message MultiTunnelRequest
+{
+    uint64 request_id = 1; // unique per host
+
+    repeated uint32 psp_versions_accepted = 2; // in decreasing order of preference
+    repeated SingleTunnelRequest tunnels = 3;
+}
+
+message MultiTunnelResponse
+{
+    uint64 request_id = 1;
+    repeated TunnelParameters tunnels_params = 2;
+}
+
+message KeyRotationRequest
+{
+    uint64 request_id = 1; // unique per host
+    bool issue_new_keys = 2;
+}
+
+message KeyRotationResponse
+{
+    uint64 request_id = 1;
+}
+
+service PSP_Gateway
+{
+    // Requests that the recipient allocate multiple SPI and encryption key pairs
+    // so that the initiator can begin sending encrypted traffic.
+    rpc RequestMultipleTunnelParams(MultiTunnelRequest) returns (MultiTunnelResponse);
+
+    // Requests that the master key be rotated.
+    // All active keys become deprecated but continue to work.
+    // All previously deprecated keys are invalidated.
+    rpc RequestKeyRotation(KeyRotationRequest) returns (KeyRotationResponse);
+}

@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -25,7 +37,7 @@ DOCA_LOG_REGISTER(ETH_RXQ_MANAGED_MEMPOOL_RECEIVE::MAIN);
 
 /* Configuration struct */
 struct eth_rxq_cfg {
-	char ib_dev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE];		/* DOCA IB device name */
+	char ib_dev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE]; /* DOCA IB device name */
 };
 
 /* Sample's Logic */
@@ -35,11 +47,10 @@ doca_error_t eth_rxq_managed_mempool_receive(const char *ib_dev_name);
  * ARGP Callback - Handle IB device name parameter
  *
  * @param [in]: Input parameter
- * @config [in/out]: Program configuration context
+ * @config [out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-device_address_callback(void *param, void *config)
+static doca_error_t device_address_callback(void *param, void *config)
 {
 	struct eth_rxq_cfg *eth_rxq_cfg = (struct eth_rxq_cfg *)config;
 
@@ -51,8 +62,7 @@ device_address_callback(void *param, void *config)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-register_eth_rxq_params(void)
+static doca_error_t register_eth_rxq_params(void)
 {
 	doca_error_t result;
 	struct doca_argp_param *dev_ib_name_param;
@@ -84,8 +94,7 @@ register_eth_rxq_params(void)
  * @argv [in]: array of command line arguments
  * @return: EXIT_SUCCESS on success and EXIT_FAILURE otherwise
  */
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
 	doca_error_t result;
 	struct eth_rxq_cfg eth_rxq_cfg;
@@ -127,7 +136,8 @@ main(int argc, char **argv)
 
 	result = eth_rxq_managed_mempool_receive(eth_rxq_cfg.ib_dev_name);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("eth_rxq_managed_mempool_receive() encountered an error: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("eth_rxq_managed_mempool_receive() encountered an error: %s",
+			     doca_error_get_descr(result));
 		goto argp_cleanup;
 	}
 

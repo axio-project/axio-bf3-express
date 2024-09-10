@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -26,7 +38,6 @@
 #include <doca_dma.h>
 #include <doca_types.h>
 #include <doca_log.h>
-#include <doca_dma.h>
 #include <doca_pe.h>
 
 #include <samples/common.h>
@@ -83,9 +94,9 @@ struct pe_event_sample_state {
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			      union doca_data ctx_user_data)
+static void dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task,
+					  union doca_data task_user_data,
+					  union doca_data ctx_user_data)
 {
 	uint8_t expected_value = (uint8_t)task_user_data.u64;
 	struct pe_event_sample_state *state = (struct pe_event_sample_state *)ctx_user_data.ptr;
@@ -109,9 +120,9 @@ dma_memcpy_completed_callback(struct doca_dma_task_memcpy *dma_task, union doca_
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data task_user_data,
-			  union doca_data ctx_user_data)
+static void dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task,
+				      union doca_data task_user_data,
+				      union doca_data ctx_user_data)
 {
 	struct pe_event_sample_state *state = (struct pe_event_sample_state *)ctx_user_data.ptr;
 	struct doca_task *task = doca_dma_task_memcpy_as_task(dma_task);
@@ -135,8 +146,7 @@ dma_memcpy_error_callback(struct doca_dma_task_memcpy *dma_task, union doca_data
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-register_pe_event(struct pe_event_sample_state *state)
+doca_error_t register_pe_event(struct pe_event_sample_state *state)
 {
 	doca_event_handle_t event_handle = doca_event_invalid_handle;
 	struct epoll_event events_in = {.events = EPOLLIN, .data.fd = 0};
@@ -167,8 +177,7 @@ register_pe_event(struct pe_event_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-create_dma(struct pe_event_sample_state *state)
+doca_error_t create_dma(struct pe_event_sample_state *state)
 {
 	union doca_data ctx_user_data = {0};
 
@@ -188,8 +197,10 @@ create_dma(struct pe_event_sample_state *state)
 	ctx_user_data.ptr = state;
 	EXIT_ON_FAILURE(doca_ctx_set_user_data(state->dma_ctx, ctx_user_data));
 
-	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma, dma_memcpy_completed_callback,
-						      dma_memcpy_error_callback, NUM_TASKS));
+	EXIT_ON_FAILURE(doca_dma_task_memcpy_set_conf(state->dma,
+						      dma_memcpy_completed_callback,
+						      dma_memcpy_error_callback,
+						      NUM_TASKS));
 
 	return DOCA_SUCCESS;
 }
@@ -201,8 +212,7 @@ create_dma(struct pe_event_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run_for_completion(struct pe_event_sample_state *state)
+doca_error_t run_for_completion(struct pe_event_sample_state *state)
 {
 	static const int no_timeout = -1;
 	struct epoll_event ep_event = {0};
@@ -255,8 +265,7 @@ run_for_completion(struct pe_event_sample_state *state)
  *
  * @state [in]: sample state
  */
-void
-cleanup(struct pe_event_sample_state *state)
+void cleanup(struct pe_event_sample_state *state)
 {
 	/* A context must be stopped before it is destroyed */
 	if (state->dma_ctx != NULL)
@@ -277,8 +286,7 @@ cleanup(struct pe_event_sample_state *state)
  * @state [in]: sample state
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run(struct pe_event_sample_state *state)
+doca_error_t run(struct pe_event_sample_state *state)
 {
 	memset(state, 0, sizeof(*state));
 
@@ -305,8 +313,7 @@ run(struct pe_event_sample_state *state)
  *
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-run_pe_event_sample(void)
+doca_error_t run_pe_event_sample(void)
 {
 	struct pe_event_sample_state state;
 	doca_error_t status = run(&state);

@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 #include <inttypes.h>
@@ -28,9 +40,10 @@ DOCA_LOG_REGISTER(VADS_GET);
  * @pid [in]: PID of the target process
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t
-vads_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_system_os os_type,
-	 DOCA_APSH_PROCESS_PID_TYPE pid)
+doca_error_t vads_get(const char *dma_device_name,
+		      const char *pci_vuid,
+		      enum doca_apsh_system_os os_type,
+		      DOCA_APSH_PROCESS_PID_TYPE pid)
 {
 	doca_error_t result;
 	int i, nb_processes;
@@ -82,10 +95,11 @@ vads_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_syste
 	/* Print some attributes of the vads */
 	DOCA_LOG_INFO("First 5 vads for process %u:", pid);
 	for (i = 0; i < num_vads && i < 5; ++i) {
-		DOCA_LOG_INFO("\tVad %d  -  Process name: %s, start address: 0x%"PRIx64", end address: 0x%"PRIx64, i,
-			doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_PROCESS_NAME),
-			doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_START),
-			doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_END));
+		DOCA_LOG_INFO("\tVad %d  -  Process name: %s, start address: 0x%" PRIx64 ", end address: 0x%" PRIx64,
+			      i,
+			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_PROCESS_NAME),
+			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_START),
+			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_END));
 	}
 
 	/* Cleanup */

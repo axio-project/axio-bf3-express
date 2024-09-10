@@ -1,13 +1,25 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 #include <string.h>
@@ -32,8 +44,7 @@ static struct doca_dev_rep *pci_device;
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-pid_callback(void *param, void *config)
+static doca_error_t pid_callback(void *param, void *config)
 {
 	struct apsh_config *conf = (struct apsh_config *)config;
 
@@ -48,8 +59,7 @@ pid_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-vuid_callback(void *param, void *config)
+static doca_error_t vuid_callback(void *param, void *config)
 {
 	struct apsh_config *conf = (struct apsh_config *)config;
 	size_t size = sizeof(conf->system_vuid);
@@ -69,8 +79,7 @@ vuid_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-dma_callback(void *param, void *config)
+static doca_error_t dma_callback(void *param, void *config)
 {
 	struct apsh_config *conf = (struct apsh_config *)config;
 	size_t size = sizeof(conf->dma_dev_name);
@@ -90,8 +99,7 @@ dma_callback(void *param, void *config)
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t
-os_type_callback(void *param, void *config)
+static doca_error_t os_type_callback(void *param, void *config)
 {
 	struct apsh_config *conf = (struct apsh_config *)config;
 	char *str_param = (char *)param;
@@ -107,8 +115,7 @@ os_type_callback(void *param, void *config)
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-register_apsh_params(bool add_os_arg, bool add_pid_arg)
+doca_error_t register_apsh_params(bool add_os_arg, bool add_pid_arg)
 {
 	doca_error_t result;
 	struct doca_argp_param *pid_param, *vuid_param, *dma_param, *os_type_param;
@@ -190,15 +197,16 @@ skip_pid:
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-init_doca_apsh(const char *dma_device_name, struct doca_apsh_ctx **ctx)
+doca_error_t init_doca_apsh(const char *dma_device_name, struct doca_apsh_ctx **ctx)
 {
 	doca_error_t result;
 	struct doca_apsh_ctx *apsh_ctx;
 
 	/* Get dma device */
-	result = open_doca_device_with_ibdev_name((const uint8_t *)dma_device_name, strlen(dma_device_name),
-							  NULL, &dma_device);
+	result = open_doca_device_with_ibdev_name((const uint8_t *)dma_device_name,
+						  strlen(dma_device_name),
+						  NULL,
+						  &dma_device);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -227,16 +235,22 @@ init_doca_apsh(const char *dma_device_name, struct doca_apsh_ctx **ctx)
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-init_doca_apsh_system(struct doca_apsh_ctx *ctx, enum doca_apsh_system_os os_type, const char *os_symbols,
-		      const char *mem_region, const char *pci_vuid, struct doca_apsh_system **system)
+doca_error_t init_doca_apsh_system(struct doca_apsh_ctx *ctx,
+				   enum doca_apsh_system_os os_type,
+				   const char *os_symbols,
+				   const char *mem_region,
+				   const char *pci_vuid,
+				   struct doca_apsh_system **system)
 {
 	doca_error_t result;
 	struct doca_apsh_system *sys = NULL;
 
 	/* Get pci device that connects to the system */
-	result = open_doca_device_rep_with_vuid(dma_device, DOCA_DEVINFO_REP_FILTER_NET, (const uint8_t *)pci_vuid,
-							strlen(pci_vuid), &pci_device);
+	result = open_doca_device_rep_with_vuid(dma_device,
+						DOCA_DEVINFO_REP_FILTER_NET,
+						(const uint8_t *)pci_vuid,
+						strlen(pci_vuid),
+						&pci_device);
 	if (result != DOCA_SUCCESS)
 		goto err;
 
@@ -280,8 +294,7 @@ err:
 	return result;
 }
 
-doca_error_t
-cleanup_doca_apsh(struct doca_apsh_ctx *ctx, struct doca_apsh_system *system)
+doca_error_t cleanup_doca_apsh(struct doca_apsh_ctx *ctx, struct doca_apsh_system *system)
 {
 	doca_apsh_destroy(ctx);
 	if (system != NULL)
@@ -294,9 +307,11 @@ cleanup_doca_apsh(struct doca_apsh_ctx *ctx, struct doca_apsh_system *system)
 	return DOCA_SUCCESS;
 }
 
-doca_error_t
-process_get(DOCA_APSH_PROCESS_PID_TYPE pid, struct doca_apsh_system *sys, int *nb_procs,
-	    struct doca_apsh_process ***processes, struct doca_apsh_process **process)
+doca_error_t process_get(DOCA_APSH_PROCESS_PID_TYPE pid,
+			 struct doca_apsh_system *sys,
+			 int *nb_procs,
+			 struct doca_apsh_process ***processes,
+			 struct doca_apsh_process **process)
 {
 	struct doca_apsh_process **pslist;
 	int num_processes, i;

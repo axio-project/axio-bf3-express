@@ -1,17 +1,30 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES, ALL RIGHTS RESERVED.
+ * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
- * This software product is a proprietary product of NVIDIA CORPORATION &
- * AFFILIATES (the "Company") and all right, title, and interest in and to the
- * software product, including all associated intellectual property rights, are
- * and shall remain exclusively with the Company.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
  *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #include <string.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -19,7 +32,7 @@
 #include <doca_buf.h>
 #include <doca_buf_inventory.h>
 #include <doca_ctx.h>
-#include <doca_sha.h>
+#include <doca_mmap.h>
 #include <doca_pe.h>
 #include <doca_error.h>
 #include <doca_log.h>
@@ -29,20 +42,19 @@
 
 DOCA_LOG_REGISTER(SHA_PARTIAL_CREATE);
 
-#define SLEEP_IN_NANOS			(10 * 1000)			/* Sample the task every 10 microseconds  */
-#define PARTIAL_SHA_LEN			(64)				/* Buffer length of first partial SHA rask */
-#define LOG_NUM_PARTIAL_SHA_TASKS	(0)				/* Log of SHA tasks number */
-#define SHA_SAMPLE_ALGORITHM		(DOCA_SHA_ALGORITHM_SHA256)	/* doca_sha_algorithm for the sample */
+#define SLEEP_IN_NANOS (10 * 1000)			 /* Sample the task every 10 microseconds  */
+#define LOG_NUM_PARTIAL_SHA_TASKS (0)			 /* Log of SHA tasks number */
+#define SHA_SAMPLE_ALGORITHM (DOCA_SHA_ALGORITHM_SHA256) /* doca_sha_algorithm for the sample */
 
 struct sha_resources {
-	struct program_core_objects state;	/* Core objects that manage our "state" */
-	struct doca_sha *sha_ctx;		/* DOCA SHA context */
-	struct doca_buf *src_doca_buf;		/* Source buffer as a DOCA Buffer */
-	void *src_buffer;			/* Source buffer as a C pointer */
-	size_t remaining_src_len;		/* Remaining bytes in source buffer */
-	uint32_t partial_block_size;		/* SHA block size */
-	doca_error_t result;			/* Current DOCA Error result */
-	bool run_main_loop;			/* Should we keep on running the main loop? */
+	struct program_core_objects state; /* Core objects that manage our "state" */
+	struct doca_sha *sha_ctx;	   /* DOCA SHA context */
+	struct doca_buf *src_doca_buf;	   /* Source buffer as a DOCA Buffer */
+	void *src_buffer;		   /* Source buffer as a C pointer */
+	size_t remaining_src_len;	   /* Remaining bytes in source buffer */
+	uint32_t partial_block_size;	   /* SHA block size */
+	doca_error_t result;		   /* Current DOCA Error result */
+	bool run_pe_progress;		   /* Should we keep on progressing the PE? */
 };
 
 /*
@@ -52,8 +64,7 @@ struct sha_resources {
  * @len [in]: Memory range length
  * @opaque [in]: An opaque pointer passed to iterator
  */
-void
-free_cb(void *addr, size_t len, void *opaque)
+void free_cb(void *addr, size_t len, void *opaque)
 {
 	(void)len;
 	(void)opaque;
@@ -67,8 +78,7 @@ free_cb(void *addr, size_t len, void *opaque)
  * @resources [in]: sha_resources struct
  * @return: DOCA_SUCCESS if the device supports SHA hash task and DOCA_ERROR otherwise.
  */
-static doca_error_t
-sha_cleanup(struct sha_resources *resources)
+static doca_error_t sha_cleanup(struct sha_resources *resources)
 {
 	struct program_core_objects *state = &resources->state;
 	doca_error_t result = DOCA_SUCCESS, tmp_result;
@@ -107,9 +117,8 @@ sha_cleanup(struct sha_resources *resources)
  * @sha_partial_hash_task [in]: the allocated partial SHA task
  * @return: DOCA_SUCCESS if the device supports SHA hash task and DOCA_ERROR otherwise.
  */
-static doca_error_t
-prepare_and_submit_partial_sha_hash_task(struct sha_resources *resources,
-					 struct doca_sha_task_partial_hash *sha_partial_hash_task)
+static doca_error_t prepare_and_submit_partial_sha_hash_task(struct sha_resources *resources,
+							     struct doca_sha_task_partial_hash *sha_partial_hash_task)
 {
 	struct doca_task *task;
 	size_t src_len;
@@ -135,7 +144,7 @@ prepare_and_submit_partial_sha_hash_task(struct sha_resources *resources,
 
 	/* If we got to final task then mark it as such */
 	if (src_len == resources->remaining_src_len) {
-		result = doca_sha_task_partial_hash_set_is_final_buffer(sha_partial_hash_task);
+		result = doca_sha_task_partial_hash_set_is_final_buf(sha_partial_hash_task);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to set final buffer for SHA partial hash task: %s",
 				     doca_error_get_descr(result));
@@ -166,9 +175,9 @@ prepare_and_submit_partial_sha_hash_task(struct sha_resources *resources,
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-sha_partial_hash_completed_callback(struct doca_sha_task_partial_hash *sha_partial_hash_task, union doca_data task_user_data,
-				    union doca_data ctx_user_data)
+static void sha_partial_hash_completed_callback(struct doca_sha_task_partial_hash *sha_partial_hash_task,
+						union doca_data task_user_data,
+						union doca_data ctx_user_data)
 {
 	struct sha_resources *resources = (struct sha_resources *)ctx_user_data.ptr;
 	bool last_task_finished = resources->remaining_src_len == 0;
@@ -197,9 +206,9 @@ sha_partial_hash_completed_callback(struct doca_sha_task_partial_hash *sha_parti
  * @task_user_data [in]: doca_data from the task
  * @ctx_user_data [in]: doca_data from the context
  */
-static void
-sha_partial_hash_error_callback(struct doca_sha_task_partial_hash *sha_partial_hash_task, union doca_data task_user_data,
-				union doca_data ctx_user_data)
+static void sha_partial_hash_error_callback(struct doca_sha_task_partial_hash *sha_partial_hash_task,
+					    union doca_data task_user_data,
+					    union doca_data ctx_user_data)
 {
 	struct sha_resources *resources = (struct sha_resources *)ctx_user_data.ptr;
 	struct doca_task *task = doca_sha_task_partial_hash_as_task(sha_partial_hash_task);
@@ -208,7 +217,7 @@ sha_partial_hash_error_callback(struct doca_sha_task_partial_hash *sha_partial_h
 
 	/* Get the result of the task */
 	resources->result = doca_task_get_status(task);
-	DOCA_LOG_ERR("SHA parial hash task failed: %s", doca_error_get_descr(resources->result));
+	DOCA_LOG_ERR("SHA partial hash task failed: %s", doca_error_get_descr(resources->result));
 
 	/* Free task */
 	doca_task_free(task);
@@ -222,22 +231,20 @@ sha_partial_hash_error_callback(struct doca_sha_task_partial_hash *sha_partial_h
  * @devinfo [in]: The DOCA device information
  * @return: DOCA_SUCCESS if the device supports SHA hash task and DOCA_ERROR otherwise.
  */
-static doca_error_t
-sha_partial_hash_is_supported(struct doca_devinfo *devinfo)
+static doca_error_t sha_partial_hash_is_supported(struct doca_devinfo *devinfo)
 {
 	return doca_sha_cap_task_partial_hash_get_supported(devinfo, SHA_SAMPLE_ALGORITHM);
 }
 
 /*
- * Perform a series of SHA partial hash tasks, which includes allocating the task, submitting it with different slices of
- * the source buffer and waiting for its completions
+ * Perform a series of SHA partial hash tasks, which includes allocating the task, submitting it with different slices
+ * of the source buffer and waiting for its completions
  *
  * @resources [in]: sha_resources struct
  * @dst_doca_buf [out]: Destination buffer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t
-perform_partial_sha_hash_task(struct sha_resources *resources, struct doca_buf **dst_doca_buf)
+static doca_error_t perform_partial_sha_hash_task(struct sha_resources *resources, struct doca_buf **dst_doca_buf)
 {
 	struct program_core_objects *state = &resources->state;
 	struct doca_sha_task_partial_hash *sha_partial_hash_task = NULL;
@@ -250,16 +257,23 @@ perform_partial_sha_hash_task(struct sha_resources *resources, struct doca_buf *
 	doca_error_t result;
 
 	/* Construct DOCA buffer for the source SHA buffer */
-	result = doca_buf_inventory_buf_get_by_data(state->buf_inv, state->src_mmap, resources->src_buffer,
-						    resources->remaining_src_len, &resources->src_doca_buf);
+	result = doca_buf_inventory_buf_get_by_data(state->buf_inv,
+						    state->src_mmap,
+						    resources->src_buffer,
+						    resources->remaining_src_len,
+						    &resources->src_doca_buf);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing source buffer: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing source buffer: %s",
+			     doca_error_get_descr(result));
 		return result;
 	}
 
 	/* Allocate and construct SHA partial hash task. We will reuse this task for submitting all partial hash task */
-	result = doca_sha_task_partial_hash_alloc_init(resources->sha_ctx, SHA_SAMPLE_ALGORITHM,
-						       resources->src_doca_buf, *dst_doca_buf, task_user_data,
+	result = doca_sha_task_partial_hash_alloc_init(resources->sha_ctx,
+						       SHA_SAMPLE_ALGORITHM,
+						       resources->src_doca_buf,
+						       *dst_doca_buf,
+						       task_user_data,
 						       &sha_partial_hash_task);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to allocate SHA partial hash task: %s", doca_error_get_descr(result));
@@ -281,10 +295,10 @@ perform_partial_sha_hash_task(struct sha_resources *resources, struct doca_buf *
 		return result;
 	}
 
-	resources->run_main_loop = true;
+	resources->run_pe_progress = true;
 
-	/* Wait for the task to be completed context to be stopped */
-	while (resources->run_main_loop) {
+	/* Wait for the task to be completed and for the context to be stopped */
+	while (resources->run_pe_progress) {
 		if (doca_pe_progress(state->pe) == 0)
 			nanosleep(&ts, &ts);
 	}
@@ -305,9 +319,10 @@ perform_partial_sha_hash_task(struct sha_resources *resources, struct doca_buf *
  * @prev_state [in]: Previous context state
  * @next_state [in]: Next context state (context is already in this state when the callback is called)
  */
-static void
-sha_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx, enum doca_ctx_states prev_state,
-			   enum doca_ctx_states next_state)
+static void sha_state_changed_callback(const union doca_data user_data,
+				       struct doca_ctx *ctx,
+				       enum doca_ctx_states prev_state,
+				       enum doca_ctx_states next_state)
 {
 	(void)ctx;
 	(void)prev_state;
@@ -317,8 +332,8 @@ sha_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx
 	switch (next_state) {
 	case DOCA_CTX_STATE_IDLE:
 		DOCA_LOG_INFO("SHA context has been stopped");
-		/* We can stop the main loop */
-		resources->run_main_loop = false;
+		/* We can stop progressing the PE */
+		resources->run_pe_progress = false;
 		break;
 	case DOCA_CTX_STATE_STARTING:
 		/**
@@ -331,10 +346,13 @@ sha_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx
 		break;
 	case DOCA_CTX_STATE_STOPPING:
 		/**
-		 * The context is in stopping due to failure encountered in one of the tasks, nothing to do at this stage.
-		 * doca_pe_progress() will cause all tasks to be flushed, and finally transition state to idle
+		 * doca_ctx_stop() has been called.
+		 * In this sample, this happens either due to a failure encountered, in which case doca_pe_progress()
+		 * will cause any inflight task to be flushed, or due to the successful compilation of the sample flow.
+		 * In both cases, in this sample, doca_pe_progress() will eventually transition the context to idle
+		 * state.
 		 */
-		DOCA_LOG_ERR("SHA context entered into stopping state. All inflight tasks will be flushed");
+		DOCA_LOG_INFO("SHA context entered into stopping state. Any inflight tasks will be flushed");
 		break;
 	default:
 		break;
@@ -347,8 +365,7 @@ sha_state_changed_callback(const union doca_data user_data, struct doca_ctx *ctx
  * @src_buffer [in]: source data for the SHA task
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-doca_error_t
-sha_partial_create(char *src_buffer)
+doca_error_t sha_partial_create(char *src_buffer)
 {
 	struct sha_resources resources;
 	struct program_core_objects *state = &resources.state;
@@ -357,7 +374,7 @@ sha_partial_create(char *src_buffer)
 	uint8_t *dst_buffer = NULL;
 	uint8_t *dst_buffer_data = NULL;
 	char *sha_output = NULL;
-	uint32_t max_bufs = 2;				/* The sample will use 2 DOCA buffers */
+	uint32_t max_bufs = 2; /* The sample will use 2 DOCA buffers */
 	uint32_t min_dst_sha_buffer_size, i;
 	size_t hash_length;
 	doca_error_t result;
@@ -372,24 +389,30 @@ sha_partial_create(char *src_buffer)
 		return result;
 	}
 
-	result = doca_sha_cap_get_min_dst_buffer_size(doca_dev_as_devinfo(state->dev), SHA_SAMPLE_ALGORITHM, &min_dst_sha_buffer_size);
+	result = doca_sha_cap_get_min_dst_buf_size(doca_dev_as_devinfo(state->dev),
+						   SHA_SAMPLE_ALGORITHM,
+						   &min_dst_sha_buffer_size);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to get minimum destination buffer size for DOCA SHA: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to get minimum destination buffer size for DOCA SHA: %s",
+			     doca_error_get_descr(result));
 		sha_cleanup(&resources);
 		return result;
 	}
 
-	result = doca_sha_cap_get_partial_hash_block_size(doca_dev_as_devinfo(state->dev), SHA_SAMPLE_ALGORITHM,
+	result = doca_sha_cap_get_partial_hash_block_size(doca_dev_as_devinfo(state->dev),
+							  SHA_SAMPLE_ALGORITHM,
 							  &resources.partial_block_size);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to get the partial hash block size for DOCA SHA: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to get the partial hash block size for DOCA SHA: %s",
+			     doca_error_get_descr(result));
 		sha_cleanup(&resources);
 		return result;
 	}
 
 	if (resources.remaining_src_len <= resources.partial_block_size) {
 		DOCA_LOG_ERR("User data length %lu should be bigger than one partial hash block size %u",
-			     resources.remaining_src_len, resources.partial_block_size);
+			     resources.remaining_src_len,
+			     resources.partial_block_size);
 		sha_cleanup(&resources);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
@@ -417,8 +440,10 @@ sha_partial_create(char *src_buffer)
 		return result;
 	}
 
-	result = doca_sha_task_partial_hash_set_conf(resources.sha_ctx, sha_partial_hash_completed_callback,
-						     sha_partial_hash_error_callback, LOG_NUM_PARTIAL_SHA_TASKS);
+	result = doca_sha_task_partial_hash_set_conf(resources.sha_ctx,
+						     sha_partial_hash_completed_callback,
+						     sha_partial_hash_error_callback,
+						     LOG_NUM_PARTIAL_SHA_TASKS);
 	if (result != DOCA_SUCCESS) {
 		sha_cleanup(&resources);
 		return result;
@@ -474,10 +499,14 @@ sha_partial_create(char *src_buffer)
 	}
 
 	/* Construct response DOCA buffer for all partial tasks */
-	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv, state->dst_mmap, dst_buffer, min_dst_sha_buffer_size,
+	result = doca_buf_inventory_buf_get_by_addr(state->buf_inv,
+						    state->dst_mmap,
+						    dst_buffer,
+						    min_dst_sha_buffer_size,
 						    &dst_doca_buf);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing destination buffer: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Unable to acquire DOCA buffer representing destination buffer: %s",
+			     doca_error_get_descr(result));
 		sha_cleanup(&resources);
 		return result;
 	}
