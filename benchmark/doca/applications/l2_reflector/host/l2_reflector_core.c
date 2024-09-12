@@ -111,7 +111,7 @@ doca_error_t l2_reflector_setup_device(struct l2_reflector_config *app_cfg)
 	app_cfg->flexio_uar = flexio_process_get_uar(app_cfg->flexio_process);
 
 	event_handler_attr.host_stub_func = l2_reflector_device_event_handler;
-	event_handler_attr.affinity.type = FLEXIO_AFFINITY_GROUP;
+	event_handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
 	event_handler_attr.affinity.id = 1;
 	result = flexio_event_handler_create(app_cfg->flexio_process, &event_handler_attr, &app_cfg->event_handler);
 	if (result != FLEXIO_STATUS_SUCCESS) {

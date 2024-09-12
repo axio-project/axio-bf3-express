@@ -42,8 +42,8 @@ struct cq_ctx_t {
 	uint32_t cq_number;		  /* CQ number */
 	struct flexio_dev_cqe64 *cq_ring; /* CQEs buffer */
 	struct flexio_dev_cqe64 *cqe;	  /* Current CQE */
-	volatile uint32_t cq_idx;		  /* Current CQE IDX */
-	volatile uint8_t cq_hw_owner_bit;	  /* HW/SW ownership */
+	uint32_t cq_idx;		  /* Current CQE IDX */
+	uint8_t cq_hw_owner_bit;	  /* HW/SW ownership */
 	uint32_t *cq_dbr;		  /* CQ doorbell record */
 };
 
@@ -57,10 +57,10 @@ struct rq_ctx_t {
 /* SQ Context */
 struct sq_ctx_t {
 	uint32_t sq_number;		   /* SQ number */
-	volatile uint32_t sq_wqe_seg_idx;	   /* WQE segment index */
+	uint32_t sq_wqe_seg_idx;	   /* WQE segment index */
 	union flexio_dev_sqe_seg *sq_ring; /* SQEs buffer */
 	uint32_t *sq_dbr;		   /* SQ doorbell record */
-	volatile uint32_t sq_pi;			   /* SQ producer index */
+	uint32_t sq_pi;			   /* SQ producer index */
 };
 
 /* SQ data buffer */
@@ -78,9 +78,7 @@ static struct {
 	struct rq_ctx_t rq_ctx;	  /* RQ context */
 	struct sq_ctx_t sq_ctx;	  /* SQ context */
 	struct dt_ctx_t dt_ctx;	  /* DT context */
-	volatile uint8_t started_threads; /* Number of started threads */
 	volatile uint8_t completed_threads; /* Number of completed threads */
-	volatile uint32_t packets_count;	  /* Number of processed packets */
 	uint8_t predefined_pkt[64]; /* Predefined packet */
 } dev_ctx = {0};
 
@@ -138,7 +136,14 @@ static void init_sq(const struct app_transfer_wq app_sq, struct sq_ctx_t *ctx)
  * @log_dt_entry_sz [in]: Log of data transfer entry size
  * @return: Data buffer entry
  */
-static void *get_next_dte(struct dt_ctx_t *dt_ctx, uint32_t dt_idx, uint32_t dt_idx_mask, uint32_t log_dt_entry_sz)
+// static void *get_next_dte(struct dt_ctx_t *dt_ctx, uint32_t dt_idx_mask, uint32_t log_dt_entry_sz)
+// {
+// 	uint32_t mask = ((dt_ctx->tx_buff_idx++ & dt_idx_mask) << log_dt_entry_sz);
+// 	char *buff_p = (char *)dt_ctx->sq_tx_buff;
+
+// 	return buff_p + mask;
+// }
+static void *get_next_dte(uint32_t dt_idx, uint32_t dt_idx_mask, uint32_t log_dt_entry_sz)
 {
 	uint32_t mask = ((dt_idx & dt_idx_mask) << log_dt_entry_sz);
 	char *buff_p = (char *)dt_ctx->sq_tx_buff;
@@ -153,7 +158,11 @@ static void *get_next_dte(struct dt_ctx_t *dt_ctx, uint32_t dt_idx, uint32_t dt_
  * @sq_idx_mask [in]: SQ index mask
  * @return: pointer to next SQE
  */
-static void *get_next_sqe(struct sq_ctx_t *sq_ctx, uint32_t sqe_idx, uint32_t sq_idx_mask)
+// static void *get_next_sqe(struct sq_ctx_t *sq_ctx, uint32_t sq_idx_mask)
+// {
+// 	return &sq_ctx->sq_ring[sq_ctx->sq_wqe_seg_idx++ & sq_idx_mask];
+// }
+static void *get_next_sqe(uint32_t sqe_idx, uint32_t sq_idx_mask)
 {
 	return &sq_ctx->sq_ring[sqe_idx & sq_idx_mask];
 }
@@ -177,6 +186,111 @@ static void step_cq(struct cq_ctx_t *cq_ctx, uint32_t cq_idx_mask)
 
 	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	// flexio_dev_dbr_cq_set_ci(cq_ctx->cq_dbr, cq_ctx->cq_idx);
+}
+
+/*
+ * This is the main function of the L2 reflector device, called on each packet from l2_reflector_device_event_handler()
+ * Packet are received from the RQ, processed by changing MAC addresses and transmitted to the SQ.
+ *
+ * @dtctx [in]: This thread context
+ */
+// static void process_packet(struct flexio_dev_thread_ctx __unused *dtctx)
+// {
+// 	uint32_t rq_wqe_idx;
+// 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
+// 	uint32_t data_sz;
+// 	char *rq_data;
+// 	char *sq_data;
+// 	union flexio_dev_sqe_seg *swqe;
+// 	const uint16_t mss = 0, checksum = 0;
+// 	char tmp;
+// 	/* MAC address has 6 bytes: ff:ff:ff:ff:ff:ff */
+// 	const int nb_mac_address_bytes = 6;
+
+// 	/* Extract relevant data from CQE */
+// 	rq_wqe_idx = flexio_dev_cqe_get_wqe_counter(dev_ctx.rqcq_ctx.cqe);
+// 	data_sz = flexio_dev_cqe_get_byte_cnt(dev_ctx.rqcq_ctx.cqe);
+
+// 	/* Get RQ WQE pointed by CQE */
+// 	rwqe = &dev_ctx.rq_ctx.rq_ring[rq_wqe_idx & L2_RQ_IDX_MASK];
+
+// 	/* Extract data (whole packet) pointed by RQ WQE */
+// 	rq_data = flexio_dev_rwqe_get_addr(rwqe);
+
+// 	/* Take next entry from data ring */
+// 	sq_data = get_next_dte(&dev_ctx.dt_ctx, L2_DATA_IDX_MASK, L2_LOG_WQ_DATA_ENTRY_BSIZE);
+
+// 	/* Copy received packet to sq_data as is */
+// 	memcpy(sq_data, rq_data, data_sz);
+
+// 	/* swap mac addresses */
+// 	for (int byte = 0; byte < nb_mac_address_bytes; byte++) {
+// 		tmp = sq_data[byte];
+// 		sq_data[byte] = sq_data[byte + nb_mac_address_bytes];
+// 		/* dst and src MACs are aligned one after the other in the ether header */
+// 		sq_data[byte + nb_mac_address_bytes] = tmp;
+// 	}
+
+// 	/* Take first segment for SQ WQE (3 segments will be used) */
+// 	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+
+// 	/* Fill out 1-st segment (Control) */
+// 	flexio_dev_swqe_seg_ctrl_set(swqe,
+// 				     dev_ctx.sq_ctx.sq_pi,
+// 				     dev_ctx.sq_ctx.sq_number,
+// 				     MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR,
+// 				     FLEXIO_CTRL_SEG_SEND_EN);
+
+// 	/* Fill out 2-nd segment (Ethernet) */
+// 	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+// 	flexio_dev_swqe_seg_eth_set(swqe, mss, checksum, 0, NULL);
+
+// 	/* Fill out 3-rd segment (Data) */
+// 	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+// 	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, dev_ctx.lkey, (uint64_t)sq_data);
+
+// 	/* Send WQE is 4 WQEBBs need to skip the 4-th segment */
+// 	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+
+// 	dev_ctx.sq_ctx.sq_pi++;
+
+// 	/* Ring DB */
+// 	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	// flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+// 	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	// flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+// }
+
+static void generate_pkts(uint16_t __unused pkt_num, uint8_t* predefined_pkt) {
+	char *sq_data;
+	union flexio_dev_sqe_seg *swqe;
+	const uint16_t mss = 0, checksum = 0;
+	/* Take next entry from data ring */
+	sq_data = get_next_dte(&dev_ctx.dt_ctx, L2_DATA_IDX_MASK, L2_LOG_WQ_DATA_ENTRY_BSIZE);
+	/* Set to pre-defined pkt */
+	memcpy(sq_data, predefined_pkt, 64);
+
+	/* Take first segment for SQ WQE (3 segments will be used) */
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	/* Fill out 1-st segment (Control) */
+	flexio_dev_swqe_seg_ctrl_set(swqe,
+				     dev_ctx.sq_ctx.sq_pi,
+				     dev_ctx.sq_ctx.sq_number,
+				     MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR,
+				     FLEXIO_CTRL_SEG_SEND_EN);
+
+	/* Fill out 2-nd segment (Ethernet) */
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	flexio_dev_swqe_seg_eth_set(swqe, mss, checksum, 0, NULL);
+
+	/* Fill out 3-rd segment (Data) */
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, 64, dev_ctx.lkey, (uint64_t)sq_data);
+
+	/* Send WQE is 4 WQEBBs need to skip the 4-th segment */
+	swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+
+	dev_ctx.sq_ctx.sq_pi++;
 }
 
 /*
@@ -204,11 +318,50 @@ __dpa_rpc__ uint64_t l2_reflector_device_init(uint64_t data)
 	return 0;
 }
 
+/*
+ * This function is called when a new packet is received to RQ's CQ.
+ * Upon receiving a packet, the function will iterate over all received packets and process them.
+ * Once all packets in the CQ are processed, the CQ will be rearmed to receive new packets events.
+ */
+// void __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
+// {
+// 	struct flexio_dev_thread_ctx *dtctx;
+
+// 	flexio_dev_get_thread_ctx(&dtctx);
+
+// 	uint16_t handle_pkts = 0;
+
+// 	if (unlikely(dev_ctx.is_initialized == 0))
+// 		flexio_dev_thread_reschedule();
+
+// 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit 
+// 			&& handle_pkts < L2_MAX_PACKETS_PER_EVENT) {
+// 		// __dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
+// 		// process_packet(dtctx);
+// 		generate_pkts(1, dev_ctx.predefined_pkt);
+// 		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
+// 		handle_pkts++;
+// 	}
+// 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	// arm CQ to receive new packets
+// 	// flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
+// 	// generate SQ packets
+
+// 	/* Doorbell for once */
+// 	flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+// 	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	for (uint16_t i = 0; i < handle_pkts; i++)
+// 		flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+// 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	flexio_dev_dbr_cq_set_ci(dev_ctx.rqcq_ctx.cq_dbr, dev_ctx.rqcq_ctx.cq_idx);
+
+// 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+// 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
+// 	flexio_dev_thread_reschedule();
+// }
 void __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 {
 	struct flexio_dev_thread_ctx *dtctx;
-	uint8_t is_last_thread = 0;
-	uint32_t cached_sq_pi = 0, cached_cq_idx = 0, cached_handled_pkts = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
 
@@ -225,23 +378,10 @@ void __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 		handle_pkts++;
 		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
 	}
-	dev_ctx.packets_count += handle_pkts;
 	// this thread need to generate pkt from cur_sq_idx to cur_sq_idx+handle_pkts-1, pre-update sq idx for other threads
 	dev_ctx.sq_ctx.sq_pi += handle_pkts;
-	dev_ctx.sq_ctx.sq_wqe_seg_idx += handle_pkts * 4;
-	dev_ctx.dt_ctx.tx_buff_idx += handle_pkts;
-	// update the number of started threads
-	dev_ctx.started_threads++;
-	if (dev_ctx.started_threads == L2_GROUP_EU_NUM) {
-		is_last_thread = 1;
-		// cache current idx for doorbell
-		cached_sq_pi = dev_ctx.sq_ctx.sq_pi;
-		cached_cq_idx = dev_ctx.rqcq_ctx.cq_idx;
-		cached_handled_pkts = dev_ctx.packets_count;
-		// reset status
-		dev_ctx.started_threads = 0;
-		dev_ctx.packets_count = 0;
-	}
+	dev_ctx.sq_ctx.sq_wqe_seg_idx = (dev_ctx.sq_ctx.sq_wqe_seg_idx + handle_pkts * 4) & L2_SQ_IDX_MASK;
+	dev_ctx.dt_ctx.tx_buff_idx = (dev_ctx.dt_ctx.tx_buff_idx + handle_pkts) & L2_DATA_IDX_MASK;
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);	// make sure the new idx is updated
 	/* ---------------Block other threads before--------------- */
 	// arm CQ to generate new events for other threads
@@ -252,13 +392,12 @@ void __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 	const uint16_t mss = 0, checksum = 0;
 	for (uint8_t i = 0; i < handle_pkts; i++) {
 		// generate packets
-		sq_data = get_next_dte(&dev_ctx.dt_ctx, cur_sq_data_idx + i, L2_DATA_IDX_MASK, L2_LOG_WQ_DATA_ENTRY_BSIZE);
+		sq_data = get_next_dte(cur_sq_data_idx + i, L2_DATA_IDX_MASK, L2_LOG_WQ_DATA_ENTRY_BSIZE);
 		/* Set to pre-defined pkt */
-		memcpy(sq_data, dev_ctx.predefined_pkt, 64);
-		memset(sq_data + 64, 960, 'a');
+		memcpy(sq_data, predefined_pkt, 64);
 
 		/* Take first segment for SQ WQE (3 segments will be used) */
-		swqe = get_next_sqe(&dev_ctx.sq_ctx, cur_sq_wqe_seg_idx + 4*i, L2_SQ_IDX_MASK);
+		swqe = get_next_sqe(cur_sq_wqe_seg_idx + 4*i, L2_SQ_IDX_MASK);
 		/* Fill out 1-st segment (Control) */
 		flexio_dev_swqe_seg_ctrl_set(swqe,
 						cur_sq_pi_idx,
@@ -267,33 +406,33 @@ void __dpa_global__ l2_reflector_device_event_handler(uint64_t __unused arg0)
 						FLEXIO_CTRL_SEG_SEND_EN);
 
 		/* Fill out 2-nd segment (Ethernet) */
-		swqe = get_next_sqe(&dev_ctx.sq_ctx, cur_sq_wqe_seg_idx + 4*i+1, L2_SQ_IDX_MASK);
+		swqe = get_next_sqe(cur_sq_wqe_seg_idx + 4*i+1, L2_SQ_IDX_MASK);
 		flexio_dev_swqe_seg_eth_set(swqe, mss, checksum, 0, NULL);
 
 		/* Fill out 3-rd segment (Data) */
-		swqe = get_next_sqe(&dev_ctx.sq_ctx, cur_sq_wqe_seg_idx + 4*i+2, L2_SQ_IDX_MASK);
+		swqe = get_next_sqe(cur_sq_wqe_seg_idx + 4*i+2, L2_SQ_IDX_MASK);
 		flexio_dev_swqe_seg_mem_ptr_data_set(swqe, 64, dev_ctx.lkey, (uint64_t)sq_data);
 
 		/* Send WQE is 4 WQEBBs need to skip the 4-th segment */
-		swqe = get_next_sqe(&dev_ctx.sq_ctx, cur_sq_wqe_seg_idx + 4*i+3, L2_SQ_IDX_MASK);
+		swqe = get_next_sqe(cur_sq_wqe_seg_idx + 4*i+3, L2_SQ_IDX_MASK);
 		
 		cur_sq_pi_idx++;
 	}
-	dev_ctx.completed_threads++;
+
+	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	// arm CQ to receive new packets
+	// flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
+	// generate SQ packets
+
 	/* Doorbell for once */
-	if (is_last_thread) {
-		// wait for all threads to finish
-		while (dev_ctx.completed_threads < L2_GROUP_EU_NUM);
-		// reset status
-		dev_ctx.completed_threads -= L2_GROUP_EU_NUM;
-		__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-		// ring doorbell
-		flexio_dev_qp_sq_ring_db(dtctx, cached_sq_pi, dev_ctx.sq_ctx.sq_number);
-		for (uint16_t i = 0; i < cached_handled_pkts; i++)
-			flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
-		__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-		flexio_dev_dbr_cq_set_ci(dev_ctx.rqcq_ctx.cq_dbr, cached_cq_idx);
-		__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-	}
+	flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	for (uint16_t i = 0; i < handle_pkts; i++)
+		flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	flexio_dev_dbr_cq_set_ci(dev_ctx.rqcq_ctx.cq_dbr, dev_ctx.rqcq_ctx.cq_idx);
+
+	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
 	flexio_dev_thread_reschedule();
 }

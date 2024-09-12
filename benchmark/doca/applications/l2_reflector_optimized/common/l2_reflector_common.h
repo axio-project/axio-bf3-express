@@ -39,6 +39,12 @@
 #define L2_SQ_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
 #define L2_DATA_IDX_MASK ((1 << (L2_LOG_SQ_RING_DEPTH)) - 1)
 
+#define L2_MAX_PACKETS_PER_EVENT 32	/* One thread would process a batch of cqe per event */
+#define L2_GROUP_EU_NUM 8		/* Number of EUs in the group */
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 struct app_transfer_cq {
 	uint32_t cq_num;
 	uint32_t log_cq_depth;
@@ -60,6 +66,7 @@ struct l2_reflector_data {
 	struct app_transfer_wq rq_data;	   /* device RQ */
 	struct app_transfer_cq sq_cq_data; /* device SQ's CQ */
 	struct app_transfer_wq sq_data;	   /* device SQ */
+	uint8_t predefined_pkt[64];	   /* Predefined packet */
 } __attribute__((__packed__, aligned(8)));
 
 #endif
