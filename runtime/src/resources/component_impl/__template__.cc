@@ -14,8 +14,8 @@ nicc_retval_t Component_TEMPLATE::init(ComponentBaseDesp_t* desp) {
 
 nicc_retval_t Component_TEMPLATE::allocate_block(ComponentBaseDesp_t* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
-    ComponentDesp_DPA_t *func_input_desp;
-    ComponentBlock_DPA *desired_cb;
+    ComponentDesp_TEMPLATE_t *func_input_desp;
+    ComponentBlock_TEMPLATE *desired_cb;
 
     NICC_CHECK_POINTER(func_input_desp = reinterpret_cast<ComponentDesp_TEMPLATE_t*>(desp));
     NICC_CHECK_POINTER(desired_cb = reinterpret_cast<ComponentBlock_TEMPLATE*>(cb));
@@ -26,7 +26,7 @@ nicc_retval_t Component_TEMPLATE::allocate_block(ComponentBaseDesp_t* desp, Comp
         NICC_WARN_C(
             "failed to allocate block due to unsufficient resource remained:"
             " component_id(%u), request(%lu), remain(%lu)",
-            this->_cid, desp->quota, this->_state->quota
+            this->_cid, desp->quota, this->_state->base_state.quota
         )
         retval = NICC_ERROR_EXSAUSTED;
         goto exit;
@@ -37,7 +37,7 @@ nicc_retval_t Component_TEMPLATE::allocate_block(ComponentBaseDesp_t* desp, Comp
 
     /* Step 2: allocate quota to the block (update desp) */
     /// base descriptor
-    desired_cb->_desp->quota = desp->quota;
+    desired_cb->_base_desp->quota = desp->quota;
     /// specific descriptor
     /* ...... */
 

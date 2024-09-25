@@ -4,6 +4,7 @@ namespace nicc {
 
 nicc_retval_t ComponentBlock_TEMPLATE::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
+    uint64_t i;
     AppHandler *app_handler = nullptr, *init_handler = nullptr, *event_handler = nullptr;
     NICC_CHECK_POINTER(this->_function_state = new ComponentFuncState_TEMPLATE_t());
 

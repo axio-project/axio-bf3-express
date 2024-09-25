@@ -26,6 +26,9 @@ root_dir = meson.source_root()
 envv = run_command('sh', '-c', 'echo $BUILD_TARGET')
 env_build_target = envv.stdout().strip()
 
+# ==================== Configurations ====================
+doca_version='2.8' # or '2.5'
+
 # ==================== Third-party Library Detection ====================
 
 # indicator of whether necessary libraries were founded
@@ -97,39 +100,31 @@ endif
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
-<<<<<<< HEAD
-	doca_pc_path = '/opt/mellanox/doca/lib/x86_64-linux-gnu/pkgconfig/'
-	doca_modules = ['doca-common-lib', 'doca-common']
-elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
-	doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
-	doca_modules = ['doca-common-lib', 'doca-common']
-=======
 	doca_modules = ['doca-libs']
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
-  # doca 2.5
-  # doca_modules = ['doca-grpc-libs', 'doca-libs']
-
-  # doca 2.8
-  doca_modules = [
-    'doca-aes-gcm',
-    'doca-apsh',
-    'doca-comch',
-    'doca-comm-channel',
-    'doca-common',
-    'doca-compress',
-    'doca-devemu',
-    'doca-dma',
-    'doca-dpdk-bridge',
-    'doca-erasure-coding',
-    'doca-eth',
-    'doca-flow',
-    'doca-pcc',
-    'doca-rdma',
-    'doca-sha',
-    'doca-telemetry-exporter',
-    'doca-urom'
-  ]
->>>>>>> main
+  if doca_version == '2.5'
+    doca_modules = ['doca-grpc-libs', 'doca-libs']
+  else # 2.8
+    doca_modules = [
+      'doca-aes-gcm',
+      'doca-apsh',
+      'doca-comch',
+      'doca-comm-channel',
+      'doca-common',
+      'doca-compress',
+      'doca-devemu',
+      'doca-dma',
+      'doca-dpdk-bridge',
+      'doca-erasure-coding',
+      'doca-eth',
+      'doca-flow',
+      'doca-pcc',
+      'doca-rdma',
+      'doca-sha',
+      'doca-telemetry-exporter',
+      'doca-urom'
+    ]
+  endif
 endif
 
 founded_doca_modules = []

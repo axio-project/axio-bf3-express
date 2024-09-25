@@ -102,7 +102,7 @@ class ComponentBlock_TEMPLATE : public ComponentBlock {
      */
     ComponentFuncState_TEMPLATE_t *_function_state = nullptr;
     
-}
+};
 
 
 } // namespace nicc
