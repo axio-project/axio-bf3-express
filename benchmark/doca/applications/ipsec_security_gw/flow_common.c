@@ -1,0 +1,836 @@
+/*
+ * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+#include <stdlib.h>
+
+#include <rte_ethdev.h>
+
+#include <doca_log.h>
+#include <doca_flow.h>
+
+#include "utils.h"
+#include "flow_common.h"
+
+DOCA_LOG_REGISTER(IPSEC_SECURITY_GW::flow_common);
+
+/*
+ * Entry processing callback
+ *
+ * @entry [in]: entry pointer
+ * @pipe_queue [in]: queue identifier
+ * @status [in]: DOCA Flow entry status
+ * @op [in]: DOCA Flow entry operation
+ * @user_ctx [out]: user context
+ */
+static void check_for_valid_entry(struct doca_flow_pipe_entry *entry,
+				  uint16_t pipe_queue,
+				  enum doca_flow_entry_status status,
+				  enum doca_flow_entry_op op,
+				  void *user_ctx)
+{
+	(void)entry;
+	(void)op;
+	(void)pipe_queue;
+
+	struct entries_status *entry_status = (struct entries_status *)user_ctx;
+
+	if (entry_status == NULL || op != DOCA_FLOW_ENTRY_OP_ADD)
+		return;
+	if (status != DOCA_FLOW_ENTRY_STATUS_SUCCESS)
+		entry_status->failure = true; /* set failure to true if processing failed */
+	entry_status->nb_processed++;
+	entry_status->entries_in_queue--;
+}
+
+/*
+ * Process entries and check the returned status
+ *
+ * @port [in]: the port we want to process in
+ * @status [in]: the entries status that was sent to the pipe
+ * @timeout [in]: timeout for the entries process function
+ * @pipe_queue [in]: queue identifier
+ */
+doca_error_t process_entries(struct doca_flow_port *port,
+			     struct entries_status *status,
+			     int timeout,
+			     uint16_t pipe_queue)
+{
+	doca_error_t result;
+
+	result = doca_flow_entries_process(port, pipe_queue, timeout, status->entries_in_queue);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
+		return result;
+	}
+	if (status->failure || status->entries_in_queue == QUEUE_DEPTH) {
+		DOCA_LOG_ERR("Failed to process entries");
+		return DOCA_ERROR_BAD_STATE;
+	}
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Create DOCA Flow port by port id
+ *
+ * @port_id [in]: port ID
+ * @dev [in]: DOCA device pointer
+ * @sn_offload_disable [in]: disable SN offload
+ * @port [out]: pointer to port handler
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t create_doca_flow_port(int port_id,
+					  struct doca_dev *dev,
+					  bool sn_offload_disable,
+					  struct doca_flow_port **port)
+{
+	const int max_port_str_len = 128;
+	struct doca_flow_port_cfg *port_cfg;
+	char port_id_str[max_port_str_len];
+	doca_error_t result, tmp_result;
+
+	result = doca_flow_port_cfg_create(&port_cfg);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_port_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	snprintf(port_id_str, max_port_str_len, "%d", port_id);
+	result = doca_flow_port_cfg_set_devargs(port_cfg, port_id_str);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg devargs: %s", doca_error_get_descr(result));
+		goto destroy_port_cfg;
+	}
+
+	result = doca_flow_port_cfg_set_dev(port_cfg, dev);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg device: %s", doca_error_get_descr(result));
+		goto destroy_port_cfg;
+	}
+
+	if (sn_offload_disable) {
+		result = doca_flow_port_cfg_set_ipsec_sn_offload_disable(port_cfg);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to set doca_flow_port_cfg sn offload disable: %s",
+				     doca_error_get_descr(result));
+			goto destroy_port_cfg;
+		}
+	}
+
+	result = doca_flow_port_start(port_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to start doca_flow port: %s", doca_error_get_descr(result));
+		goto destroy_port_cfg;
+	}
+
+destroy_port_cfg:
+	tmp_result = doca_flow_port_cfg_destroy(port_cfg);
+	if (tmp_result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to destroy doca_flow port: %s", doca_error_get_descr(tmp_result));
+		DOCA_ERROR_PROPAGATE(result, tmp_result);
+	}
+
+	return result;
+}
+
+doca_error_t ipsec_security_gw_init_doca_flow(const struct ipsec_security_gw_config *app_cfg,
+					      int nb_queues,
+					      struct ipsec_security_gw_ports_map *ports[])
+{
+	int port_id;
+	int port_idx = 0;
+	int nb_ports = 0;
+	struct doca_dev *dev;
+	struct doca_flow_cfg *flow_cfg;
+	struct doca_flow_resource_rss_cfg rss = {0};
+	uint16_t rss_queues[nb_queues];
+	char *mode_args;
+	doca_error_t result;
+	bool sn_offload_disable;
+
+	memset(&flow_cfg, 0, sizeof(flow_cfg));
+
+	/* init doca flow with crypto shared resources */
+	result = doca_flow_cfg_create(&flow_cfg);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+	result = doca_flow_cfg_set_pipe_queues(flow_cfg, nb_queues);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg pipe_queues: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+	if (app_cfg->flow_mode == IPSEC_SECURITY_GW_VNF)
+		mode_args = "vnf,hws,isolated";
+	else
+		mode_args = "switch,hws,isolated,expert";
+	result = doca_flow_cfg_set_mode_args(flow_cfg, mode_args);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg mode_args: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+	result = doca_flow_cfg_set_queue_depth(flow_cfg, QUEUE_DEPTH);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg queue_depth: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+	result = doca_flow_cfg_set_cb_entry_process(flow_cfg, check_for_valid_entry);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg cb_entry_process: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+
+	result = doca_flow_cfg_set_nr_counters(flow_cfg, MAX_NB_RULES * NUM_OF_SYNDROMES);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg nr_counters: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+
+	/* DECRYPT_DUMMY_ID is the highest ID, adding one to be able to use it exactly */
+	result = doca_flow_cfg_set_nr_shared_resource(flow_cfg,
+						      DECRYPT_DUMMY_ID + 1,
+						      DOCA_FLOW_SHARED_RESOURCE_IPSEC_SA);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg nr_shared_resources: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+
+	linear_array_init_u16(rss_queues, nb_queues);
+	rss.nr_queues = nb_queues;
+	rss.queues_array = rss_queues;
+	result = doca_flow_cfg_set_default_rss(flow_cfg, &rss);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_cfg rss: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+	result = doca_flow_init(flow_cfg);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
+		doca_flow_cfg_destroy(flow_cfg);
+		return result;
+	}
+	doca_flow_cfg_destroy(flow_cfg);
+
+	sn_offload_disable = app_cfg->sw_sn_inc_enable && app_cfg->sw_antireplay;
+	for (port_id = 0; port_id < RTE_MAX_ETHPORTS; port_id++) {
+		/* search for the probed devices */
+		if (!rte_eth_dev_is_valid_port(port_id))
+			continue;
+		/* get device idx for ports array - secured or unsecured */
+		if (app_cfg->flow_mode == IPSEC_SECURITY_GW_VNF)
+			result = find_port_action_type_vnf(app_cfg, port_id, &dev, &port_idx);
+		else {
+			dev = app_cfg->objects.secured_dev.doca_dev;
+			result = find_port_action_type_switch(port_id, &port_idx);
+		}
+		if (result != DOCA_SUCCESS)
+			return result;
+
+		ports[port_idx] = malloc(sizeof(struct ipsec_security_gw_ports_map));
+		if (ports[port_idx] == NULL) {
+			DOCA_LOG_ERR("malloc() failed");
+			doca_flow_cleanup(nb_ports, ports);
+			return DOCA_ERROR_NO_MEMORY;
+		}
+		result = create_doca_flow_port(port_id, dev, sn_offload_disable, &ports[port_idx]->port);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to init DOCA Flow port: %s", doca_error_get_descr(result));
+			free(ports[port_idx]);
+			doca_flow_cleanup(nb_ports, ports);
+			return result;
+		}
+		nb_ports++;
+		ports[port_idx]->port_id = port_id;
+	}
+	if (ports[SECURED_IDX]->port == NULL || ports[UNSECURED_IDX]->port == NULL) {
+		DOCA_LOG_ERR("Failed to init two DOCA Flow ports");
+		doca_flow_cleanup(nb_ports, ports);
+		return DOCA_ERROR_INITIALIZATION;
+	}
+	if (app_cfg->flow_mode == IPSEC_SECURITY_GW_VNF) {
+		result = doca_flow_port_pair(ports[SECURED_IDX]->port, ports[UNSECURED_IDX]->port);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to pair ports");
+			doca_flow_cleanup(nb_ports, ports);
+			return DOCA_ERROR_INITIALIZATION;
+		}
+	}
+	return DOCA_SUCCESS;
+}
+
+void doca_flow_cleanup(int nb_ports, struct ipsec_security_gw_ports_map *ports[])
+{
+	int port_id;
+
+	for (port_id = nb_ports - 1; port_id >= 0; port_id--) {
+		if (ports[port_id] != NULL) {
+			doca_flow_port_stop(ports[port_id]->port);
+			free(ports[port_id]);
+		}
+	}
+
+	doca_flow_destroy();
+}
+
+uint32_t get_icv_len_int(enum doca_flow_crypto_icv_len icv_len)
+{
+	if (icv_len == DOCA_FLOW_CRYPTO_ICV_LENGTH_8)
+		return 8;
+	else if (icv_len == DOCA_FLOW_CRYPTO_ICV_LENGTH_12)
+		return 12;
+	else
+		return 16;
+}
+
+doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, struct doca_flow_pipe **rss_pipe)
+{
+	struct doca_flow_match match;
+	struct doca_flow_match match_mask;
+	struct doca_flow_fwd fwd;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	struct entries_status status;
+	int num_of_entries = 2;
+	uint16_t *rss_queues = NULL;
+	int i;
+	doca_error_t result;
+	union security_gateway_pkt_meta meta = {0};
+
+	memset(&match, 0, sizeof(match));
+	memset(&match_mask, 0, sizeof(match_mask));
+	memset(&fwd, 0, sizeof(fwd));
+	memset(&status, 0, sizeof(status));
+
+	meta.encrypt = 1;
+	meta.decrypt = 1;
+	match_mask.meta.pkt_meta = meta.u32;
+
+	fwd.type = DOCA_FLOW_FWD_RSS;
+	rss_queues = (uint16_t *)calloc(nb_queues - 1, sizeof(uint16_t));
+	if (rss_queues == NULL) {
+		DOCA_LOG_ERR("Failed to allocate memory for RSS queues");
+		return DOCA_ERROR_NO_MEMORY;
+	}
+
+	for (i = 0; i < nb_queues - 1; i++)
+		rss_queues[i] = i + 1;
+	fwd.rss_queues = rss_queues;
+	fwd.num_of_queues = nb_queues - 1;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_pipe_cfg_set_name(pipe_cfg, "RSS_PIPE");
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, rss_pipe);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create RSS pipe: %s", doca_error_get_descr(result));
+		if (rss_queues != NULL)
+			free(rss_queues);
+		goto destroy_pipe_cfg;
+	}
+
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+
+	if (rss_queues != NULL)
+		free(rss_queues);
+
+	meta.encrypt = 1;
+	meta.decrypt = 0;
+	match.meta.pkt_meta = meta.u32;
+	result = doca_flow_pipe_add_entry(0,
+					  *rss_pipe,
+					  &match,
+					  NULL,
+					  NULL,
+					  NULL,
+					  DOCA_FLOW_WAIT_FOR_BATCH,
+					  &status,
+					  NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to RSS pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	meta.encrypt = 0;
+	meta.decrypt = 1;
+	match.meta.pkt_meta = meta.u32;
+	result = doca_flow_pipe_add_entry(0, *rss_pipe, &match, NULL, NULL, NULL, DOCA_FLOW_NO_WAIT, &status, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to RSS pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_entries_process(port, 0, DEFAULT_TIMEOUT_US, num_of_entries);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to process entry: %s", doca_error_get_descr(result));
+		return result;
+	}
+	if (status.nb_processed != num_of_entries || status.failure) {
+		DOCA_LOG_ERR("Failed to process entry");
+		return DOCA_ERROR_BAD_STATE;
+	}
+	return DOCA_SUCCESS;
+
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
+}
+
+void create_hairpin_pipe_fwd(struct ipsec_security_gw_config *app_cfg,
+			     int port_id,
+			     bool encrypt,
+			     uint16_t *rss_queues,
+			     uint32_t rss_flags,
+			     struct doca_flow_fwd *fwd)
+{
+	uint32_t nb_queues = app_cfg->dpdk_config->port_config.nb_queues;
+	uint32_t i;
+
+	memset(fwd, 0, sizeof(*fwd));
+
+	if ((app_cfg->offload == IPSEC_SECURITY_GW_ESP_OFFLOAD_NONE) ||
+	    (app_cfg->offload == IPSEC_SECURITY_GW_ESP_OFFLOAD_ENCAP && !encrypt) ||
+	    (app_cfg->offload == IPSEC_SECURITY_GW_ESP_OFFLOAD_DECAP && encrypt)) {
+		/* for software handling the packets will be sent to the application by RSS queues */
+		if (app_cfg->flow_mode == IPSEC_SECURITY_GW_SWITCH) {
+			fwd->type = DOCA_FLOW_FWD_PIPE;
+			fwd->next_pipe = app_cfg->switch_pipes.rss_pipe.pipe;
+		} else {
+			for (i = 0; i < nb_queues - 1; i++)
+				rss_queues[i] = i + 1;
+
+			fwd->type = DOCA_FLOW_FWD_RSS;
+			if (!encrypt && app_cfg->mode == IPSEC_SECURITY_GW_TUNNEL)
+				fwd->rss_inner_flags = rss_flags;
+			else
+				fwd->rss_outer_flags = rss_flags;
+
+			fwd->rss_queues = rss_queues;
+			fwd->num_of_queues = nb_queues - 1;
+		}
+	} else {
+		if (app_cfg->flow_mode == IPSEC_SECURITY_GW_SWITCH) {
+			fwd->type = DOCA_FLOW_FWD_PIPE;
+			fwd->next_pipe = app_cfg->switch_pipes.pkt_meta_pipe.pipe;
+		} else {
+			fwd->type = DOCA_FLOW_FWD_PORT;
+			fwd->port_id = port_id ^ 1;
+		}
+	}
+}
+
+/*
+ * Create DOCA Flow pipe that match on port meta field.
+ *
+ * @pipe [out]: the created pipe
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t create_switch_port_meta_pipe(struct doca_flow_pipe **pipe)
+{
+	struct doca_flow_match match;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
+	struct doca_flow_fwd fwd = {.type = DOCA_FLOW_FWD_CHANGEABLE};
+
+	memset(&match, 0, sizeof(match));
+
+	match.parser_meta.port_meta = UINT32_MAX;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, doca_flow_port_switch_get(NULL));
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_pipe_cfg_set_name(pipe_cfg, "SWITCH_PORT_META_PIPE");
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+	if (result != DOCA_SUCCESS)
+		DOCA_LOG_ERR("Failed to create switch port meta pipe: %s", doca_error_get_descr(result));
+
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
+}
+
+/*
+ * Add entries to port meta pipe
+ * Send packets to decrypt / encrypt path based on the port
+ *
+ * @ports [in]: array of struct ipsec_security_gw_ports_map
+ * @encrypt_root [in]: pipe to send the packets that comes from unsecured port
+ * @decrypt_root [in]: pipe to send the packets that comes from secured port
+ * @pipe [in]: the pipe to add entries to
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t add_switch_port_meta_entries(struct ipsec_security_gw_ports_map *ports[],
+						 struct doca_flow_pipe *encrypt_root,
+						 struct doca_flow_pipe *decrypt_root,
+						 struct doca_flow_pipe *pipe)
+{
+	struct doca_flow_match match;
+	struct doca_flow_fwd fwd;
+	struct entries_status status;
+	int num_of_entries = 2;
+	doca_error_t result;
+
+	memset(&status, 0, sizeof(status));
+	memset(&match, 0, sizeof(match));
+
+	/* forward the packets from the unsecured port to encryption */
+	match.parser_meta.port_meta = ports[UNSECURED_IDX]->port_id;
+
+	fwd.type = DOCA_FLOW_FWD_PIPE;
+	fwd.next_pipe = encrypt_root;
+
+	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, &fwd, DOCA_FLOW_WAIT_FOR_BATCH, &status, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to port meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	/* forward the packets from the secured port to decryption */
+	match.parser_meta.port_meta = ports[SECURED_IDX]->port_id;
+
+	fwd.type = DOCA_FLOW_FWD_PIPE;
+	fwd.next_pipe = decrypt_root;
+
+	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, &fwd, DOCA_FLOW_NO_WAIT, &status, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to port meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_entries_process(doca_flow_port_switch_get(NULL), 0, DEFAULT_TIMEOUT_US, num_of_entries);
+	if (result != DOCA_SUCCESS)
+		return result;
+	if (status.nb_processed != num_of_entries || status.failure)
+		return DOCA_ERROR_BAD_STATE;
+
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Create the switch root pipe, which match the first 2 MSB in pkt meta
+ *
+ * @pipe [out]: the created pipe
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t create_switch_pkt_meta_pipe(struct doca_flow_pipe **pipe)
+{
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	struct doca_flow_match match;
+	struct doca_flow_match match_mask;
+	doca_error_t result;
+	struct doca_flow_fwd fwd = {.type = DOCA_FLOW_FWD_CHANGEABLE};
+	union security_gateway_pkt_meta meta = {0};
+
+	memset(&match, 0, sizeof(match));
+	memset(&match_mask, 0, sizeof(match_mask));
+
+	meta.decrypt = 1;
+	meta.encrypt = 1;
+	match_mask.meta.pkt_meta = meta.u32;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, doca_flow_port_switch_get(NULL));
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_pipe_cfg_set_name(pipe_cfg, "PKT_META_PIPE");
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_EGRESS);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg domain: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_dir_info(pipe_cfg, DOCA_FLOW_DIRECTION_HOST_TO_NETWORK);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg dir_info: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+	if (result != DOCA_SUCCESS)
+		DOCA_LOG_ERR("Failed to create pkt meta pipe: %s", doca_error_get_descr(result));
+
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
+}
+
+/*
+ * Add entries to pkt meta pipe
+ *
+ * @ports [in]: array of struct ipsec_security_gw_ports_map
+ * @encrypt_pipe [in]: pipe to forward the packets for encryption if pkt meta second bit is one
+ * @pipe [in]: pipe to add the entries
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t add_switch_pkt_meta_entries(struct ipsec_security_gw_ports_map *ports[],
+						struct doca_flow_pipe *encrypt_pipe,
+						struct doca_flow_pipe *pipe)
+{
+	struct doca_flow_match match;
+	struct doca_flow_fwd fwd;
+	struct entries_status status;
+	int num_of_entries = 2;
+	doca_error_t result;
+	union security_gateway_pkt_meta meta = {0};
+
+	memset(&match, 0, sizeof(match));
+	memset(&status, 0, sizeof(status));
+
+	meta.decrypt = 0;
+	meta.encrypt = 1;
+	match.meta.pkt_meta = meta.u32;
+	fwd.type = DOCA_FLOW_FWD_PIPE;
+	fwd.next_pipe = encrypt_pipe;
+
+	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, &fwd, DOCA_FLOW_WAIT_FOR_BATCH, &status, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to pkt meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	meta.encrypt = 0;
+	meta.decrypt = 1;
+	match.meta.pkt_meta = meta.u32;
+	fwd.type = DOCA_FLOW_FWD_PORT;
+	fwd.port_id = ports[UNSECURED_IDX]->port_id;
+
+	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, &fwd, DOCA_FLOW_NO_WAIT, &status, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add entry to pkt meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = doca_flow_entries_process(doca_flow_port_switch_get(NULL), 0, DEFAULT_TIMEOUT_US, num_of_entries);
+	if (result != DOCA_SUCCESS)
+		return result;
+	if (status.nb_processed != num_of_entries || status.failure)
+		return DOCA_ERROR_BAD_STATE;
+
+	return DOCA_SUCCESS;
+}
+
+doca_error_t create_switch_ingress_root_pipes(struct ipsec_security_gw_ports_map *ports[],
+					      struct ipsec_security_gw_config *app_cfg)
+{
+	struct doca_flow_pipe *match_port_pipe;
+	doca_error_t result;
+
+	result = create_switch_port_meta_pipe(&match_port_pipe);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create port meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = add_switch_port_meta_entries(ports,
+					      app_cfg->encrypt_pipes.encrypt_root.pipe,
+					      app_cfg->decrypt_pipes.decrypt_root.pipe,
+					      match_port_pipe);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add port meta pipe entries: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	return DOCA_SUCCESS;
+}
+
+doca_error_t create_switch_egress_root_pipes(struct ipsec_security_gw_ports_map *ports[],
+					     struct ipsec_security_gw_config *app_cfg)
+{
+	doca_error_t result;
+
+	result = create_switch_pkt_meta_pipe(&app_cfg->switch_pipes.pkt_meta_pipe.pipe);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create pkt meta pipe: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = add_switch_pkt_meta_entries(ports,
+					     app_cfg->encrypt_pipes.egress_ip_classifier.pipe,
+					     app_cfg->switch_pipes.pkt_meta_pipe.pipe);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to add pkt meta pipe entries: %s", doca_error_get_descr(result));
+		return result;
+	}
+	return DOCA_SUCCESS;
+}
+
+/*
+* Remove the ethernet padding from the packet
+* Ethernet padding is added to the packet to make sure the packet is at least 64 bytes long
+* This is required by the Ethernet standard
+* The padding is added after the payload and before the FCS
+
+* @m [in]: the packet to remove the padding from
+*/
+void remove_ethernet_padding(struct rte_mbuf **m)
+{
+	struct rte_ether_hdr *oh;
+	struct rte_ipv4_hdr *ipv4;
+	struct rte_ipv6_hdr *ipv6;
+	uint32_t payload_len, payload_len_l3, l2_l3_len;
+
+	oh = rte_pktmbuf_mtod(*m, struct rte_ether_hdr *);
+
+	if (RTE_ETH_IS_IPV4_HDR((*m)->packet_type)) {
+		ipv4 = (void *)(oh + 1);
+		l2_l3_len = rte_ipv4_hdr_len(ipv4) + sizeof(struct rte_ether_hdr);
+		payload_len_l3 = rte_be_to_cpu_16(ipv4->total_length) - rte_ipv4_hdr_len(ipv4);
+	} else {
+		ipv6 = (void *)(oh + 1);
+		l2_l3_len = sizeof(struct rte_ipv6_hdr) + sizeof(struct rte_ether_hdr);
+		payload_len_l3 = rte_be_to_cpu_16(ipv6->payload_len);
+	}
+
+	payload_len = (*m)->pkt_len - l2_l3_len;
+
+	/* check if need to remove trailing l2 zeros - occurs when packet_len < eth_minimum_len=64 */
+	if (payload_len - payload_len_l3 > 0) {
+		/* need to remove the extra zeros */
+		rte_pktmbuf_trim(*m, payload_len - payload_len_l3);
+	}
+}
+
+/*
+ * Free encrypt pipes resources
+ *
+ * @encrypt_pipes [in]: encrypt pipes struct
+ */
+static void security_gateway_free_encrypt_resources(struct encrypt_pipes *encrypt_pipes)
+{
+	if (encrypt_pipes->marker_insert_pipe.entries_info)
+		free(encrypt_pipes->marker_insert_pipe.entries_info);
+	if (encrypt_pipes->encrypt_root.entries_info)
+		free(encrypt_pipes->encrypt_root.entries_info);
+	if (encrypt_pipes->egress_ip_classifier.entries_info)
+		free(encrypt_pipes->egress_ip_classifier.entries_info);
+	if (encrypt_pipes->ipv4_encrypt_pipe.entries_info)
+		free(encrypt_pipes->ipv4_encrypt_pipe.entries_info);
+	if (encrypt_pipes->ipv6_encrypt_pipe.entries_info)
+		free(encrypt_pipes->ipv6_encrypt_pipe.entries_info);
+	if (encrypt_pipes->ipv4_tcp_pipe.entries_info)
+		free(encrypt_pipes->ipv4_tcp_pipe.entries_info);
+	if (encrypt_pipes->ipv4_udp_pipe.entries_info)
+		free(encrypt_pipes->ipv4_udp_pipe.entries_info);
+	if (encrypt_pipes->ipv6_tcp_pipe.entries_info)
+		free(encrypt_pipes->ipv6_tcp_pipe.entries_info);
+	if (encrypt_pipes->ipv6_udp_pipe.entries_info)
+		free(encrypt_pipes->ipv6_udp_pipe.entries_info);
+	if (encrypt_pipes->ipv6_src_tcp_pipe.entries_info)
+		free(encrypt_pipes->ipv6_src_tcp_pipe.entries_info);
+	if (encrypt_pipes->ipv6_src_udp_pipe.entries_info)
+		free(encrypt_pipes->ipv6_src_udp_pipe.entries_info);
+	if (encrypt_pipes->vxlan_encap_pipe.entries_info)
+		free(encrypt_pipes->vxlan_encap_pipe.entries_info);
+}
+
+/*
+ * Free decrypt pipes resources
+ *
+ * @decrypt_pipes [in]: decrypt pipes struct
+ */
+static void security_gateway_free_decrypt_resources(struct decrypt_pipes *decrypt_pipes)
+{
+	if (decrypt_pipes->marker_remove_pipe.entries_info)
+		free(decrypt_pipes->marker_remove_pipe.entries_info);
+	if (decrypt_pipes->decrypt_root.entries_info)
+		free(decrypt_pipes->decrypt_root.entries_info);
+	if (decrypt_pipes->decrypt_ipv4_pipe.entries_info)
+		free(decrypt_pipes->decrypt_ipv4_pipe.entries_info);
+	if (decrypt_pipes->decrypt_ipv6_pipe.entries_info)
+		free(decrypt_pipes->decrypt_ipv6_pipe.entries_info);
+	if (decrypt_pipes->decap_pipe.entries_info)
+		free(decrypt_pipes->decap_pipe.entries_info);
+	if (decrypt_pipes->vxlan_decap_ipv4_pipe.entries_info)
+		free(decrypt_pipes->vxlan_decap_ipv4_pipe.entries_info);
+	if (decrypt_pipes->vxlan_decap_ipv6_pipe.entries_info)
+		free(decrypt_pipes->vxlan_decap_ipv6_pipe.entries_info);
+}
+
+void security_gateway_free_resources(struct ipsec_security_gw_config *app_cfg)
+{
+	security_gateway_free_encrypt_resources(&app_cfg->encrypt_pipes);
+	security_gateway_free_decrypt_resources(&app_cfg->decrypt_pipes);
+}

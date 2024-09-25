@@ -97,6 +97,13 @@ endif
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
+<<<<<<< HEAD
+	doca_pc_path = '/opt/mellanox/doca/lib/x86_64-linux-gnu/pkgconfig/'
+	doca_modules = ['doca-common-lib', 'doca-common']
+elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
+	doca_pc_path = '/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig/'
+	doca_modules = ['doca-common-lib', 'doca-common']
+=======
 	doca_modules = ['doca-libs']
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
   # doca 2.5
@@ -122,6 +129,7 @@ elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64
     'doca-telemetry-exporter',
     'doca-urom'
   ]
+>>>>>>> main
 endif
 
 founded_doca_modules = []

@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2021 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification, are permitted
+ * provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright notice, this list of
+ *       conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright notice, this list of
+ *       conditions and the following disclaimer in the documentation and/or other materials
+ *       provided with the distribution.
+ *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+ *       to endorse or promote products derived from this software without specific prior written
+ *       permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
+{
+	// The initiator's port IP address
+	"initiator_ip_addr": "192.168.50.1",
+	// The receiver's port IP address
+	"receiver_ip_addr": "192.168.50.2",
+	// The number of the port (0/1)
+	"port_num": "0",
+	// Offload mode (packet or none)
+	"offload_mode": "packet",
+	// The authentication method (psk/ssc/ca)
+	"auth_method": "psk",
+	// The pre-shared key (relevant if auth_method is psk)
+	"preshared_key": "swordfish",
+	// The initiator's certificate path (relevant if auth_method is scc or ca)
+	"initiator_cert_path": "",
+	// The receiver's certificate path (relevant if auth_method is scc or ca)
+	"receiver_cert_path": "",
+	// The initiator's private-key path (relevant if side is initiator and auth_method is scc or ca)
+	"initiator_key_path": "",
+	// The receiver's private-key path (relevant if side is receiver and auth_method is scc or ca)
+	"receiver_key_path": "",
+	// The initiator's CA certificate path (relevant if side is initiator and auth_method is ca)
+	"initiator_cacert_path": "",
+	// The receiver's CA certificate path (relevant if side is receiver and auth_method is ca)
+	"receiver_cacert_path": "",
+	// The common name (CN) of the initiator's certificate (relevant if side is receiver and auth_method is ca)
+	"initiator_cn": "",
+	// The common name (CN) of the receiver's certificate (relevant if side is initiator and auth_method is ca)
+	"receiver_cn": ""
+}
+
