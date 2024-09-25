@@ -10,40 +10,51 @@ namespace nicc {
 /**
  * ----------------------General structure----------------------
  */ 
-/**
- * \brief  specific state of the component block,
- *         using for control plane, including rescheduling,
- *         inter-block communication channel, and MT
- */
+
+/*!
+*  \brief  state of FlowEngine
+*/
 typedef struct ComponentState_FlowEngine {
-    /* ========== Common fields ========== */
+    // basic state
     ComponentBaseState_t base_state;
-    /* ========== Specific fields ========== */
+
+    // state of FlowEngine
     uint8_t mock_state;
 } ComponentState_FlowEngine_t;
 
-/**
- * \brief  specific descriptor of the component block,
- *         using for allocating / deallocating component blocks
- *         from the resource pool
- */
+/*!
+*  \brief  descriptor of FlowEngine
+*/
 typedef struct ComponentDesp_FlowEngine {
     /* ========== Common fields ========== */
+    // basic desriptor
     ComponentBaseDesp_t base_desp;
-    /* ========== Specific fields ========== */
+    /* ========== ComponentBlock_DPA fields ========== */
+    struct mlx5dv_flow_match_parameters *tx_match_mask;
+    struct mlx5dv_flow_match_parameters *rx_match_mask;
+    //! \todo use correct table level and priority, below are fake values
+    uint8_t table_level = 0;
+    uint32_t matcher_priority = 0;
+
 } ComponentDesp_FlowEngine_t;
 
 
-/**
+/*!
  *  \brief  basic state of the function register 
- *          into the component block, 
- *          using for running the function on this component block
- *  \note   [1] func state can be modify by other component blocks
+            into the component
+ *  \note   this structure should be inherited and 
+ *          implenented by each component
  */
 typedef struct ComponentFuncState_FlowEngine {
-    /* ========== Common fields ========== */
     ComponentFuncBaseState_t base_state;
-    /* ========== Specific fields ========== */
+
+    struct dr_flow_table		*rx_flow_table;
+	struct dr_flow_table		*tx_flow_table;
+	struct dr_flow_table		*tx_flow_root_table;
+
+	struct dr_flow_rule		*rx_rule;
+	struct dr_flow_rule		*tx_rule;
+	struct dr_flow_rule		*tx_root_rule;
 } ComponentFuncState_FlowEngine_t;
 
 

@@ -48,7 +48,7 @@ nicc_retval_t Component_TEMPLATE::allocate_block(ComponentBaseDesp_t* desp, Comp
     NICC_DEBUG_C(
         "allocate block to application context: "
         "component_id(%u), cb(%p), request(%lu), remain(%lu)",
-        this->_cid, desired_cb, func_input_desp->quota, this->_state->quota
+        this->_cid, desired_cb, desp->quota, this->_state->base_state->quota
     );
 exit:
     return retval;
@@ -67,7 +67,7 @@ nicc_retval_t Component_TEMPLATE::deallocate_block(ComponentBlock* cb) {
     NICC_CHECK_POINTER(this->_state);
     /* Step 1: Based on cb, update local state */
     /// base state
-    this->_state->quota += cb->_desp->quota;
+    this->_state->base_state.quota += desired_cb->_desp->quota;
     /// specific state
     /* ...... */
     delete desired_cb;
