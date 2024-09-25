@@ -27,7 +27,7 @@ ResourcePool::ResourcePool(
         NICC_CHECK_POINTER(config_map_iter->second);
         switch(config_map_iter->first){
             case kComponent_FlowEngine:
-                // component = new Component_FlowEngine();
+                NICC_CHECK_POINTER( component = new Component_FlowEngine() );
                 break;
             case kComponent_DPA:
                 NICC_CHECK_POINTER( component = new Component_DPA() );

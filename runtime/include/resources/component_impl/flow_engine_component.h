@@ -13,7 +13,9 @@ class Component_FlowEngine : public Component {
     Component_FlowEngine() : Component() {
         this->_cid = kComponent_FlowEngine;
     }
-    ~Component_FlowEngine(){}
+    ~Component_FlowEngine(){
+        delete this->_state;
+    }
 
     /**
      *  \brief  init the component

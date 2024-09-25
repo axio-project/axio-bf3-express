@@ -6,9 +6,11 @@ nicc_retval_t Component_DPA::init(ComponentBaseDesp_t* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
     /* Step 1: init desp, recording all hardware resources*/
     NICC_CHECK_POINTER(this->_desp = reinterpret_cast<ComponentDesp_DPA_t*>(desp));
+    NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp)
     /* Step 2: init state, recording remained hardware resources*/
     NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
-    this->_state->base_state.quota = desp->quota;
+    NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state)
+    this->_base_state->quota = desp->quota;
     /// specific state
     this->_state->mock_state = 0;
     return retval;
@@ -24,16 +26,16 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
     /* Step 1: Based on func_input_desp, update local state */
     /// base state
     // check quota
-    if(unlikely(this->_state->base_state.quota < desp->quota)){
+    if(unlikely(this->_base_state->quota < desp->quota)){
         NICC_WARN_C(
             "failed to allocate block due to unsufficient resource remained:"
             " component_id(%u), request(%lu), remain(%lu)",
-            this->_cid, desp->quota, this->_state->base_state.quota
+            this->_cid, desp->quota, this->_base_state->quota
         )
         retval = NICC_ERROR_EXSAUSTED;
         goto exit;
     }
-    this->_state->base_state.quota -= desp->quota;
+    this->_base_state->quota -= desp->quota;
     /// specific state
     this->_state->mock_state = 0;
 
@@ -48,7 +50,12 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
     /// reset block state
     memset(desired_cb->_state, 0, sizeof(ComponentState_DPA_t));
     desired_cb->_base_state->quota = desp->quota;
-
+    
+    NICC_DEBUG_C(
+        "allocate block to application context: "
+        "component_id(%u), cb(%p), request(%lu), remain(%lu)",
+        this->_cid, desired_cb, desp->quota, this->_base_state->quota
+    );
     ///!    \todo   transfer state between component and the created block
 
 exit:
@@ -69,7 +76,7 @@ nicc_retval_t Component_DPA::deallocate_block(ComponentBlock* cb) {
     NICC_CHECK_POINTER(this->_state);
     /* Step 1: Based on cb, update local state */
     /// base state
-    this->_state->base_state.quota += desired_cb->_base_state->quota;
+    this->_base_state->quota += desired_cb->_base_desp->quota;
     /// specific state
     /* ...... */
     delete desired_cb;

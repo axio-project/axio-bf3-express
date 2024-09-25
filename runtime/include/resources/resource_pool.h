@@ -7,6 +7,7 @@
 #include "log.h"
 #include "resources/component.h"
 #include "resources/component_impl/dpa_component.h"
+#include "resources/component_impl/flow_engine_component.h"
 
 namespace nicc {
 

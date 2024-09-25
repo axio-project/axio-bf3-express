@@ -69,6 +69,10 @@ class Component {
  protected:
     // component id
     component_typeid_t _cid;
+    // descriptor of the component, recording total hardware resources
+    ComponentBaseDesp_t *_base_desp;
+    // state of the component, recording remained hardware resources
+    ComponentBaseState_t *_base_state;
 /**
  * ----------------------Internel Parameters----------------------
  */ 
