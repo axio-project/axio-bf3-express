@@ -43,7 +43,11 @@ int main(){
 
     nicc::ComponentDesp_FlowEngine_t *flow_engine_desp = new nicc::ComponentDesp_FlowEngine_t;
     NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = 2000;   // 2000 flow entries      
+    flow_engine_desp->base_desp.quota = 2000;   // assume 2000 flow entries totally  
+
+    nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
+    NICC_CHECK_POINTER(soc_desp);  
+    dpa_desp->base_desp.quota = 16; 
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 1: parse config file
@@ -51,23 +55,23 @@ int main(){
      *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
      * \todo   use a struct to store the config file
      */
-    // nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
-    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
+    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine | nicc::kComponent_SoC;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 2: initialize resource pool, created all enabld components
      *          based on descriptors
      */
     nicc::ResourcePool rpool(
-        // enabled_components,
-        // {
-        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
-        //     { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) }
-        // }
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
+            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) },
+            { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_desp) }
         }
+        // enabled_components,
+        // {
+        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
+        // }
     );
     /*----------------------------------------------------------------*/
     /**
