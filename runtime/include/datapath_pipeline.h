@@ -8,6 +8,7 @@
 #include "utils/ibv_device.h"
 #include "datapath/block_impl/dpa.h"
 #include "datapath/block_impl/flow_engine.h"
+#include "datapath/block_impl/soc.h"
 
 namespace nicc {
 

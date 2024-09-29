@@ -4,7 +4,7 @@
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # target to build
-targets=("runtime" "toolchain/compiler" "toolchain/loader")
+targets=("runtime" "toolchain/compiler" "toolchain/loader" "lib")
 targets_string=$(
   IFS='/'
   echo "${targets[*]}"
@@ -55,7 +55,7 @@ check_deps() {
 build_nicc() {
   cd $script_dir
   log ">> building $1..."
-
+  mkdir -p ./bin
   # prevent clock skew between host and dpu
   ntp_server="ntp.aliyun.com"
   log ">>>> sync system time with $ntp_server..."
@@ -81,6 +81,10 @@ build_nicc() {
   else
     log "successfully built $1"
   fi
+  cd $script_dir
+  if [ $BUILD_TARGET = "./lib" ]; then
+    cp -r $2/build/lib/libnicc.a ./bin
+  fi
 }
 
 # func_desp:  generic cleaning procedure
@@ -88,6 +92,9 @@ build_nicc() {
 # param_2:    path to the cleaning target
 clean_nicc() {
   cd $script_dir
+  if [ $2 = "./lib" ]; then
+    rm ./bin/libnicc.a
+  fi
   cd $2
   log ">> cleaning $1..."
   if [ -d "./build" ]; then

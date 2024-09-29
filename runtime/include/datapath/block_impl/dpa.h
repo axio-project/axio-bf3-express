@@ -27,7 +27,9 @@ namespace nicc {
 #define DPA_SQ_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
 #define DPA_DATA_IDX_MASK ((1 << (DPA_LOG_SQ_RING_DEPTH)) - 1)
 
-
+/**
+ * ----------------------General structure----------------------
+ */ 
 // metadata of a dpa cq
 struct dpa_cq {
     uint32_t cq_num;

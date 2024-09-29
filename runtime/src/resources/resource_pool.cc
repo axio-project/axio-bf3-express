@@ -32,6 +32,9 @@ ResourcePool::ResourcePool(
             case kComponent_DPA:
                 NICC_CHECK_POINTER( component = new Component_DPA() );
                 break;
+            case kComponent_SoC:
+                NICC_CHECK_POINTER( component = new Component_SoC() );
+                break;
             default:
                 NICC_ERROR_C_DETAIL(
                     "unregonized component id, this is a bug: component_id(%u)",

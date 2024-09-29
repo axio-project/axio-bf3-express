@@ -43,7 +43,11 @@ int main(){
 
     nicc::ComponentDesp_FlowEngine_t *flow_engine_desp = new nicc::ComponentDesp_FlowEngine_t;
     NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = 2000;   // 2000 flow entries      
+    flow_engine_desp->base_desp.quota = 2000;   // assume 2000 flow entries totally  
+
+    nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
+    NICC_CHECK_POINTER(soc_desp);  
+    dpa_desp->base_desp.quota = 16; 
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 1: parse config file
@@ -51,23 +55,23 @@ int main(){
      *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
      * \todo   use a struct to store the config file
      */
-    // nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine;
-    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA;
+    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine | nicc::kComponent_SoC;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 2: initialize resource pool, created all enabld components
      *          based on descriptors
      */
     nicc::ResourcePool rpool(
-        // enabled_components,
-        // {
-        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
-        //     { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) }
-        // }
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
+            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) },
+            { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_desp) }
         }
+        // enabled_components,
+        // {
+        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
+        // }
     );
     /*----------------------------------------------------------------*/
     /**
@@ -77,22 +81,22 @@ int main(){
     nicc::AppContext app_cxt;
 
     /// DPA app context
-    nicc::AppHandler app_init_handler;
-    app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
-    app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
-    app_init_handler.binary.dpa_binary = l2_swap_wrapper;
+    nicc::AppHandler dpa_app_init_handler;
+    dpa_app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
+    dpa_app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
+    dpa_app_init_handler.binary.dpa_binary = l2_swap_wrapper;
 
-    nicc::AppHandler app_event_handler;
-    app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
-    app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
-    app_event_handler.binary.dpa_binary = l2_swap_wrapper;
+    nicc::AppHandler dpa_app_event_handler;
+    dpa_app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
+    dpa_app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
+    dpa_app_event_handler.binary.dpa_binary = l2_swap_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
         .base_desp = { .quota = 1 },
         .device_name = "mlx5_0"
     };
     nicc::AppFunction app_func = nicc::AppFunction(
-        /* handlers_ */ { &app_init_handler, &app_event_handler },
+        /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
@@ -109,6 +113,9 @@ int main(){
     flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
     NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
     flow_engine_desp->rx_match_mask->match_sz = 64;
+
+    /// SoC app context
+    nicc::AppHandler soc_app_init_handler;
     /*----------------------------------------------------------------*/
     /*!
      *  \brief  STEP 4: create the datapath pipeline
