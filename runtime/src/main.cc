@@ -81,22 +81,22 @@ int main(){
     nicc::AppContext app_cxt;
 
     /// DPA app context
-    nicc::AppHandler app_init_handler;
-    app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
-    app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
-    app_init_handler.binary.dpa_binary = l2_swap_wrapper;
+    nicc::AppHandler dpa_app_init_handler;
+    dpa_app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
+    dpa_app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
+    dpa_app_init_handler.binary.dpa_binary = l2_swap_wrapper;
 
-    nicc::AppHandler app_event_handler;
-    app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
-    app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
-    app_event_handler.binary.dpa_binary = l2_swap_wrapper;
+    nicc::AppHandler dpa_app_event_handler;
+    dpa_app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
+    dpa_app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
+    dpa_app_event_handler.binary.dpa_binary = l2_swap_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
         .base_desp = { .quota = 1 },
         .device_name = "mlx5_0"
     };
     nicc::AppFunction app_func = nicc::AppFunction(
-        /* handlers_ */ { &app_init_handler, &app_event_handler },
+        /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
@@ -113,6 +113,9 @@ int main(){
     flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
     NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
     flow_engine_desp->rx_match_mask->match_sz = 64;
+
+    /// SoC app context
+    nicc::AppHandler soc_app_init_handler;
     /*----------------------------------------------------------------*/
     /*!
      *  \brief  STEP 4: create the datapath pipeline
