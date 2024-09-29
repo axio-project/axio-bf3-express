@@ -72,6 +72,14 @@ typedef struct ComponentFuncBaseState {
 #define LOG2VALUE(l)    (1UL << (l))
 #define LOG2(n)         (std::log2((double)(n)))
 
+/**
+ * ----------------------Server constants----------------------
+ */ 
+static constexpr size_t kMaxPhyPorts = 2;
+static constexpr size_t kMaxNumaNodes = 2;
+static constexpr size_t kMaxQueuesPerPort = 1;
+static constexpr size_t kHugepageSize = (2 * 1024 * 1024);  ///< Hugepage size
+
 // return values
 enum nicc_retval_t {
     NICC_SUCCESS = 0,
@@ -108,4 +116,32 @@ static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<componen
     #define NICC_ASSERT(condition)   _unused (condition);
 #endif // NICC_RUNTIME_DEBUG_CHECK
 
+static inline void rt_assert(bool condition, std::string throw_str, char *s) {
+  if (unlikely(!condition)) {
+    fprintf(stderr, "%s %s\n", throw_str.c_str(), s);
+    exit(-1);
+  }
+}
+
+static inline void rt_assert(bool condition, const char *throw_str) {
+  if (unlikely(!condition)) {
+    fprintf(stderr, "%s\n", throw_str);
+    exit(-1);
+  }
+}
+
+static inline void rt_assert(bool condition, std::string throw_str) {
+  if (unlikely(!condition)) {
+    fprintf(stderr, "%s\n", throw_str.c_str());
+    exit(-1);
+  }
+}
+
+static inline void rt_assert(bool condition) {
+  if (unlikely(!condition)) {
+    fprintf(stderr, "Error\n");
+    assert(false);
+    exit(-1);
+  }
+}
 } // namespace nicc

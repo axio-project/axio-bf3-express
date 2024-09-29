@@ -6,6 +6,9 @@
 #include "app_context.h"
 #include "datapath/component_block.h"
 
+// nicc_lib headers
+#include "wrapper/soc/soc_wrapper.h"
+
 namespace nicc {
 /**
  * ----------------------General structure----------------------

@@ -1,3 +1,0 @@
-#pragma once
-
-#define NICC_RUNTIME_DEBUG_CHECK      @nicc_runtime_debug_check@

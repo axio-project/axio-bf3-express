@@ -57,8 +57,12 @@ enum soc_wrapper_type_t {
      * \brief Initialize the worker, registering 
      */
     nicc_retval_t __init_worker();
-    nicc_retval_t __init_worker();
-}
+    /**
+     * \brief Run the SoCWrapper datapath in the sequence of worker tx, dispatcher tx, worker rx,
+     *        and dispatcher rx.
+     */
+    nicc_retval_t __run();
+};
 
 
 } // namespace nicc
