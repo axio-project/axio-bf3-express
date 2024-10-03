@@ -1,0 +1,3 @@
+[submodule "third_parties/rdma-core"]
+	path = third_parties/rdma-core
+	url = https://github.com/linux-rdma/rdma-core.git
