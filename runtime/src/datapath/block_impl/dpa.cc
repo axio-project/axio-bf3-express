@@ -2,18 +2,7 @@
 
 namespace nicc {
 
-/*!
- *  \brief  register a new application function into this component
- *  \param  app_func    the function to be registered into this component
- *  \return NICC_SUCCESS for successful registeration
- */
- 
-/*!
- *  \brief  register a new application function into this component
- *  \param  app_func  the function to be registered into this component
- *  \param  device_state        global device state
- *  \return NICC_SUCCESS for successful registeration
- */
+
 nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint8_t i;
@@ -96,11 +85,6 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
 }
 
 
-/*!
- *  \brief  deregister a application function
- *  \param  app_func the function to be deregistered from this compoennt
- *  \return NICC_SUCCESS for successful unregisteration
- */
 nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     nicc_retval_t retval = NICC_SUCCESS;
 
@@ -133,12 +117,6 @@ exit:
 }
 
 
-/*!
- *  \brief  setup mlnx_device for this DPA block
- *  \param  func_state  state of the function which intend to init new rdma revice
- *  \return NICC_SUCCESS on success;
- *          NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__setup_ibv_device(ComponentFuncState_DPA_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;
 
@@ -173,13 +151,6 @@ exit:
 }
 
 
-/*!
- *  \brief  register event handler on DPA block
- *  \param  app_func        application function which the event handler comes from
- *  \param  app_handler     the handler to be registered
- *  \param  func_state      state of the function on this DPA block
- *  \return NICC_SUCCESS for successful registering
- */
 nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state
 ){
@@ -233,13 +204,6 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
 }
 
 
-/*!
- *  \brief  allocate on-device resource for DPA process
- *  \note   this function is called within register_app_function
- *  \param  app_func    application function which the event handler comes from
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful allocation
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_device_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -299,14 +263,6 @@ nicc_retval_t ComponentBlock_DPA::__allocate_device_resources(AppFunction *app_f
 }
 
 
-/*!
- *  \brief  init on-device resource for handlers running on DPA
- *  \note   this function is called within register_app_function
- *  \param  app_func        application function which the event handler comes from
- *  \param  app_handler     the init handler to be registered
- *  \param  func_state      state of the function on this DPA block
- *  \return NICC_SUCCESS for successful initialization
- */
 nicc_retval_t ComponentBlock_DPA::__init_device_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state){
     int ret = 0;
     uint64_t rpc_ret_val;
@@ -334,12 +290,6 @@ exit:
 }
 
 
-/*!
- *  \brief  allocate SQ and corresponding CQ for DPA process
- *  \note   this function are called within __allocate_device_resources
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful allocation
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -446,12 +396,6 @@ nicc_retval_t ComponentBlock_DPA::__allocate_sq_cq(ComponentFuncState_DPA_t *fun
 }
 
 
-/*!
- *  \brief  allocate RQ and corresponding CQ for DPA process
- *  \note   this function are called within __allocate_device_resources
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful allocation
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -589,15 +533,6 @@ nicc_retval_t ComponentBlock_DPA::__allocate_rq_cq(ComponentFuncState_DPA_t *fun
 }
 
 
-/*!
- *  \brief  allocate memory resource for SQ/RQ ring and data buffers
- *  \note   this function is called within __allocate_sq_cq/__allocate_rq_cq
- *  \param  process         flexIO process
- *  \param  log_depth       log2 of the SQ/RQ depth
- *  \param  wqe_size        size of wqe on the ring
- *  \param  wq_transf       SQ/RQ resource
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_wq_memory(
     struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_wq *wq_transf
 ){
@@ -660,14 +595,6 @@ exit:
 }
 
 
-/*!
- *  \brief  allocate memory resource for CQ
- *  \note   this function is called within __allocate_rq_cq
- *  \param  process   flexIO process
- *  \param  log_depth log2 of the CQ depth
- *  \param  app_cq    CQ resource
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_cq_memory(struct flexio_process *process, int log_depth, struct dpa_cq *app_cq){
     nicc_retval_t retval = NICC_SUCCESS;
     struct mlx5_cqe64 *cq_ring_src = nullptr, *cqe = nullptr;
@@ -728,16 +655,6 @@ exit:
 }
 
 
-/*!
- *  \brief  initialize WQEs on RQ ring (after allocation)
- *  \note   this function is called within __allocate_rq_cq
- *  \param  process         flexIO process
- *  \param  rq_ring_daddr   base address of the allocated RQ ring
- *  \param  log_depth       log2 of the RQ ring depth
- *  \param  data_daddr      base address of the RQ data buffers
- *  \param  wqd_mkey_id     mkey id of the RQ's data buffers
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__init_rq_ring_wqes(
     struct flexio_process *process, flexio_uintptr_t rq_ring_daddr, 
     int log_depth, flexio_uintptr_t data_daddr, uint32_t wqd_mkey_id
@@ -783,13 +700,6 @@ exit:
 }
 
 
-/*!
- *  \brief  allocates doorbell record and return its address on the device's memory
- *  \note   this function is called within __allocate_cq_memory, __allocate_wq_memory and __allocate_rq_cq
- *  \param  process   flexIO process
- *  \param  dbr_daddr doorbell record address on the device's memory
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__allocate_dbr(struct flexio_process *process, flexio_uintptr_t *dbr_daddr){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -810,16 +720,7 @@ exit:
     return retval;
 }
 
-/*!
- *  \brief  create mkey for the given memory region
- *  \param  process     flexIO process
- *  \param  pd          protection domain
- *  \param  daddr       device address of the memory region
- *  \param  log_bsize   log2 of the memory region size
- *  \param  access      access flags
- *  \param  mkey        mkey
- *  \return NICC_SUCCESS on success
- */
+
 nicc_retval_t ComponentBlock_DPA::__create_dpa_mkey(
     struct flexio_process *process, struct ibv_pd *pd,
     flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
@@ -854,12 +755,6 @@ exit:
 }
 
 
-/*!
- *  \brief  unregister event handler on DPA block
- *  \note   this function is called within unregister_app_function
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful unregistering
- */
 nicc_retval_t ComponentBlock_DPA::__unregister_event_handler(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -881,12 +776,6 @@ exit:
 }
 
 
-/*!
- *  \brief  deallocate on-device resource for handlers running on DPA
- *  \note   this function is called within unregister_app_function
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful deallocation
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_device_resources(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -938,12 +827,6 @@ exit:
 }
 
 
-/*!
- *  \brief  deallocate SQ and corresponding CQ for DPA process
- *  \note   these functions are called within __deallocate_device_resources
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful deallocation
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_sq_cq(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -1005,12 +888,6 @@ exit:
 }
 
 
-/*!
- *  \brief  deallocate RQ and corresponding CQ for DPA process
- *  \note   these functions are called within __deallocate_device_resources
- *  \param  func_state  state of the function on this DPA block
- *  \return NICC_SUCCESS for successful deallocation
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_rq_cq(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -1074,13 +951,6 @@ nicc_retval_t ComponentBlock_DPA::__deallocate_rq_cq(ComponentFuncState_DPA_t *f
 }
 
 
-/*!
- *  \brief  deallocate memory resource for SQ/RQ
- *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
- *  \param  process         flexIO process
- *  \param  sq_transf       created SQ/RQ resource
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_wq_memory(struct flexio_process *process, struct dpa_wq *wq_transf){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -1135,13 +1005,6 @@ exit:
 }
 
 
-/*!
- *  \brief  deallocate memory resource for SQ/CQ
- *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
- *  \param  process   flexIO process
- *  \param  app_cq    CQ resource
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_cq_memory(struct flexio_process *process, struct dpa_cq *app_cq){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -1180,13 +1043,6 @@ nicc_retval_t ComponentBlock_DPA::__deallocate_cq_memory(struct flexio_process *
 }
 
 
-/*!
- *  \brief  deallocates doorbell record and return its address on the device's memory
- *  \note   this function is called within __deallocate_cq_memory, __deallocate_sq_memory and __deallocate_rq_cq
- *  \param  process   flexIO process
- *  \param  dbr_daddr doorbell record address on the device's memory
- *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
- */
 nicc_retval_t ComponentBlock_DPA::__deallocate_dbr(struct flexio_process *process, flexio_uintptr_t dbr_daddr){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;

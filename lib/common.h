@@ -105,6 +105,28 @@ static constexpr component_typeid_t kComponent_SHA = 0x10;
 static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
 static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
 
+
+/**
+ * ----------------------Scope Exit----------------------
+ */
+template <typename T>
+class ScopeExit
+{
+ public:
+    ScopeExit(T t) : t(t) {}
+    ~ScopeExit() { t(); }
+    T t;
+};
+
+template <typename T>
+ScopeExit<T> MoveScopeExit(T t) {
+    return ScopeExit<T>(t);
+};
+
+#define __ANONYMOUS_VARIABLE_DIRECT(name, line) name##line
+#define __ANONYMOUS_VARIABLE_INDIRECT(name, line) __ANONYMOUS_VARIABLE_DIRECT(name, line)
+#define NICC_SCOPE_EXIT(func) const auto __ANONYMOUS_VARIABLE_INDIRECT(EXIT, __LINE__) = MoveScopeExit([=](){func;})
+
 /**
  * ----------------------Simple methods----------------------
  */ 

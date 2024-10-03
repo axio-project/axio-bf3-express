@@ -1,0 +1,15 @@
+{
+    "pipes": [
+        {
+            "name": "echo_pipe",
+            "match_field": [
+                "udp.sport",
+                "ipv4.sip"
+            ],
+            "actions": [
+                "drop",
+                "fwd"
+            ]
+        }
+    ]
+}

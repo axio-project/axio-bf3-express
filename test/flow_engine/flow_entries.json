@@ -1,0 +1,11 @@
+{
+    "entry_group": [
+        {
+            "pipe": "echo_pipe",
+            "entries": [
+                { "match": "udp.sport=10086;ipv4.sip=192.168.100.1", "action": "drop" },
+                { "match": "udp.sport=10086;ipv4.sip=192.168.100.2", "action": "drop" }
+            ]
+        }
+    ]
+}
