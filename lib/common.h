@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include <cmath>
+#include <cassert>
 
 #include <doca_error.h>
 
@@ -69,6 +70,9 @@ typedef struct ComponentFuncBaseState {
 #define KB(x) (static_cast<size_t>(x) << 10)
 #define MB(x) (static_cast<size_t>(x) << 20)
 #define GB(x) (static_cast<size_t>(x) << 30)
+#define K(x) KB(x)
+#define M(x) MM(x)
+#define G(x) GB(x)
 #define LOG2VALUE(l)    (1UL << (l))
 #define LOG2(n)         (std::log2((double)(n)))
 
@@ -137,6 +141,10 @@ ScopeExit<T> MoveScopeExit(T t) {
     #define NICC_CHECK_POINTER(ptr)  _unused (ptr);
     #define NICC_ASSERT(condition)   _unused (condition);
 #endif // NICC_RUNTIME_DEBUG_CHECK
+
+#define NICC_STATIC_ASSERT(condition, report)   \
+    static_assert((condition), report)
+
 
 static inline void rt_assert(bool condition, std::string throw_str, char *s) {
   if (unlikely(!condition)) {

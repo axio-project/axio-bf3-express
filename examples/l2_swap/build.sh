@@ -22,7 +22,6 @@ CUR_DIR=$(pwd)
 LIB_DIR=$CUR_DIR/../../lib/dpa/include
 
 # Input parameters
-APP_NAME=l2_swap_kernel
 SOURCE_FILE="$CUR_DIR/src/dpa_kernel.c"
 BUILD_DIR=$CUR_DIR
 

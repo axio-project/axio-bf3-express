@@ -64,6 +64,7 @@ struct dpa_data_queues {
 typedef struct ComponentState_DPA {
     /* ========== Common fields ========== */
     ComponentBaseState_t base_state;
+
     /* ========== ComponentBlock_DPA fields ========== */
     uint8_t mock_state;
 } ComponentState_DPA_t;
@@ -76,6 +77,7 @@ typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
+
     /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;

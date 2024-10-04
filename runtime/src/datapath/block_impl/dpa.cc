@@ -161,12 +161,17 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(app_handler);
     NICC_CHECK_POINTER(func_state);
-    NICC_CHECK_POINTER(app_handler->binary.dpa_binary);
-    NICC_CHECK_POINTER(app_handler->host_stub.dpa_host_stub);
+    NICC_CHECK_POINTER(app_handler->binary.dpa.kernel);
+    NICC_CHECK_POINTER(app_handler->binary.dpa.host_stub);
 
     // create flexio process
     if(unlikely(FLEXIO_STATUS_SUCCESS != 
-        (res = flexio_process_create(func_state->ibv_ctx, app_handler->binary.dpa_binary, nullptr, &func_state->flexio_process))
+        (res = flexio_process_create(
+            func_state->ibv_ctx,
+            reinterpret_cast<flexio_app*>(app_handler->binary.dpa.kernel),
+            nullptr,
+            &func_state->flexio_process
+        ))
     )){
         NICC_WARN_C("failed to create event handler on flexio driver on DPA block: flexio_retval(%d)", res);
         retval = NICC_ERROR_HARDWARE_FAILURE;
@@ -182,7 +187,7 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     }
 
     // creat event handler
-    event_handler_attr.host_stub_func = app_handler->host_stub.dpa_host_stub;
+    event_handler_attr.host_stub_func = reinterpret_cast<flexio_func_t*>(app_handler->binary.dpa.host_stub);
     event_handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
     event_handler_attr.affinity.id = this->_desp->core_id;
     if(unlikely(FLEXIO_STATUS_SUCCESS !=
@@ -270,11 +275,16 @@ nicc_retval_t ComponentBlock_DPA::__init_device_resources(AppFunction *app_func,
 
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(app_handler);
-    NICC_CHECK_POINTER(app_handler->host_stub.dpa_host_stub);
+    NICC_CHECK_POINTER(app_handler->binary.dpa.host_stub);
     NICC_CHECK_POINTER(func_state);
 
     if(unlikely(FLEXIO_STATUS_SUCCESS != (
-        ret = flexio_process_call(func_state->flexio_process, *(app_handler->host_stub.dpa_host_stub), &rpc_ret_val, func_state->d_dev_queues)
+        ret = flexio_process_call(
+            func_state->flexio_process,
+            *(reinterpret_cast<flexio_func_t*>(app_handler->binary.dpa.host_stub)),
+            &rpc_ret_val,
+            func_state->d_dev_queues
+        )
     ))){
         NICC_WARN_C(
             "failed to call init handler for initializing on-device resources: "

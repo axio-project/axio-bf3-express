@@ -83,13 +83,13 @@ int main(){
     /// DPA app context
     nicc::AppHandler dpa_app_init_handler;
     dpa_app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
-    dpa_app_init_handler.host_stub.dpa_host_stub = &dpa_device_init;
-    dpa_app_init_handler.binary.dpa_binary = l2_swap_wrapper;
+    dpa_app_init_handler.binary.dpa.host_stub = &dpa_device_init;
+    dpa_app_init_handler.binary.dpa.kernel = l2_swap_wrapper;
 
     nicc::AppHandler dpa_app_event_handler;
     dpa_app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
-    dpa_app_event_handler.host_stub.dpa_host_stub = &dpa_event_handler;
-    dpa_app_event_handler.binary.dpa_binary = l2_swap_wrapper;
+    dpa_app_event_handler.binary.dpa.host_stub = &dpa_event_handler;
+    dpa_app_event_handler.binary.dpa.kernel = l2_swap_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
         .base_desp = { .quota = 1 },
@@ -105,7 +105,7 @@ int main(){
     /// Flow Engine app context
     nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
     NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = 2;      // need 2 flow entries
+    flow_engine_desp->base_desp.quota = K(2);      // need 2k flow entries
     size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
     flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
     NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);

@@ -5,6 +5,7 @@
 #include "log.h"
 #include "app_context.h"
 #include "datapath/component_block.h"
+#include "ctrlpath/mat.h"
 
 namespace nicc {
 /**
@@ -29,6 +30,7 @@ typedef struct ComponentDesp_FlowEngine {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
+    
     /* ========== ComponentBlock_DPA fields ========== */
     struct mlx5dv_flow_match_parameters *tx_match_mask;
     struct mlx5dv_flow_match_parameters *rx_match_mask;

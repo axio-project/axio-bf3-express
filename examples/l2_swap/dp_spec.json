@@ -1,0 +1,40 @@
+{
+    "dp_graph": [
+        {
+            "component": "root",
+            "match": [ "udp.sport", "ipv4.sip" ],
+            "action": [ "fwd", "drop" ],
+            "entries": [
+                { 
+                    "app_name": "l2_reflector",
+                    "match": "udp.sport=10086",
+                    "action": "fwd(dpa)"
+                }
+            ]
+        },
+        {
+            "component": "flow_engine",
+            "match": [ "retval" ],
+            "action": [ "fwd", "drop" ],
+            "entries": [
+                { 
+                    "app_name": "l2_reflector",
+                    "match": "retval=1",
+                    "action": "fwd(dpa)"
+                }
+            ]
+        },
+        {
+            "component": "dpa",
+            "match": [ "retval" ],
+            "action": [ "fwd", "drop" ],
+            "entries": [
+                { 
+                    "app_name": "l2_reflector",
+                    "match": "retval=1",
+                    "action": "fwd(soc)"
+                }
+            ]
+        }
+    ]
+}

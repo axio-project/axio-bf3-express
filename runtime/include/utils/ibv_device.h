@@ -14,6 +14,7 @@ typedef struct device_state {
     struct ibv_context *ibv_ctx;
     const char *device_name;
     
+    // device-wise flow engine domain
     struct mlx5dv_dr_domain *rx_domain;
     struct mlx5dv_dr_domain *tx_domain;
     struct mlx5dv_dr_domain *fdb_domain;
