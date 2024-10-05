@@ -3,6 +3,9 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <map>
+#include <algorithm>
+#include <cstring>
 
 #include "common.h"
 #include "log.h"
@@ -20,10 +23,12 @@ namespace nicc
 enum flow_match_field_t : uint8_t {
     NICC_FMF_UNKNOWN = 0,
     
-    // nicc runtime
+    /* NICC platform fields */
     NICC_FMF_RT__RETVAL,    // return value of the core
 
-    // ethernet
+    /* Physical fields */
+
+    /* L2 fields */
     NICC_FMF_ETH__SMAC,     // source MAC address
     NICC_FMF_ETH__DMAC,     // destination MAC address
     NICC_FMF_ETH__TYPE,     // payload type
@@ -31,12 +36,12 @@ enum flow_match_field_t : uint8_t {
     // vlan
     NICC_FMF_VLAN__ID,      // vlan index
 
-    // ipv4
+    /* L3 fields */
     NICC_FMF_IPV4__SIP,     // source ip address
     NICC_FMF_IPV4__DIP,     // destination ip address
     NICC_FMF_IPV4__TYPE,    // payload type
 
-    // udp
+    /* L4 fields */
     NICC_FMF_UDP__SPORT,    // source port
     NICC_FMF_UDP__DPORT,    // destination port
 
@@ -96,17 +101,28 @@ typedef struct flow {
     struct eth_addr arp_tha;        // ARP/ND target hardware address
     nicc_be16 tcp_flags;            // TCP flags/ICMPv6 ND options type
     nicc_be16 __pad_l4_1;           // pad to 64 bits
-
     nicc_be16 tp_src;               // TCP/UDP/SCTP source port/ICMP type
     nicc_be16 tp_dst;               // TCP/UDP/SCTP destination port/ICMP code
     nicc_be16 ct_tp_src;            // CT original tuple source port/ICMP type
     nicc_be16 ct_tp_dst;            // CT original tuple dst port/ICMP code
     nicc_be32 igmp_group_ip4;       // IGMP group IPv4 address/ICMPv6 ND reserved field
     nicc_be32 __pad_l4_2;           // pad to 64 bits
+
+    bool operator==(const flow& other) const {
+        return std::memcmp(this, &other, sizeof(flow)) == 0;
+    }
+
+    bool operator<(const flow& other) const {
+        return this->tp_dst < other.tp_dst;
+    }
+
+    bool operator>(const flow& other) const {
+        return this->tp_dst > other.tp_dst;
+    }
 } flow_t;
 
 NICC_STATIC_ASSERT(
-    sizeof(flow_t) % sizeof(uint64_t) == 0, "size of flow_t misaligned to 64-bits"
+    sizeof(flow_t) % sizeof(nicc_uint64_t) == 0, "size of flow_t is misaligned to 64-bits"
 );
 
 
@@ -117,7 +133,17 @@ NICC_STATIC_ASSERT(
  *          corresponding bit of the flow is wildcarded (need not match)
  */
 typedef struct flow_wildcards {
-    flow_t masks = { 0 }; 
+    flow_t masks = { 0 };
+
+    bool operator==(const flow_wildcards& other) const {
+        return this->masks == other.masks;
+    }
+    bool operator<(const flow_wildcards& other) const {
+        return this->masks < other.masks;
+    }
+    bool operator>(const flow_wildcards& other) const {
+        return this->masks > other.masks;
+    }
 } flow_wildcards_t;
 
 
@@ -126,7 +152,7 @@ typedef struct flow_wildcards {
  */
 typedef struct flow_match {
     flow_t flow = { 0 };
-    flow_wildcards_t wildcards;
+    flow_wildcards_t wildcards = { 0 };
 } flow_match_t;
 
 
@@ -144,8 +170,15 @@ typedef struct flow_action {
 typedef struct flow_hash {
     uint32_t _value = 0;
 
-    bool operator== (const flow_hash& other){
+    bool operator==(const flow_hash& other){
         return this->_value == other._value;
+    }
+
+    flow_hash& operator=(const flow_hash& other){
+        if(this == &other){ return *this; }
+
+        this->_value = other._value;
+        return *this;
     }
 
     void cal(flow_match_t& match, flow_action_t& action){
@@ -166,6 +199,9 @@ typedef struct flow_hash {
 
         this->_value = _fmf_hash | _act_hash;
     }
+
+    flow_hash() : _value(0) {}
+    flow_hash(flow_match_t& match, flow_action_t& action){ cal(match, action); }
 } flow_hash_t;
 
 
@@ -180,58 +216,165 @@ typedef struct flow_entry {
 
 
 /**
- *  \brief  match-action table interface
- *  \note   this is an abstraction class
+ *  \brief  interface for a matcher, which represent a certain match pattern
  */
-class MAT {
+class FlowMatcher {
  public:
-    MAT() : _dev_memory(nullptr) {}
-    ~MAT() = default;
+    FlowMatcher(flow_wildcards_t match_wc){}
+    ~FlowMatcher() = default;
 
+    bool operator==(const flow_wildcards_t& match_wc) { return this->_match_wc == match_wc; }
+    bool operator==(const FlowMatcher& other) const { return this->_match_wc == other._match_wc; }
+    bool operator<(const FlowMatcher& other) const { return this->_match_wc < other._match_wc; }
+    bool operator>(const FlowMatcher& other) const { return this->_match_wc > other._match_wc; }
 
-    /*!
-     *  \brief  alloacte new entries on the CPU (SoC) memories for configuration
-     *  \param  len     number of entries to be allocated    
-     *  \param  entries allocated entry list
-     *  \return NICC_SUCCESS for successfully allocation
-     */
-    static nicc_retval_t allocate_entries(uint64_t len, flow_entry_t **entries){
-        nicc_retval_t retval = NICC_SUCCESS;
-        uint64_t i;
-        flow_entry_t *new_entry;
-        
-        NICC_CHECK_POINTER(entries);
-        NICC_CHECK_POINTER(*entries = new flow_entry_t[len]);
-        for(i=0; i<len; i++){
-            NICC_CHECK_POINTER(new_entry = new flow_entry_t());
-            entries[i] = new_entry;
-        }
-
-    exit:
-        return retval;
+    FlowMatcher& operator=(const FlowMatcher& other){
+        if(this == &other){ return *this; }
+        this->_match_wc = other._match_wc;
+        return *this;
     }
 
+ protected:
+    // match pattern of this matcher
+    flow_wildcards_t _match_wc;
+};
 
-    /*!
-     *  \brief  load MAT entries
+
+/**
+ *  \brief  interface for a match-action table, which contains a list of flow entries
+ */
+class FlowMAT {
+ public:
+    FlowMAT(){}
+    ~FlowMAT() = default;
+
+    /**
+     *  \brief  create new macther in this table (wrapper)
+     *  \param  flow_wildcards_t    wildcard for creating this matcher
+     *  \param  priority            priority to create this matcher
+     *  \param  criteria            criteria to create this matcher
+     *  \param  matcher             the created matcher
+     *  \return NICC_SUCCESS for successfully creation
+     */
+    nicc_retval_t create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher);
+
+    /**
+     *  \brief  destory macther in this table (wrapper)
+     *  \param  matcher matcher to be destoried
+     *  \return NICC_SUCCESS for successfully destory
+     */
+    nicc_retval_t detory_matcher(FlowMatcher* matcher);
+
+    /**
+     *  \brief  load MAT entries (wrapper)
+     *  \param  matcher mather to load the entries
      *  \param  entries list of entries to be loaded
      *  \return NICC_SUCCESS for successfully loading
      */
-    virtual nicc_retval_t load_entries(flow_entry_t *entries, uint64_t len);
+    nicc_retval_t load_entries(FlowMatcher& matcher, flow_entry_t *entries, nicc_uint64_t len);
 
-
-    /*!
-     *  \brief  add MAT entries
-     *  \param  entries list of entries to be loaded
-     *  \return NICC_SUCCESS for successfully loading
+    /**
+     *  \brief  unload MAT entries (wrapper)
+     *  \param  matcher mather to unload the entries
+     *  \param  entries list of entries to be unloaded
+     *  \return NICC_SUCCESS for successfully unloading
      */
-    virtual nicc_retval_t remove_entries(flow_entry_t *entries, uint64_t len);
-
+    nicc_retval_t unload_entries(FlowMatcher& matcher, flow_entry_t *entries, nicc_uint64_t len);
 
  protected:
-    //  actual device memory (e.g., SoC DRAM, DPA heap and flow engine pipe)
-    //  for storing flow engine
-    void *_dev_memory;
+    /**
+     *  \brief  create new macther in this table (detailed implementation)
+     *  \param  flow_wildcards_t    wildcard for creating this matcher
+     *  \param  priority            priority to create this matcher
+     *  \param  criteria            criteria to create this matcher
+     *  \param  matcher             the created matcher
+     *  \return NICC_SUCCESS for successfully creation
+     */
+    virtual nicc_retval_t __create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher) {
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
+
+    /**
+     *  \brief  destory macther in this table (detailed implementation)
+     *  \param  matcher matcher to be destoried
+     *  \return NICC_SUCCESS for successfully destory
+     */
+    virtual nicc_retval_t __destory_matcher(FlowMatcher* matcher) {
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
+
+    /**
+     *  \brief  load MAT entries (detailed implementation)
+     *  \param  matcher mather to load the entries
+     *  \param  entries list of entries to be loaded
+     *  \return NICC_SUCCESS for successfully loading
+     */
+    virtual nicc_retval_t __load_entries(FlowMatcher& matcher, flow_entry_t *entries, nicc_uint64_t len){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
+
+    /**
+     *  \brief  unload MAT entries (detailed implementation)
+     *  \param  matcher mather to unload the entries
+     *  \param  entries list of entries to be unloaded
+     *  \return NICC_SUCCESS for successfully unloading
+     */
+    virtual nicc_retval_t __unload_entries(FlowMatcher& matcher, flow_entry_t *entries, nicc_uint64_t len){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
+
+    // entry map
+    std::map<FlowMatcher, std::vector<flow_entry_t*>*> _entry_map;
+};
+
+
+/**
+ *  \brief  inferface for a flow domain, which contains a chain of flow tables
+ */
+class FlowDomain {
+ public:
+    FlowDomain(){}
+    ~FlowDomain() = default;
+
+    /**
+     *  \brief  create new table in this domain (wrapper)
+     *  \param  level       level of the table
+     *  \param  table       created table
+     *  \return NICC_SUCCESS for successfully allocation
+     */
+    nicc_retval_t create_table(int level, FlowMAT** table);
+
+    /**
+     *  \brief  destory table in this domain (wrapper)
+     *  \param  level       level of the table              // TODO: delete this param
+     *  \param  table       table to be destoried
+     *  \return NICC_SUCCESS for successfully destory
+     */
+    nicc_retval_t destory_table(int level, FlowMAT* table);
+
+ protected:
+    // chain of tables
+    std::multimap<int, FlowMAT*> _table_map;
+
+    /**
+     *  \brief  create new table in this domain (detailed implementation)
+     *  \param  priority    prority of the table
+     *  \param  table       created table
+     *  \return NICC_SUCCESS for successfully allocation
+     */
+    virtual nicc_retval_t __create_table(int priority, FlowMAT** table){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
+
+    /**
+     *  \brief  destory table in this domain (detailed implementation)
+     *  \param  level       level of the table
+     *  \param  table       table to be destoried
+     *  \return NICC_SUCCESS for successfully destory
+     */
+    virtual nicc_retval_t __detory_table(int level, FlowMAT* table){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    };
 };
 
 

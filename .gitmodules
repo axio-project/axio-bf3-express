@@ -1,3 +1,6 @@
 [submodule "third_parties/rdma-core"]
 	path = third_parties/rdma-core
 	url = https://github.com/linux-rdma/rdma-core.git
+[submodule "third_parties/ovs"]
+	path = third_parties/ovs
+	url = https://github.com/openvswitch/ovs.git

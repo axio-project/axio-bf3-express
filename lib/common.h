@@ -135,11 +135,13 @@ ScopeExit<T> MoveScopeExit(T t) {
  * ----------------------Simple methods----------------------
  */ 
 #if NICC_RUNTIME_DEBUG_CHECK
-  #define NICC_CHECK_POINTER(ptr)   assert((ptr) != nullptr);
-  #define NICC_ASSERT(condition)    assert((condition));
+  #define NICC_CHECK_POINTER(ptr)       assert((ptr) != nullptr);
+  #define NICC_ASSERT(condition)        assert((condition));
+  #define NICC_CHECK_BOUND(val, bound)  assert(val <= bound);
 #else // NICC_RUNTIME_DEBUG_CHECK
-    #define NICC_CHECK_POINTER(ptr)  _unused (ptr);
-    #define NICC_ASSERT(condition)   _unused (condition);
+    #define NICC_CHECK_POINTER(ptr)         _unused (ptr);
+    #define NICC_ASSERT(condition)          _unused (condition);
+    #define NICC_CHECK_BOUND(val, bound)    _unused (val);
 #endif // NICC_RUNTIME_DEBUG_CHECK
 
 #define NICC_STATIC_ASSERT(condition, report)   \
