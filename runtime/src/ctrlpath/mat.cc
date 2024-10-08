@@ -2,7 +2,7 @@
 
 namespace nicc {
 
-nicc_retval_t FlowMAT::create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher){
+nicc_retval_t FlowMAT::create_matcher(flow_wildcards_t wc, int priority, FlowMatcher** matcher){
     nicc_retval_t retval = NICC_SUCCESS;
     std::vector<flow_entry_t*>* _entry_list = nullptr;
 
@@ -15,7 +15,7 @@ nicc_retval_t FlowMAT::create_matcher(flow_wildcards_t wc, int priority, nicc_ui
         goto exit;
     }
 
-    retval = this->__create_matcher(wc, priority, criteria, matcher);
+    retval = this->__create_matcher(wc, priority, matcher);
     NICC_CHECK_POINTER(*matcher);
 
     if(likely(retval == NICC_SUCCESS)){

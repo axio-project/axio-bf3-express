@@ -7,9 +7,20 @@ nicc_retval_t FlowMatcher_FlowEngine::__create_mlx5dv_dr_matcher(){
     nicc_retval_t retval = NICC_SUCCESS;
 
     NICC_CHECK_POINTER(this->_mlx5dv_dr_tbl);
+    NICC_CHECK_POINTER(this->_mlx5dv_dr_match_parameters);
 
-    // TODO: convert flow_wildcards_t to struct mlx5dv_flow_match_parameters
-    
+    this->_mlx5dv_matcher = mlx5dv_dr_matcher_create(
+        this->_mlx5dv_dr_tbl,
+        this->_mlx5dv_dr_match_priority,
+        this->_mlx5dv_dr_match_criteria,
+        this->_mlx5dv_dr_match_parameters
+    );
+    if(unlikely(this->_mlx5dv_matcher == nullptr)){
+        NICC_WARN_C("failed to create mlx5dv_dr_matcher");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
 exit:
     return retval;
 }
@@ -20,12 +31,7 @@ nicc_retval_t FlowMAT_FlowEngine::__create_mlx5dv_dr_table(){
     uint8_t criteria_enable;
 
     NICC_CHECK_POINTER(this->_mlx5dv_dr_fdb_domain);
-
-    // TODO: delete this
-    ///! \ref see doc 8.12.1
-    criteria_enable = 0;
-    NICC_SET_BIT(criteria_enable, 0, 0xFF); // matching packet header field
-    NICC_SET_BIT(criteria_enable, 2, 0xFF); // matching packet meta-data field
+    NICC_CHECK_POINTER(this->_mlx5dv_dr_fdb_domain);
 
     // create table
     this->_mlx5dv_dr_tbl = mlx5dv_dr_table_create(this->_mlx5dv_dr_fdb_domain, this->_mlx5dv_dr_tbl_level);
@@ -47,16 +53,27 @@ exit:
 }
 
 
-nicc_retval_t FlowMAT_FlowEngine::__create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher){
+nicc_retval_t FlowMAT_FlowEngine::__create_matcher(flow_wildcards_t wc, int priority, FlowMatcher** matcher){
     nicc_retval_t retval = NICC_SUCCESS;
     FlowMatcher_FlowEngine *matcher_fe;
+    nicc_uint8_t criteria;
+    struct mlx5dv_flow_match_parameters *match_param;
 
     NICC_CHECK_POINTER(matcher);
     NICC_CHECK_POINTER(this->_mlx5dv_dr_tbl);
 
+    ///! \ref see doc 8.12.1
+    NICC_SET_MASK(criteria, 0, 0xFF);   // set to all zero
+    NICC_SET_BIT(criteria, 0, 0xFF);    // matching packet header field
+    NICC_SET_BIT(criteria, 2, 0xFF);    // matching packet meta-data field
+
+    // TODO: convert flow_wildcard to struct mlx5dv_flow_match_parameters*
+    
+
     NICC_CHECK_POINTER(matcher_fe = new FlowMatcher_FlowEngine(
         /* match_wc */ wc,
         /* tbl */ this->_mlx5dv_dr_tbl,
+        /* match_param */ match_param,
         /* priority */ priority,
         /* criteria */ criteria
     ));

@@ -70,17 +70,27 @@ typedef struct ComponentFuncState_FlowEngine {
  */
 class FlowMatcher_FlowEngine : public FlowMatcher {
  public:
+    /**
+     *  \brief  constructor
+     *  \param  match_wc    matching wildcard
+     *  \param  tbl         the mlx5dv_dr_table to create this matcher
+     *  \param  match_param parameters for creating matcher
+     *  \param  priority    priority of the created matcher
+     *  \param  criteria    mlx5dv_dr criteria enable value
+     */
     FlowMatcher_FlowEngine(
         flow_wildcards_t match_wc,
         struct mlx5dv_dr_table *tbl,
+        struct mlx5dv_flow_match_parameters *match_param,
         int priority,
         nicc_uint8_t criteria
     ) : FlowMatcher(match_wc),
         _mlx5dv_dr_tbl(tbl),
-        _mlx5dv_dr_match_parameters(nullptr),
+        _mlx5dv_matcher(nullptr),
+        _mlx5dv_dr_match_parameters(match_param),
         _mlx5dv_dr_match_priority(priority),
         _mlx5dv_dr_match_criteria(criteria)
-    {   
+    {
         if(unlikely( NICC_SUCCESS != this->__create_mlx5dv_dr_matcher() )){
             NICC_WARN_C(
                 "failed to create matcher on mlx5dv_dr table: "
@@ -100,6 +110,7 @@ class FlowMatcher_FlowEngine : public FlowMatcher {
 
  private:
     struct mlx5dv_dr_table *_mlx5dv_dr_tbl;
+    struct mlx5dv_dr_matcher *_mlx5dv_matcher;
     struct mlx5dv_flow_match_parameters *_mlx5dv_dr_match_parameters;
     int _mlx5dv_dr_match_priority;
     nicc_uint8_t _mlx5dv_dr_match_criteria;
@@ -150,11 +161,10 @@ class FlowMAT_FlowEngine : public FlowMAT {
      *  \brief  create new macther in this table (detailed implementation)
      *  \param  flow_wildcards_t    wildcard for creating this matcher
      *  \param  priority            priority to create this matcher
-     *  \param  criteria            criteria to create this matcher
      *  \param  matcher             the created matcher
      *  \return NICC_SUCCESS for successfully creation
      */
-    nicc_retval_t __create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher) override;
+    nicc_retval_t __create_matcher(flow_wildcards_t wc, int priority, FlowMatcher** matcher) override;
 
     /**
      *  \brief  destory macther in this table (detailed implementation)

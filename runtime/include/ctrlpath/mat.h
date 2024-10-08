@@ -223,11 +223,11 @@ class FlowMatcher {
     FlowMatcher(flow_wildcards_t match_wc){}
     ~FlowMatcher() = default;
 
+    // operators for matcher
     bool operator==(const flow_wildcards_t& match_wc) { return this->_match_wc == match_wc; }
     bool operator==(const FlowMatcher& other) const { return this->_match_wc == other._match_wc; }
     bool operator<(const FlowMatcher& other) const { return this->_match_wc < other._match_wc; }
     bool operator>(const FlowMatcher& other) const { return this->_match_wc > other._match_wc; }
-
     FlowMatcher& operator=(const FlowMatcher& other){
         if(this == &other){ return *this; }
         this->_match_wc = other._match_wc;
@@ -252,11 +252,10 @@ class FlowMAT {
      *  \brief  create new macther in this table (wrapper)
      *  \param  flow_wildcards_t    wildcard for creating this matcher
      *  \param  priority            priority to create this matcher
-     *  \param  criteria            criteria to create this matcher
      *  \param  matcher             the created matcher
      *  \return NICC_SUCCESS for successfully creation
      */
-    nicc_retval_t create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher);
+    nicc_retval_t create_matcher(flow_wildcards_t wc, int priority, FlowMatcher** matcher);
 
     /**
      *  \brief  destory macther in this table (wrapper)
@@ -286,11 +285,10 @@ class FlowMAT {
      *  \brief  create new macther in this table (detailed implementation)
      *  \param  flow_wildcards_t    wildcard for creating this matcher
      *  \param  priority            priority to create this matcher
-     *  \param  criteria            criteria to create this matcher
      *  \param  matcher             the created matcher
      *  \return NICC_SUCCESS for successfully creation
      */
-    virtual nicc_retval_t __create_matcher(flow_wildcards_t wc, int priority, nicc_uint8_t criteria, FlowMatcher** matcher) {
+    virtual nicc_retval_t __create_matcher(flow_wildcards_t wc, int priority, FlowMatcher** matcher) {
         return NICC_ERROR_NOT_IMPLEMENTED;
     };
 

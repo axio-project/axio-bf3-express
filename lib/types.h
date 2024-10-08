@@ -44,11 +44,11 @@ typedef uint64_t __NICC_SPARSE_BITWISE nicc_be64;
 #define NICC_SET_MASK(var, mask, fullmask)                      \
     static_assert(                                              \
         mask <= std::numeric_limits<decltype(var)>::max(),      \
-        "bitval failed, mask too large"                         \
+        "NICC_SET_MASK failed, mask too large"                  \
     );                                                          \
     static_assert(                                              \
         fullmask == std::numeric_limits<decltype(var)>::max(),  \
-        "bitval failed, fullmask error"                         \
+        "NICC_SET_MASK failed, fullmask error"                  \
     );                                                          \
     var |= (static_cast<decltype(var)>(mask) & fullmask);
 
