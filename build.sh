@@ -14,6 +14,9 @@ u_targets=()
 # clean
 do_clean=false
 
+# whether the build process involve third parties
+involve_third_party=false
+
 log() {
   echo -e "\033[37m [NICC Build Log] $1 \033[0m"
 }
@@ -44,7 +47,8 @@ check_deps() {
       error "$1 required, please \"sudo apt-get install $1\""
     fi
   }
-
+  
+  # apt-get install build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
   check_single_dep ntpdate
 }
 
@@ -104,6 +108,24 @@ clean_nicc() {
   fi
 }
 
+build_third_parties() {
+  cd $script_dir
+  log ">> building rdma_core..."
+  cd third_parties/rdma-core
+  export EXTRA_CMAKE_FLAGS=-DNO_MAN_PAGES=1
+  if [ -d "./build" ]; then
+    rm -rf ./build
+  fi
+  bash build.sh
+}
+
+clean_third_parties() {
+  cd $script_dir
+  log ">> cleaning rdma_core..."
+  cd third_parties/rdma-core
+  rm -rf build
+}
+
 # =========== Rotinue Starts Here ===========
 
 # check dependencies
@@ -111,7 +133,7 @@ check_deps
 
 # parse command line options
 args=("$@")
-while getopts ":hct:" opt; do
+while getopts ":hc3t:" opt; do
   case $opt in
   h)
     print_usage
@@ -122,6 +144,9 @@ while getopts ":hct:" opt; do
     ;;
   t)
     u_targets=(${OPTARG//,/ })
+    ;;
+  3)
+    involve_third_party=true
     ;;
   \?)
     echo "invalid target: -$OPTARG" >&2
@@ -154,8 +179,14 @@ fi
 # building procedure
 for arg in "${u_targets[@]}"; do
   if [ $do_clean = true ]; then
+    if [ $involve_third_party = true ]; then
+        clean_third_parties
+    fi
     clean_nicc "nicc_$arg" "./$arg"
   else
+    if [ $involve_third_party = true ]; then
+        build_third_parties
+    fi
     build_nicc "nicc_$arg" "./$arg"
   fi
 done

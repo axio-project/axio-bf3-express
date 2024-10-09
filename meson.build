@@ -169,24 +169,26 @@ if founded_flexio_modules.length() == flexio_modules.length()
 endif
 
 # >>>>>>>>>>>>>> mlx5 >>>>>>>>>>>>>>
-mlx5_modules = ['libmlx5', 'libibverbs']
-founded_mlx5_modules = []
-foreach mlx5_module : mlx5_modules
-	mlx5_module_cflags = run_command(pkgconfig, '--cflags', mlx5_module, env: env, check: false)
-	mlx5_module_ldflags = run_command(pkgconfig, '--libs', '--static', mlx5_module, env: env, check: false) # add '--static' option if static link is needed
-	mlx5_module_version = run_command(pkgconfig, '--modversion', mlx5_module, env: env, check: false)
-	if mlx5_module_cflags.returncode() != 0 or mlx5_module_ldflags.returncode() != 0 or mlx5_module_version.returncode() != 0
-		message('>>>>>> Failed to find ' + mlx5_module)
-	else
-		founded_mlx5_modules += mlx5_module
-		c_args += mlx5_module_cflags.stdout().split()
-		ld_args += mlx5_module_ldflags.stdout().split()
-		message('>>>>>> Found ' + mlx5_module + ', version is ' + mlx5_module_version.stdout().split()[0])
-	endif
-endforeach
-if founded_mlx5_modules.length() == mlx5_modules.length()
-	has_mlx5 = true
-endif
+# mlx5_modules = ['libmlx5', 'libibverbs']
+# founded_mlx5_modules = []
+# foreach mlx5_module : mlx5_modules
+# 	mlx5_module_cflags = run_command(pkgconfig, '--cflags', mlx5_module, env: env, check: false)
+# 	mlx5_module_ldflags = run_command(pkgconfig, '--libs', '--static', mlx5_module, env: env, check: false) # add '--static' option if static link is needed
+# 	mlx5_module_version = run_command(pkgconfig, '--modversion', mlx5_module, env: env, check: false)
+# 	if mlx5_module_cflags.returncode() != 0 or mlx5_module_ldflags.returncode() != 0 or mlx5_module_version.returncode() != 0
+# 		message('>>>>>> Failed to find ' + mlx5_module)
+# 	else
+# 		founded_mlx5_modules += mlx5_module
+# 		c_args += mlx5_module_cflags.stdout().split()
+# 		ld_args += mlx5_module_ldflags.stdout().split()
+# 		message('>>>>>> Found ' + mlx5_module + ', version is ' + mlx5_module_version.stdout().split()[0])
+# 	endif
+# endforeach
+# if founded_mlx5_modules.length() == mlx5_modules.length()
+# 	has_mlx5 = true
+# endif
+c_args += [ '-I'+root_dir+'/third_parties/rdma-core/providers' ]
+ld_args += [ '-L'+root_dir+'/third_parties/rdma-core/build/lib', '-libverbs', '-lmlx5' ]
 
 # >>>>>>>>>>>>>> Other Dependencies Found through Compiler >>>>>>>>>>>>>>
 dep = []
@@ -212,7 +214,7 @@ c_args += ['--std=c++17', '-Wno-missing-field-initializers']
 assert(has_dpdk, 'couldn\'t find libdpdk')
 assert(has_doca, 'couldn\'t find libdoca')
 assert(has_flexio, 'couldn\'t find libflexio')
-assert(has_mlx5, 'couldn\'t find libmlx5')
+# assert(has_mlx5, 'couldn\'t find libmlx5')
 # =======================================================================
 
 # ==================== Static Configurations ====================

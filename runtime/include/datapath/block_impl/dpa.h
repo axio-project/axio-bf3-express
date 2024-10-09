@@ -3,8 +3,9 @@
 #include <iostream>
 
 #include <libflexio/flexio.h>
-#include <infiniband/mlx5dv.h>
-#include <infiniband/mlx5_api.h>
+
+#include "mlx5/mlx5dv.h"
+#include "mlx5/mlx5_api.h"
 
 #include "common.h"
 #include "log.h"

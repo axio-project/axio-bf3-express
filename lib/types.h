@@ -3,6 +3,7 @@
 #include <iostream>
 #include <limits>
 #include <cmath>
+#include <cstring>
 
 #include "common.h"
 
@@ -69,6 +70,13 @@ using ofp11_port_t = uint32_t;
 union physical_port {
     odp_port_t odp_port;
     ofp_port_t ofp_port;
+
+    bool operator!=(const uint32_t& other){
+        return (this->odp_port != other);
+    }
+    bool operator==(const uint32_t& other){
+        return (this->odp_port == other);
+    }
 };
 
 
@@ -89,6 +97,16 @@ struct eth_addr {
             && this->be16[1] == other.be16[1]
             && this->be16[2] == other.be16[2]
         );
+    }
+    bool operator!=(const uint64_t& other){
+        uint64_t tmp = 0;
+        std::memcpy(&tmp, ea, sizeof(ea));
+        return (tmp != other);
+    }
+    bool operator==(const uint64_t& other){
+        uint64_t tmp = 0;
+        std::memcpy(&tmp, ea, sizeof(ea));
+        return (tmp == other);
     }
 };
 

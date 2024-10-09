@@ -1,7 +1,8 @@
 #pragma once
 #include <iostream>
 
-#include <infiniband/mlx5dv.h>
+#include "mlx5/mlx5dv.h"
+#include "mlx5/mlx5_ifc.h"
 
 #include "common.h"
 #include "log.h"
@@ -42,7 +43,6 @@ typedef struct ComponentDesp_FlowEngine {
     //! \todo use correct table level and priority, below are fake values
     uint8_t table_level = 0;
     uint32_t matcher_priority = 0;
-
 } ComponentDesp_FlowEngine_t;
 
 
@@ -107,6 +107,14 @@ class FlowMatcher_FlowEngine : public FlowMatcher {
     ~FlowMatcher_FlowEngine() {
         // TODO: remember to destory _mlx5dv_dr_match_parameters
     }
+
+    /**
+     *  \brief  convert flow wildcard to matching pattern in mlx5dv_dr
+     *  \param  wc                  flow wildcard to include the pattern
+     *  \param  match_param_bits    mlx5dv_dr struct for storing the output
+     *  \return NICC_SUCCESS for successfully converting
+     */
+    static nicc_retval_t convert_flow_wildcard_to_mlx5dv_dr(flow_wildcards_t *wc, struct mlx5_ifc_dr_match_param_bits *match_param_bits);
 
  private:
     struct mlx5dv_dr_table *_mlx5dv_dr_tbl;

@@ -1,8 +1,8 @@
 #pragma once
 #include <iostream>
 
-#include <infiniband/mlx5_api.h>
-#include <infiniband/mlx5dv.h>
+#include "mlx5/mlx5_api.h"
+#include "mlx5/mlx5dv.h"
 
 #include "common.h"
 #include "log.h"
