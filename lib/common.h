@@ -36,6 +36,7 @@ typedef struct ComponentBaseDesp {
     uint64_t quota;
 } ComponentBaseDesp_t;
 
+
 /**
  * \brief  basic state of the component block,
  *         using for control plane, including rescheduling,
@@ -50,6 +51,7 @@ typedef struct ComponentBaseState {
     uint64_t quota;
 } ComponentBaseState_t;
 
+
 /**
  *  \brief  basic state of the function register 
  *          into the component block, 
@@ -62,6 +64,7 @@ typedef struct ComponentFuncBaseState {
     // basic state
     uint8_t mock_state;
 } ComponentFuncBaseState_t;
+
 
 #define _unused(x) ((void)(x))  // Make production build happy
 #define likely(x) __builtin_expect(!!(x), 1)

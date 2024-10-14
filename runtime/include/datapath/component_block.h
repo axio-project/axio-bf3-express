@@ -2,6 +2,7 @@
 #include "common.h"
 #include "app_context.h"
 #include "utils/ibv_device.h"
+#include "ctrlpath/mat.h"
 
 namespace nicc {
 
@@ -43,6 +44,9 @@ class ComponentBlock {
 
     // state of the function register into the component block
     ComponentFuncBaseState_t *_base_function_state = nullptr;
+
+    // domain of flows in current component block
+    FlowDomain *_base_domain;
 };
 
 } // namespace nicc

@@ -209,6 +209,22 @@ exit:
 }
 
 
+nicc_retval_t ComponentBlock_FlowEngine::init(device_state_t& dev_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+
+    NICC_CHECK_POINTER(dev_state.ibv_ctx);
+    NICC_CHECK_POINTER(dev_state.fdb_domain);
+
+    this->_base_domain = new FlowDomain_FlowEngine(
+        /* fdb_domain */ dev_state.fdb_domain
+    );
+    NICC_CHECK_POINTER(this->_base_domain);
+
+exit:
+    return retval;
+}
+
+
 nicc_retval_t ComponentBlock_FlowEngine::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint64_t i;

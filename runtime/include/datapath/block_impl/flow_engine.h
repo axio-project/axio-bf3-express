@@ -8,6 +8,7 @@
 #include "log.h"
 #include "types.h"
 #include "app_context.h"
+#include "utils/ibv_device.h"
 #include "datapath/component_block.h"
 #include "ctrlpath/mat.h"
 
@@ -15,54 +16,6 @@ namespace nicc {
 /**
  * ----------------------General structure----------------------
  */ 
-
-
-/**
- *  \brief  state of FlowEngine
- */
-typedef struct ComponentState_FlowEngine {
-    // basic state
-    ComponentBaseState_t base_state;
-
-    // state of FlowEngine
-    uint8_t mock_state;
-} ComponentState_FlowEngine_t;
-
-
-/**
- *  \brief  descriptor of FlowEngine
- */
-typedef struct ComponentDesp_FlowEngine {
-    /* ========== Common fields ========== */
-    // basic desriptor
-    ComponentBaseDesp_t base_desp;
-    
-    /* ========== ComponentBlock_DPA fields ========== */
-    struct mlx5dv_flow_match_parameters *tx_match_mask;
-    struct mlx5dv_flow_match_parameters *rx_match_mask;
-    //! \todo use correct table level and priority, below are fake values
-    uint8_t table_level = 0;
-    uint32_t matcher_priority = 0;
-} ComponentDesp_FlowEngine_t;
-
-
-/**
- *  \brief  basic state of the function register 
-            into the component
- *  \note   this structure should be inherited and 
- *          implenented by each component
- */
-typedef struct ComponentFuncState_FlowEngine {
-    ComponentFuncBaseState_t base_state;
-
-    struct dr_flow_table		*rx_flow_table;
-	struct dr_flow_table		*tx_flow_table;
-	struct dr_flow_table		*tx_flow_root_table;
-
-	struct dr_flow_rule		*rx_rule;
-	struct dr_flow_rule		*tx_rule;
-	struct dr_flow_rule		*tx_root_rule;
-} ComponentFuncState_FlowEngine_t;
 
 
 /**
@@ -217,7 +170,7 @@ class FlowDomain_FlowEngine : public FlowDomain {
     FlowDomain_FlowEngine(struct mlx5dv_dr_domain* fdb_domain) 
         : FlowDomain(), _fdb_domain(fdb_domain) {}
     ~FlowDomain_FlowEngine() = default;
- 
+
  protected:
     /**
      *  \brief  allocate new table in this domain (detailed implementation)
@@ -240,6 +193,43 @@ class FlowDomain_FlowEngine : public FlowDomain {
 };
 
 
+/**
+ *  \brief  state of FlowEngine
+ */
+typedef struct ComponentState_FlowEngine {
+    // basic state
+    ComponentBaseState_t base_state;
+} ComponentState_FlowEngine_t;
+
+
+/**
+ *  \brief  descriptor of FlowEngine
+ */
+typedef struct ComponentDesp_FlowEngine {
+    /* ========== Common fields ========== */
+    // basic desriptor
+    ComponentBaseDesp_t base_desp;
+    
+    /* ========== ComponentBlock_DPA fields ========== */
+    struct mlx5dv_flow_match_parameters *tx_match_mask;
+    struct mlx5dv_flow_match_parameters *rx_match_mask;
+    //! \todo use correct table level and priority, below are fake values
+    uint8_t table_level = 0;
+    uint32_t matcher_priority = 0;
+} ComponentDesp_FlowEngine_t;
+
+
+/**
+ *  \brief  basic state of the function register 
+            into the component
+ *  \note   this structure should be inherited and 
+ *          implenented by each component
+ */
+typedef struct ComponentFuncState_FlowEngine {
+    ComponentFuncBaseState_t base_state;
+} ComponentFuncState_FlowEngine_t;
+
+
 class ComponentBlock_FlowEngine : public ComponentBlock {
 /**
  * ----------------------Public Methods----------------------
@@ -257,6 +247,13 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
      *  \brief  typeid of handlers register into FlowEngine
      */
     enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Event };
+
+    /**
+     *  \brief  initialize this flow engine block
+     *  \param  dev_state   global device state
+     *  \return NICC_SUCCESS for successfully initialized
+     */
+    nicc_retval_t init(device_state_t& dev_state);
 
     /**
      *  \brief  register a new application function into this component
