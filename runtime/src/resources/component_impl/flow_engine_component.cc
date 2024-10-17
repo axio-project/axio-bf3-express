@@ -2,6 +2,7 @@
 
 namespace nicc {
 
+
 nicc_retval_t Component_FlowEngine::init(ComponentBaseDesp_t* desp) {
     nicc_retval_t retval = NICC_SUCCESS;
     /* Step 1: init desp, recording all hardware resources*/
@@ -13,6 +14,7 @@ nicc_retval_t Component_FlowEngine::init(ComponentBaseDesp_t* desp) {
     this->_base_state->quota = desp->quota;
     return retval;
 }
+
 
 nicc_retval_t Component_FlowEngine::allocate_block(ComponentBaseDesp_t* desp, ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
@@ -57,11 +59,6 @@ exit:
 }
 
 
-/*!
- *  \brief  return block of resource back to the component
- *  \param  cb          the handle of the block to be deallocated
- *  \return NICC_SUCCESS for successful deallocation
- */
 nicc_retval_t Component_FlowEngine::deallocate_block(ComponentBlock* cb) {
     nicc_retval_t retval = NICC_SUCCESS;
     ComponentBlock_FlowEngine *desired_cb = reinterpret_cast<ComponentBlock_FlowEngine*>(cb);

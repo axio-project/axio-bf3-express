@@ -135,39 +135,32 @@ exit:
 }
 
 
-nicc_retval_t FlowDomain::destory_table(int level, FlowMAT* table){
+nicc_retval_t FlowDomain::destory_table(FlowMAT* table){
     nicc_retval_t retval = NICC_SUCCESS;
-    using table_map_iter_t = std::multimap<int, FlowMAT*>::iterator;
-    std::pair<table_map_iter_t, table_map_iter_t> map_range_iter;
-    table_map_iter_t map_iter;
+    typename std::multimap<int, FlowMAT*>::iterator map_iter;
 
     NICC_CHECK_POINTER(table);
 
-    #if NICC_RUNTIME_DEBUG_CHECK
-        if(unlikely(this->_table_map.count(level) == 0)){
-            NICC_WARN_C(
-                "failed to destory table, no level with specified value in this domain: "
-                "level(%d), FlowDomain(%p)",
-                level, this
-            );
-            retval = NICC_ERROR_NOT_FOUND;
-            goto exit;
-        }
-    #endif
-
-    map_range_iter = this->_table_map.equal_range(level);
-    for(map_iter = map_range_iter.first; map_iter != map_range_iter.second; map_iter++){
+   for(map_iter=this->_table_map.begin(); map_iter!=this->_table_map.end(); map_iter++){
         if(map_iter->second == table){
-            retval = this->__detory_table(level, table);
-            if(likely(retval == NICC_SUCCESS)){ this->_table_map.erase(map_iter); }
+            retval = this->__detory_table(map_iter->first, table);
+            if(likely(retval == NICC_SUCCESS)){ 
+                this->_table_map.erase(map_iter); 
+            } else {
+                NICC_WARN_C(
+                    "failed to destory table, error occurs while deleting: "
+                    "table(%p), FlowDomain(%p)",
+                    table, this
+                );
+            }
             goto exit;
         }
-    }
+   }
 
     NICC_WARN_C(
         "failed to destory table, no table with specified pointer in this domain: "
-        "level(%d), table(%p), FlowDomain(%p)",
-        level, table, this
+        "table(%p), FlowDomain(%p)",
+        table, this
     );
     retval = NICC_ERROR_NOT_FOUND;
 

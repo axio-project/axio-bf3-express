@@ -344,11 +344,10 @@ class FlowDomain {
 
     /**
      *  \brief  destory table in this domain (wrapper)
-     *  \param  level       level of the table              // TODO: delete this param
      *  \param  table       table to be destoried
      *  \return NICC_SUCCESS for successfully destory
      */
-    nicc_retval_t destory_table(int level, FlowMAT* table);
+    nicc_retval_t destory_table(FlowMAT* table);
 
  protected:
     // chain of tables
