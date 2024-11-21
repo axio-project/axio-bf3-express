@@ -1,8 +1,8 @@
 #pragma once
 #include <iostream>
 
-#include <infiniband/mlx5_api.h>
-#include <infiniband/mlx5dv.h>
+#include "mlx5/mlx5_api.h"
+#include "mlx5/mlx5dv.h"
 
 #include "common.h"
 #include "log.h"
@@ -14,6 +14,7 @@ typedef struct device_state {
     struct ibv_context *ibv_ctx;
     const char *device_name;
     
+    // device-wise flow engine domain
     struct mlx5dv_dr_domain *rx_domain;
     struct mlx5dv_dr_domain *tx_domain;
     struct mlx5dv_dr_domain *fdb_domain;

@@ -2,8 +2,6 @@
 #include <iostream>
 #include <string>
 
-#include <libflexio/flexio.h>
-
 #include "common.h"
 #include "log.h"
 
@@ -27,19 +25,20 @@ class AppHandler {
     AppHandler(){}
     ~AppHandler(){}
 
-    // host stub of the handler (for hetrogeneous process such as DPA)
+    /**
+     *  \brief  binary of the handler
+     *  \note   the handler is in different concept under different component:
+     */
     union {
-        flexio_func_t *dpa_host_stub;
-    } host_stub;
+        // flow engine: specification of the hardware pipe
+        void *pipe;
 
-    // binary of the handler
-    union {
-        // for flow engine
-        void *match_field;
-        void *action_space;
+        // dpa: __dpa_kernel__ or __dpa_rpc__ in dpa engine
+        using dpa_host_stub_t = void(*)();
+        struct { dpa_host_stub_t host_stub; void *kernel; } dpa;
         
-        // for DPA
-        flexio_app  *dpa_binary;
+        // soc: SoC callback function
+        void *soc;
     } binary;
 
     // typeid of this handler

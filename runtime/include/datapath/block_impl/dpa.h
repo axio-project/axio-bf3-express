@@ -3,8 +3,9 @@
 #include <iostream>
 
 #include <libflexio/flexio.h>
-#include <infiniband/mlx5dv.h>
-#include <infiniband/mlx5_api.h>
+
+#include "mlx5/mlx5dv.h"
+#include "mlx5/mlx5_api.h"
 
 #include "common.h"
 #include "log.h"
@@ -64,6 +65,7 @@ struct dpa_data_queues {
 typedef struct ComponentState_DPA {
     /* ========== Common fields ========== */
     ComponentBaseState_t base_state;
+
     /* ========== ComponentBlock_DPA fields ========== */
     uint8_t mock_state;
 } ComponentState_DPA_t;
@@ -76,6 +78,7 @@ typedef struct ComponentDesp_DPA {
     /* ========== Common fields ========== */
     // basic desriptor
     ComponentBaseDesp_t base_desp;
+
     /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;

@@ -2,6 +2,7 @@
 #include "common.h"
 #include "app_context.h"
 #include "utils/ibv_device.h"
+#include "ctrlpath/mat.h"
 
 namespace nicc {
 
@@ -31,6 +32,23 @@ class ComponentBlock {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
+
+    /* ========= wrapper functions for flow management ========= */
+    /**
+     *  \brief  create new table in the domain of this component block
+     *  \param  level       level of the table
+     *  \param  table       created table
+     *  \return NICC_SUCCESS for successfully allocation
+     */
+    nicc_retval_t create_table(int level, FlowMAT** table);
+
+    /**
+     *  \brief  destory table in this domain (wrapper)
+     *  \param  table       table to be destoried
+     *  \return NICC_SUCCESS for successfully destory
+     */
+    nicc_retval_t destory_table(FlowMAT* table);
+
 /**
  * ----------------------Protected Parameters----------------------
  */ 
@@ -43,6 +61,9 @@ class ComponentBlock {
 
     // state of the function register into the component block
     ComponentFuncBaseState_t *_base_function_state = nullptr;
+
+    // domain of flows in current component block
+    FlowDomain *_base_domain;
 };
 
 } // namespace nicc

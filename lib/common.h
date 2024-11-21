@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include <cmath>
+#include <cassert>
 
 #include <doca_error.h>
 
@@ -35,6 +36,7 @@ typedef struct ComponentBaseDesp {
     uint64_t quota;
 } ComponentBaseDesp_t;
 
+
 /**
  * \brief  basic state of the component block,
  *         using for control plane, including rescheduling,
@@ -49,6 +51,7 @@ typedef struct ComponentBaseState {
     uint64_t quota;
 } ComponentBaseState_t;
 
+
 /**
  *  \brief  basic state of the function register 
  *          into the component block, 
@@ -62,6 +65,7 @@ typedef struct ComponentFuncBaseState {
     uint8_t mock_state;
 } ComponentFuncBaseState_t;
 
+
 #define _unused(x) ((void)(x))  // Make production build happy
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -69,6 +73,9 @@ typedef struct ComponentFuncBaseState {
 #define KB(x) (static_cast<size_t>(x) << 10)
 #define MB(x) (static_cast<size_t>(x) << 20)
 #define GB(x) (static_cast<size_t>(x) << 30)
+#define K(x) KB(x)
+#define M(x) MM(x)
+#define G(x) GB(x)
 #define LOG2VALUE(l)    (1UL << (l))
 #define LOG2(n)         (std::log2((double)(n)))
 
@@ -105,16 +112,44 @@ static constexpr component_typeid_t kComponent_SHA = 0x10;
 static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
 static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
 
+
+/**
+ * ----------------------Scope Exit----------------------
+ */
+template <typename T>
+class ScopeExit
+{
+ public:
+    ScopeExit(T t) : t(t) {}
+    ~ScopeExit() { t(); }
+    T t;
+};
+
+template <typename T>
+ScopeExit<T> MoveScopeExit(T t) {
+    return ScopeExit<T>(t);
+};
+
+#define __ANONYMOUS_VARIABLE_DIRECT(name, line) name##line
+#define __ANONYMOUS_VARIABLE_INDIRECT(name, line) __ANONYMOUS_VARIABLE_DIRECT(name, line)
+#define NICC_SCOPE_EXIT(func) const auto __ANONYMOUS_VARIABLE_INDIRECT(EXIT, __LINE__) = MoveScopeExit([=](){func;})
+
 /**
  * ----------------------Simple methods----------------------
  */ 
 #if NICC_RUNTIME_DEBUG_CHECK
-  #define NICC_CHECK_POINTER(ptr)   assert((ptr) != nullptr);
-  #define NICC_ASSERT(condition)    assert((condition));
+  #define NICC_CHECK_POINTER(ptr)       assert((ptr) != nullptr);
+  #define NICC_ASSERT(condition)        assert((condition));
+  #define NICC_CHECK_BOUND(val, bound)  assert(val <= bound);
 #else // NICC_RUNTIME_DEBUG_CHECK
-    #define NICC_CHECK_POINTER(ptr)  _unused (ptr);
-    #define NICC_ASSERT(condition)   _unused (condition);
+    #define NICC_CHECK_POINTER(ptr)         _unused (ptr);
+    #define NICC_ASSERT(condition)          _unused (condition);
+    #define NICC_CHECK_BOUND(val, bound)    _unused (val);
 #endif // NICC_RUNTIME_DEBUG_CHECK
+
+#define NICC_STATIC_ASSERT(condition, report)   \
+    static_assert((condition), report)
+
 
 static inline void rt_assert(bool condition, std::string throw_str, char *s) {
   if (unlikely(!condition)) {

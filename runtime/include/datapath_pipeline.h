@@ -21,7 +21,7 @@ class DatapathPipeline {
      *  \param  app_cxt             the application context of this datapath pipeline
      *  \param  device_state        global device state
      */
-    DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt, device_state_t &device_state);
+    DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt, device_state_t& device_state);
     ~DatapathPipeline();
 
  private:
@@ -31,11 +31,15 @@ class DatapathPipeline {
     // application context on this datapath pipeline
     AppContext *_app_cxt;
 
+    // global device state
+    device_state_t *_device_state;
+
     /*!
      *  \brief  allocate component block from the resource pool
      *  \param  rpool               global resource pool
+     *  \param  device_state        global device state
      */ 
-    nicc_retval_t __allocate_component_blocks(ResourcePool& rpool);
+    nicc_retval_t __allocate_component_blocks(ResourcePool& rpool, device_state_t& device_state);
 
     /*!
      *  \brief  register all functions onto the component block after allocation

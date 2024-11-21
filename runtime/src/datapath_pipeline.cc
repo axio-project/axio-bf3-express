@@ -9,17 +9,17 @@ namespace nicc {
   *  \param  app_cxt             the application context of this datapath pipeline
   *  \param  device_state        global device state
   */
-DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext *app_cxt, device_state_t &device_state)
+DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, device_state_t& device_state)
     : _app_cxt(app_cxt) 
 {                                    
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(app_cxt);
-    NICC_CHECK_POINTER(device_state.ibv_ctx);
+    NICC_CHECK_POINTER(device_state.device_name);
 
     // allocate component block from resource pool
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_component_blocks(rpool)
+        retval = this->__allocate_component_blocks(rpool, device_state)
     ))){
         NICC_WARN_C("failed to allocate component blocks from resource pool: retval(%u)", retval);
         goto exit;
@@ -55,12 +55,14 @@ DatapathPipeline::~DatapathPipeline() {
 
 /*!
  *  \brief  initialization of each dataplane component
- *  \param  rpool   global resource pool
+ *  \param  rpool           global resource pool
+ *  \param  device_state    global device state
  */ 
-nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool){
+nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool, device_state_t& device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint64_t i;
     ComponentBlock *component_block = nullptr;
+    ComponentBlock_FlowEngine *component_block_flow_engine = nullptr;
     AppFunction *app_func = nullptr;
     typename std::map<AppFunction*, ComponentBlock*>::iterator cb_map_iter;
 
@@ -77,6 +79,9 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool)
         switch (app_func->component_id) {
             case kComponent_DPA:
                 NICC_CHECK_POINTER(component_block = new ComponentBlock_DPA);
+                break;
+            case kComponent_FlowEngine:
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_FlowEngine);
                 break;
             default:
                 NICC_ERROR_C("unknown component id: component_id(%u)", app_func->component_id);
@@ -96,9 +101,17 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool)
             );
             goto exit;
         }
-
         NICC_CHECK_POINTER(component_block);
         this->_component_block_map.insert({ app_func, component_block });
+
+        // componeng-specific initialization
+        switch (app_func->component_id) {
+            case kComponent_FlowEngine:
+                component_block_flow_engine = reinterpret_cast<ComponentBlock_FlowEngine*>(component_block);
+                retval = component_block_flow_engine->init(device_state);
+            default:
+                break;
+        }
     }
     
 exit:
