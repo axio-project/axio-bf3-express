@@ -62,6 +62,9 @@ enum soc_wrapper_type_t {
      *        and dispatcher rx.
      */
     nicc_retval_t __run();
+
+    /* ========================SoC Datapath ========================*/
+    
 };
 
 

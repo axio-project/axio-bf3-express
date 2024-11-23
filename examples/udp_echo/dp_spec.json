@@ -1,0 +1,71 @@
+{
+    "app_name": "udp_echo",
+    "enabled_components": ["flow_engine", "dpa", "soc"],
+    "dp_graph": [
+        {
+            "component": "root",
+            "ctrl_path":
+            {
+                "match": [ "udp.sport", "ipv4.sip" ],
+                "action": [ "fwd", "drop" ],
+                "entries": [
+                    { 
+                        "match": "udp.sport=10086",
+                        "action": "fwd(flow_engine)"
+                    }
+                ]
+            }
+        },
+        {
+            "component": "flow_engine",
+            "data_path": {
+                "kernel_name": "flow_engine_echo",
+                "kernel_path": ""
+            },
+            "ctrl_path": {
+                "match": [ "retval" ],
+                "action": [ "fwd", "drop" ],
+                "entries": [
+                    { 
+                        "match": "retval=1",
+                        "action": "fwd(dpa)"
+                    }
+                ]
+            }
+        },
+        {
+            "component": "dpa",
+            "data_path": {
+                "kernel_name": "dpa_echo",
+                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/dpa_kernel.dpa.o"
+            },
+            "ctrl_path": {
+                "match": [ "retval" ],
+                "action": [ "fwd", "drop" ],
+                "entries": [
+                    { 
+                        "match": "retval=1",
+                        "action": "fwd(soc)"
+                    }
+                ]
+            }
+        },
+        {
+            "component": "soc",
+            "data_path": {
+                "kernel_name": "soc_echo",
+                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/soc_kernel.soc.o"
+            },
+            "ctrl_path": {
+                "match": [ "retval" ],
+                "action": [ "fwd", "drop" ],
+                "entries": [
+                    { 
+                        "match": "retval=1",
+                        "action": "fwd(host)"
+                    }
+                ]
+            }
+        }
+    ]
+}

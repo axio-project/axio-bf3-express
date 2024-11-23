@@ -4,6 +4,7 @@
 #include "resources/component_impl/dpa_component.h"
 #include "datapath_pipeline.h"
 #include "resources/resource_pool.h"
+#include "utils/app_dag.h"
 
 // #include "app_context.h"
 // #include "datapath/flow_engine.h"
@@ -52,10 +53,11 @@ int main(){
     /**
      * \brief  STEP 1: parse config file
      * \note   options: kComponent_FlowEngine | kComponent_DPA
-     *          | kComponent_ARM | kComponent_Decompress | kComponent_SHA
-     * \todo   use a struct to store the config file
+     *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::component_typeid_t enabled_components = nicc::kComponent_DPA | nicc::kComponent_FlowEngine | nicc::kComponent_SoC;
+    nicc::AppDAG app_dag("/home/ubuntu/hxy/proj/nicc/examples/udp_echo/dp_spec.json");
+    app_dag.print();
+    nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 2: initialize resource pool, created all enabld components
@@ -68,10 +70,6 @@ int main(){
             { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) },
             { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_desp) }
         }
-        // enabled_components,
-        // {
-        //     { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) }
-        // }
     );
     /*----------------------------------------------------------------*/
     /**
