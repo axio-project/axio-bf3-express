@@ -2,15 +2,8 @@
 
 namespace nicc {
 
-
- /*! 
-  *  \brief  initialization of datapath pipeline
-  *  \param  rpool               global resource pool
-  *  \param  app_cxt             the application context of this datapath pipeline
-  *  \param  device_state        global device state
-  */
-DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, device_state_t& device_state)
-    : _app_cxt(app_cxt) 
+DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, device_state_t& device_state, AppDAG* app_dag)
+    : _app_cxt(app_cxt), _app_dag(app_dag) 
 {                                    
     nicc_retval_t retval = NICC_SUCCESS;
     
@@ -212,6 +205,14 @@ exit:
     }
 
     return retval;
+}
+
+nicc_retval_t DatapathPipeline::__run_pipeline() {
+    return NICC_SUCCESS;
+}
+
+nicc_retval_t DatapathPipeline::__reschedule_block() {
+    return NICC_SUCCESS;
 }
 
 

@@ -82,6 +82,27 @@ class ComponentBlock_SoC : public ComponentBlock {
      *  \return NICC_SUCCESS for successful unregisteration
      */
     nicc_retval_t unregister_app_function() override;
+
+/**
+ * ----------------------Internel Methonds----------------------
+ */ 
+private:
+    /*!
+     *  \brief  (de)allocate on-device resource for handlers running on DPA
+     *  \note   this function is called within register_app_function
+     *  \param  app_func        application function which the event handler comes from
+     *  \param  func_state      state of the function on this DPA block
+     *  \return NICC_SUCCESS for successful (de)allocation
+     */
+    nicc_retval_t __allocate_device_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state);
+    
+    /*!
+     *  \brief  deallocate on-device resource for handlers running on DPA
+     *  \note   this function is called within unregister_app_function
+     *  \param  func_state  state of the function on this DPA block
+     *  \return NICC_SUCCESS for successful deallocation
+     */
+    nicc_retval_t __deallocate_device_resources(ComponentFuncState_SoC_t *func_state);
 /**
  * ----------------------Internel Parameters----------------------
  */ 

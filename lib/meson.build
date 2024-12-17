@@ -17,6 +17,7 @@ configure_file(input : root_dir + '/lib/log/debug.h.in', output : 'debug.h', con
 # compile targets
 subdir('log')
 subdir('wrapper/soc')
+subdir('channel')
 
 # build nicc library
 message('source files: ' + ' '.join(lib_sources))

@@ -20,7 +20,9 @@
             "component": "flow_engine",
             "data_path": {
                 "kernel_name": "flow_engine_echo",
-                "kernel_path": ""
+                "kernel_path": "",
+                "handler_type": "packet",
+                "order": "false"
             },
             "ctrl_path": {
                 "match": [ "retval" ],
@@ -37,7 +39,9 @@
             "component": "dpa",
             "data_path": {
                 "kernel_name": "dpa_echo",
-                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/dpa_kernel.dpa.o"
+                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/dpa_kernel.dpa.o",
+                "handler_type": "packet",
+                "order": "false"
             },
             "ctrl_path": {
                 "match": [ "retval" ],
@@ -54,7 +58,9 @@
             "component": "soc",
             "data_path": {
                 "kernel_name": "soc_echo",
-                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/soc_kernel.soc.o"
+                "kernel_path": "/home/ubuntu/bf3_proj/nicc/examples/udp_echo/soc_kernel.soc.o",
+                "handler_type": "message",
+                "order": "true"
             },
             "ctrl_path": {
                 "match": [ "retval" ],
