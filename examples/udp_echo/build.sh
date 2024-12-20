@@ -19,7 +19,7 @@
 # arg3: Directory to install the DPA Device build, final output is <arg2>/<arg1>.a
 
 CUR_DIR=$(pwd)
-LIB_DIR=$CUR_DIR/../../lib/dpa/include
+LIB_DIR=$CUR_DIR/../../lib/libutils
 
 # Input parameters
 SOURCE_FILE="$CUR_DIR/src/dpa_kernel.c"
@@ -31,8 +31,7 @@ DPACC="${DOCA_TOOLS}/dpacc"
 
 # CC flags
 DEV_CC_FLAGS="-Wall,-Wextra,-Wpedantic,-Werror,-O0,-g,-DE_MODE_LE,-ffreestanding,-mabi=lp64,-mno-relax,-mcmodel=medany,-nostdlib,-Wdouble-promotion"
-# DEV_INC_DIR="-I$CUR_DIR/include -I$LIB_DIR"
-DEV_INC_DIR="-I$CUR_DIR/include"
+DEV_INC_DIR="-I$CUR_DIR/include -I$LIB_DIR"
 DEVICE_OPTIONS="${DEV_CC_FLAGS},${DEV_INC_DIR}"
 
 # Host flags

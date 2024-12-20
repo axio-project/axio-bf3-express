@@ -1,16 +1,16 @@
 #include "dpa_wrapper.h"
 
-/* Device context */
-static struct {
-	uint32_t lkey;			/* Local memory key */
-	uint32_t is_initalized;		/* Initialization flag */
-	struct cq_ctx_t rqcq_ctx;	/* RQ CQ context */
-	struct cq_ctx_t sqcq_ctx;	/* SQ CQ context */
-	struct rq_ctx_t rq_ctx;		/* RQ context */
-	struct sq_ctx_t sq_ctx;		/* SQ context */
-	struct dt_ctx_t dt_ctx;		/* DT context */
-	uint32_t packets_count;		/* Number of processed packets */
-} dev_ctx = {0};
+// /* Device context */
+// static struct {
+// 	uint32_t lkey;			/* Local memory key */
+// 	uint32_t is_initalized;		/* Initialization flag */
+// 	struct cq_ctx_t rqcq_ctx;	/* RQ CQ context */
+// 	struct cq_ctx_t sqcq_ctx;	/* SQ CQ context */
+// 	struct rq_ctx_t rq_ctx;		/* RQ context */
+// 	struct sq_ctx_t sq_ctx;		/* SQ context */
+// 	struct dt_ctx_t dt_ctx;		/* DT context */
+// 	uint32_t packets_count;		/* Number of processed packets */
+// } dev_ctx = {0};
 
 /*
  * Called by host to initialize the device context
@@ -54,7 +54,7 @@ __dpa_global__ dpa_event_handler(uint64_t __unused arg0)
 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit) {
 		__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 		process_packet(dtctx);
-		step_cq(&dev_ctx.rqcq_ctx, L2_CQ_IDX_MASK);
+		step_cq(&dev_ctx.rqcq_ctx, DPA_RQ_IDX_MASK);
 	}
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);

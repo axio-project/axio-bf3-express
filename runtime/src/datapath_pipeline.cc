@@ -182,6 +182,12 @@ nicc_retval_t DatapathPipeline::__register_functions(device_state_t &device_stat
             );
             goto exit;
         }
+        else{
+            NICC_DEBUG_C(
+                "successfully register app function onto the component block: component_id(%u)",
+                app_func->component_id
+            );
+        }
 
         __register_pairs.insert({ app_func, component_block });
     }
