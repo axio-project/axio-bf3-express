@@ -19,8 +19,8 @@
 # arg3: Directory to install the DPA Device build, final output is <arg2>/<arg1>.a
 
 CUR_DIR=$(pwd)
-LIB_DIR=$CUR_DIR/../../dpa/include
-KERNEL_DIR=$CUR_DIR/../../../examples/l2_swap
+LIB_UTIL_DIR=$CUR_DIR/../../libutils
+KERNEL_DIR=$CUR_DIR/../../../examples/udp_echo
 
 # Input parameters
 APP_NAME=l2_swap_wrapper
@@ -34,8 +34,7 @@ DPACC="${DOCA_TOOLS}/dpacc"
 
 # CC flags
 DEV_CC_FLAGS="-Wall,-Wextra,-Wpedantic,-Werror,-O0,-g,-DE_MODE_LE,-ffreestanding,-mabi=lp64,-mno-relax,-mcmodel=medany,-nostdlib,-Wdouble-promotion"
-# DEV_INC_DIR="-I$CUR_DIR/include -I/$LIB_DIR"
-DEV_INC_DIR="-I$CUR_DIR/include"
+DEV_INC_DIR="-I$CUR_DIR/include -I$LIB_UTIL_DIR"
 DEVICE_OPTIONS="${DEV_CC_FLAGS},${DEV_INC_DIR}"
 
 # Host flags

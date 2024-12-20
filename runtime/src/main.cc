@@ -118,7 +118,7 @@ int main(){
     /*!
      *  \brief  STEP 4: create the datapath pipeline
      */
-    nicc::DatapathPipeline dp_pipeline(rpool, &app_cxt, dev_state);
+    nicc::DatapathPipeline dp_pipeline(rpool, &app_cxt, dev_state, &app_dag);
     
 
     /* Init control path, including user-request channel, just-in-time verifier, and rule loader (SONiC) */

@@ -12,7 +12,7 @@ foreach source : glob.stdout().strip().split('\n')
     wrapper_soc_sources += module_name + '/' + source
   endif
 endforeach
-message(wrapper_soc_sources)
+# message(wrapper_soc_sources)
 # =======================================================================
 lib_inc_dirs += [module_name]
 lib_sources += wrapper_soc_sources
