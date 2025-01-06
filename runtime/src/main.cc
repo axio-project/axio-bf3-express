@@ -32,7 +32,7 @@ int main(){
      * \todo;  these descriptors should be parsed by the resource pool, which
      *         queries the device and creates the descriptors
      */
-    nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
+    nicc::device_state_t dev_state = { .device_name = "mlx5_0"};
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
     nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
@@ -48,7 +48,9 @@ int main(){
 
     nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
     NICC_CHECK_POINTER(soc_desp);  
-    dpa_desp->base_desp.quota = 16; 
+    soc_desp->base_desp.quota = 16; 
+    soc_desp->device_name = "mlx5_0";
+    soc_desp->phy_port = 0;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 1: parse config file
@@ -114,6 +116,18 @@ int main(){
 
     /// SoC app context
     nicc::AppHandler soc_app_init_handler;
+    nicc::ComponentDesp_SoC_t soc_block_desp = {
+        .base_desp = { .quota = 1 },
+        .device_name = "mlx5_0",
+        .phy_port = 0
+    };
+    nicc::AppFunction soc_app_func = nicc::AppFunction(
+        /* handlers_ */ { &soc_app_init_handler },
+        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
+        /* cid */ nicc::kComponent_SoC
+    );
+    app_cxt.functions.push_back(&soc_app_func);
+
     /*----------------------------------------------------------------*/
     /*!
      *  \brief  STEP 4: create the datapath pipeline

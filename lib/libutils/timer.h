@@ -57,19 +57,6 @@ class ChronoTimer {
 };
 
 static double measure_rdtsc_freq() {
-  // ChronoTimer chrono_timer;
-  // const uint64_t rdtsc_start = rdtsc();
-
-  // // Do not change this loop! The hardcoded value below depends on this loop
-  // // and prevents it from being optimized out.
-  // uint64_t sum = 5;
-  // for (uint64_t i = 0; i < 1000000; i++) {
-  //   sum += i + (sum + i) * (i % sum);
-  // }
-  // rt_assert(sum == 13580802877818827968ull, "Error in RDTSC freq measurement");
-
-  // const uint64_t rdtsc_cycles = rdtsc() - rdtsc_start;
-  // const double freq_ghz = rdtsc_cycles * 1.0 / chrono_timer.get_ns();
   uint32_t timer_freq;
   asm volatile("mrs %0, cntfrq_el0" : "=r" (timer_freq));
   double freq_ghz = timer_freq / 1e9;

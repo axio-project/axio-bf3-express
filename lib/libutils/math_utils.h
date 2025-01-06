@@ -34,9 +34,8 @@ static inline size_t lsb_index(int x) {
 /// bit is 1. (x = 0 returns 0, x = 1 returns 1.)
 static inline size_t msb_index(int x) {
   assert(x < INT32_MAX / 2);
-  int index;
-  asm("clz %0, %1" : "=r" (index) : "r" (x << 1));
-  return static_cast<size_t>(31 - index);
+  if (x == 0) return 0;
+  return 32 - __builtin_clz(x);  // clz = count leading zeros
 }
 
 /// C++11 constexpr ceil
@@ -58,4 +57,4 @@ static double stddev(std::vector<double> v) {
   return std::sqrt(var);
 }
 
-}  // namespace erpc
+}  // namespace nicc

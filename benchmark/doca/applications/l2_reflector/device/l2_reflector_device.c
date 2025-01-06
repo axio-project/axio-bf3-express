@@ -248,6 +248,111 @@ static void process_packet(struct flexio_dev_thread_ctx *dtctx)
 }
 
 /*
+ * Zero copy version of packet processing function
+ * Directly modify the packet in RQ buffer and use it for SQ WQE
+ *
+ * @dtctx [in]: Device thread context
+ */
+static void process_packet_zero_copy(struct flexio_dev_thread_ctx *dtctx) 
+{
+    uint32_t rq_wqe_idx;
+    struct flexio_dev_wqe_rcv_data_seg *rwqe;
+    uint32_t data_sz;
+    char *rq_data;
+    union flexio_dev_sqe_seg *swqe;
+    const uint16_t mss = 0, checksum = 0;
+    char tmp;
+    /* MAC address has 6 bytes: ff:ff:ff:ff:ff:ff */
+    const int nb_mac_address_bytes = 6;
+
+    /* 1. Get packet info from CQE */
+    rq_wqe_idx = flexio_dev_cqe_get_wqe_counter(dev_ctx.rqcq_ctx.cqe);
+    data_sz = flexio_dev_cqe_get_byte_cnt(dev_ctx.rqcq_ctx.cqe);
+
+    /* 2. Get RQ WQE and packet data address */
+    rwqe = &dev_ctx.rq_ctx.rq_ring[rq_wqe_idx & L2_RQ_IDX_MASK];
+    rq_data = flexio_dev_rwqe_get_addr(rwqe);
+
+    /* 3. Swap MAC addresses in-place */
+    for (int byte = 0; byte < nb_mac_address_bytes; byte++) {
+        tmp = rq_data[byte];
+        rq_data[byte] = rq_data[byte + nb_mac_address_bytes];
+        rq_data[byte + nb_mac_address_bytes] = tmp;
+    }
+
+    /* 4. Build SQ WQE using RQ buffer */
+    /* Control segment */
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+    flexio_dev_swqe_seg_ctrl_set(swqe,
+                                dev_ctx.sq_ctx.sq_pi,
+                                dev_ctx.sq_ctx.sq_number,
+                                MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR,
+                                FLEXIO_CTRL_SEG_SEND_EN);
+
+    /* Ethernet segment */  
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+    flexio_dev_swqe_seg_eth_set(swqe, mss, checksum, 0, NULL);
+
+    /* Data segment - point to RQ buffer */
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+    flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, dev_ctx.lkey, (uint64_t)rq_data);
+
+    /* Skip 4th segment */
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+
+    /* 5. Ring doorbell to send packet */
+    __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+    dev_ctx.sq_ctx.sq_pi++;
+    flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+    __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+    flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+}
+
+static void process_packet_rdma_send(struct flexio_dev_thread_ctx *dtctx) {
+    uint32_t rq_wqe_idx;
+    struct flexio_dev_wqe_rcv_data_seg *rwqe;
+    uint32_t data_sz;
+    char *rq_data;
+    union flexio_dev_sqe_seg *swqe;
+    const int nb_mac_address_bytes = 6;
+
+    /* 1. 从CQE获取数据包信息 */
+    rq_wqe_idx = flexio_dev_cqe_get_wqe_counter(dev_ctx.rqcq_ctx.cqe);
+    data_sz = flexio_dev_cqe_get_byte_cnt(dev_ctx.rqcq_ctx.cqe);
+
+    /* 2. 获取RQ WQE和数据地址 */
+    rwqe = &dev_ctx.rq_ctx.rq_ring[rq_wqe_idx & L2_RQ_IDX_MASK];
+    rq_data = flexio_dev_rwqe_get_addr(rwqe);
+
+    /* 3. 原地交换MAC地址 */
+    for (int byte = 0; byte < nb_mac_address_bytes; byte++) {
+        char tmp = rq_data[byte];
+        rq_data[byte] = rq_data[byte + nb_mac_address_bytes];
+        rq_data[byte + nb_mac_address_bytes] = tmp;
+    }
+
+    /* 4. 构建RDMA SEND WQE */
+    /* Control segment */
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+    flexio_dev_swqe_seg_ctrl_set(swqe,
+                                dev_ctx.sq_ctx.sq_pi,
+                                dev_ctx.sq_ctx.sq_number,
+                                MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR,
+                                FLEXIO_CTRL_SEG_SEND_EN | FLEXIO_CTRL_SEG_RDMA_SEND); // 添加RDMA SEND标志
+
+    /* Data segment - 直接使用RQ buffer */
+    swqe = get_next_sqe(&dev_ctx.sq_ctx, L2_SQ_IDX_MASK);
+    flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, dev_ctx.lkey, (uint64_t)rq_data);
+
+    /* 5. 发送数据包 */
+    __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+    dev_ctx.sq_ctx.sq_pi++;
+    flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+    __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+    flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
+}
+
+/*
  * Called by host to initialize the device context
  *
  * @data [in]: pointer to the device context from the host
