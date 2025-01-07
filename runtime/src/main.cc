@@ -49,7 +49,7 @@ int main(){
     nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
     NICC_CHECK_POINTER(soc_desp);  
     soc_desp->base_desp.quota = 16; 
-    soc_desp->device_name = "mlx5_0";
+    soc_desp->device_name = "mlx5_2";
     soc_desp->phy_port = 0;
     /*----------------------------------------------------------------*/
     /**
@@ -121,7 +121,7 @@ int main(){
     nicc::ComponentDesp_SoC_t *soc_block_desp = new nicc::ComponentDesp_SoC_t;
     NICC_CHECK_POINTER(soc_block_desp);
     soc_block_desp->base_desp.quota = 1;
-    soc_block_desp->device_name = "mlx5_0";
+    soc_block_desp->device_name = "mlx5_2";
     soc_block_desp->phy_port = 0;
 
     nicc::AppFunction soc_app_func = nicc::AppFunction(

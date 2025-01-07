@@ -91,6 +91,23 @@ class Channel_SoC : public Channel {
  * ----------------------Internel methods----------------------
  */ 
  private:
+    /**
+     * @brief Resolve InfiniBand-specific fields in \p resolve
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __roce_resolve_phy_port();
+
+    /**
+     * @brief Initialize structures: device context, protection domain, and queue pair.
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __init_verbs_structs();
+    
+    /**
+     * @brief Initialize and allocate memory for TX/RX rings
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __init_ring();
 
 /**
  * ----------------------Internel parameters----------------------

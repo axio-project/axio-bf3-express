@@ -78,10 +78,12 @@ static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size
   rt_assert(dev_list != nullptr, "Failed to get device list");
 
   // Traverse the device list
-  for (dev_idx = 0; dev_list[dev_idx] != nullptr; num_devices++) {
+  for (dev_idx = 0; dev_list[dev_idx] != nullptr; dev_idx++) {
     if (!strcmp(ibv_get_device_name(dev_list[dev_idx]), dev_name))
       break;
   }
+  rt_assert(dev_list[dev_idx] != nullptr, "Failed to find device");
+
   if (dev_list[dev_idx] == nullptr) {
     ibv_free_device_list(dev_list);
     xmsg << "Device " << dev_name << " not found";
