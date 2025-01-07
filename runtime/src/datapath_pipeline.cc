@@ -76,6 +76,9 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
             case kComponent_FlowEngine:
                 NICC_CHECK_POINTER(component_block = new ComponentBlock_FlowEngine);
                 break;
+            case kComponent_SoC:
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_SoC);
+                break;
             default:
                 NICC_ERROR_C("unknown component id: component_id(%u)", app_func->component_id);
                 break;

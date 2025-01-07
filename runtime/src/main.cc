@@ -95,12 +95,12 @@ int main(){
         .base_desp = { .quota = 1 },
         .device_name = "mlx5_0"
     };
-    nicc::AppFunction app_func = nicc::AppFunction(
+    nicc::AppFunction dpa_app_func = nicc::AppFunction(
         /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
-    app_cxt.functions.push_back(&app_func);
+    app_cxt.functions.push_back(&dpa_app_func);
 
     /// Flow Engine app context
     nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
@@ -116,14 +116,17 @@ int main(){
 
     /// SoC app context
     nicc::AppHandler soc_app_init_handler;
-    nicc::ComponentDesp_SoC_t soc_block_desp = {
-        .base_desp = { .quota = 1 },
-        .device_name = "mlx5_0",
-        .phy_port = 0
-    };
+    soc_app_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
+
+    nicc::ComponentDesp_SoC_t *soc_block_desp = new nicc::ComponentDesp_SoC_t;
+    NICC_CHECK_POINTER(soc_block_desp);
+    soc_block_desp->base_desp.quota = 1;
+    soc_block_desp->device_name = "mlx5_0";
+    soc_block_desp->phy_port = 0;
+
     nicc::AppFunction soc_app_func = nicc::AppFunction(
         /* handlers_ */ { &soc_app_init_handler },
-        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
+        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_block_desp),
         /* cid */ nicc::kComponent_SoC
     );
     app_cxt.functions.push_back(&soc_app_func);

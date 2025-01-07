@@ -28,7 +28,7 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
             event_handler = app_handler;
             break;
         default:
-            NICC_ERROR_C_DETAIL("unregornized handler id for DPA, this is a bug: handler_id(%u)", app_handler->tid);
+            NICC_ERROR_C_DETAIL("unregornized handler id for SoC, this is a bug: handler_id(%u)", app_handler->tid);
         }
     }
     // check handlers
@@ -39,7 +39,7 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
     if(unlikely(NICC_SUCCESS !=
         (retval = this->__allocate_wrapper_resources(app_func, func_state))
     )){
-        NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", retval);
+        NICC_WARN_C("failed to allocate reosurce on DPA block: retval(%u)", retval);
         goto exit;
     }
     
