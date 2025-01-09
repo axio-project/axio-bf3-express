@@ -11,7 +11,7 @@
 
 namespace nicc {
 
-void wait_duration(size_t wait_sec){
+void wait_duration(int wait_sec){
   auto start = std::chrono::high_resolution_clock::now();  // 记录开始时间
 
   while (true) {
@@ -188,6 +188,9 @@ void set_cpu_freq_max(size_t core_idx) {
   if (pathExists(cpuPath)) {
     std::string cmd = "sudo cpufreq-set -c" + std::to_string(core_idx) + " -g performance";
     int res = system(cmd.c_str());
+    if (res != 0) {
+      NICC_WARN("failed to set CPU %zu to max frequency", core_idx);
+    }
     wait_duration(2);
     NICC_DEBUG("Set CPU %zu to max frequency", core_idx);
   } else {
@@ -205,6 +208,9 @@ void set_cpu_freq_normal(size_t core_idx) {
   if (pathExists(cpuPath)) {
     std::string cmd = "sudo cpufreq-set -c" + std::to_string(core_idx) + " -g ondemand";
     int res = system(cmd.c_str());
+    if (res != 0) {
+      NICC_WARN("failed to set CPU %zu to normal frequency", core_idx);
+    }
   }
   else {
     NICC_WARN("Cannot leverage cpufreq-set to set CPU frequency to normal");

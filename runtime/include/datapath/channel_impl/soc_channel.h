@@ -13,6 +13,8 @@
 #include "utils/verbs_common.h"
 #include "libutils/math_utils.h"
 #include "utils/huge_alloc.h"
+#include "utils/qpinfo.hh"
+#include "utils/mgnt_connection.h"
 
 namespace nicc {
 
@@ -43,8 +45,6 @@ class Channel_SoC : public Channel {
     /// For now, anything outside 0xffff0000..0xffffffff (reserved by CX3) works.
     static constexpr uint32_t kQKey = 0x0205; 
 
-    static constexpr size_t kInvalidQpId = SIZE_MAX;
-
     static constexpr size_t kRQDepth = kNumRxRingEntries;   ///< RECV queue depth
     static constexpr size_t kSQDepth = kNumTxRingEntries;   ///< Send queue depth
 
@@ -59,7 +59,13 @@ class Channel_SoC : public Channel {
     static constexpr size_t kMaxUDSize = kSendMbufSize * kSQDepth;  ///< Maximum UD message size
     static constexpr size_t kMemRegionSize = kRecvMbufSize * kRQDepth + kSendMbufSize * kSQDepth;  ///< Memory region size, for both TX and RX
 
+    static constexpr size_t kInvalidQpId = SIZE_MAX;
 
+    /// Address of the remote endpoint
+    static constexpr uint16_t kDefaultUdpPort = 10010;
+    static constexpr uint16_t kDefaultMngtPort = 20086;
+    const char* kRemoteIpStr = "10.10.10.10";  // \todo: set it via config file
+    
 /**
  * ----------------------Public methods----------------------
  */ 
@@ -102,6 +108,20 @@ class Channel_SoC : public Channel {
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __init_verbs_structs();
+
+    /**
+     * @brief Set local QP info
+     * @param qp_info QP info
+     */
+    void __set_local_qp_info(QPInfo *qp_info);
+
+    /**
+     * @brief Create address handles for local and remote endpoints
+     * @param local_qp_info Local QP info
+     * @param remote_qp_info Remote QP info
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_info);
     
     /**
      * @brief Initialize and allocate memory for TX/RX rings
@@ -122,6 +142,26 @@ class Channel_SoC : public Channel {
       uint16_t port_lid = 0;  ///< Port LID. 0 is invalid.
       union ibv_gid gid;      ///< GID, used only for RoCE
     } _resolve;
+
+    /// Protection domain
+    struct ibv_pd *_pd = nullptr;
+
+    /// Parameters for qp init
+    struct ibv_cq *_send_cq = nullptr;
+    struct ibv_cq *_recv_cq = nullptr;
+    struct ibv_qp *_qp = nullptr;
+    size_t _qp_id = kInvalidQpId;
+
+    /// An address handle for this endpoint's port. 
+    struct ibv_ah *_local_ah = nullptr;
+    size_t _remote_qp_id = kInvalidQpId;  ///< The remote QP ID
+    struct ibv_ah *_remote_ah = nullptr;  ///< An address handle for the remote endpoint's port.
+    /// Address handles that we must free in the destructor
+    std::vector<ibv_ah *> _ah_to_free_vec;
+    ipaddr_t *_daddr = nullptr;  ///< Destination IP address
+
+    /// Parameters for tx/rx ring
+
 };
 
 }  // namespace nicc

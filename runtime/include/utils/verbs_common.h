@@ -46,28 +46,28 @@ static std::string link_layer_str(uint8_t link_layer) {
 }
 
 /// Return the net interface for a verbs device (e.g., mlx5_0 -> enp4s0f0)
-static std::string ibdev2netdev(std::string ibdev_name) {
-  std::string dev_dir = "/sys/class/infiniband/" + ibdev_name + "/device/net";
+// static std::string ibdev2netdev(std::string ibdev_name) {
+//   std::string dev_dir = "/sys/class/infiniband/" + ibdev_name + "/device/net";
 
-  std::vector<std::string> net_ifaces;
-  DIR *dp;
-  struct dirent *dirp;
-  dp = opendir(dev_dir.c_str());
-  rt_assert(dp != nullptr, "Failed to open directory " + dev_dir);
+//   std::vector<std::string> net_ifaces;
+//   DIR *dp;
+//   struct dirent *dirp;
+//   dp = opendir(dev_dir.c_str());
+//   rt_assert(dp != nullptr, "Failed to open directory " + dev_dir);
 
-  while (true) {
-    dirp = readdir(dp);
-    if (dirp == nullptr) break;
+//   while (true) {
+//     dirp = readdir(dp);
+//     if (dirp == nullptr) break;
 
-    if (strcmp(dirp->d_name, ".") == 0) continue;
-    if (strcmp(dirp->d_name, "..") == 0) continue;
-    net_ifaces.push_back(std::string(dirp->d_name));
-  }
-  closedir(dp);
+//     if (strcmp(dirp->d_name, ".") == 0) continue;
+//     if (strcmp(dirp->d_name, "..") == 0) continue;
+//     net_ifaces.push_back(std::string(dirp->d_name));
+//   }
+//   closedir(dp);
 
-  rt_assert(net_ifaces.size() > 0, "Directory " + dev_dir + " is empty");
-  return net_ifaces[0];
-}
+//   rt_assert(net_ifaces.size() > 0, "Directory " + dev_dir + " is empty");
+//   return net_ifaces[0];
+// }
 
 static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size_t mtu,
                                     VerbsResolve &resolve) {
