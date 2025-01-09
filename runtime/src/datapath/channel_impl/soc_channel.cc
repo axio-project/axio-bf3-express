@@ -242,7 +242,88 @@ nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_
 
 nicc_retval_t Channel_SoC::__init_ring() {
     nicc_retval_t retval = NICC_SUCCESS;
-    /* ...... */
+    // Initialize the ring buffer
+    /// Step 1: Allocate memory for the ring buffer
+    Buffer raw_mr = this->_huge_alloc->alloc_raw(kMemRegionSize, DoRegister::kTrue);
+    if (raw_mr.buf_ == nullptr) {
+        NICC_WARN_C("failed to allocate memory for the ring buffer");
+        return NICC_ERROR_MEMORY_FAILURE;
+    }
+    NICC_CHECK_POINTER(this->_mr = ibv_reg_mr(this->_pd, raw_mr.buf_, kMemRegionSize, IBV_ACCESS_LOCAL_WRITE));
+    raw_mr.set_lkey(this->_mr->lkey);
+    this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
+
+    /// Step 2: Initialize the ring buffer
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs()))){
+        NICC_WARN_C("failed to initialize the recv ring buffer");
+        return retval;
+    }
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends()))){
+        NICC_WARN_C("failed to initialize the send ring buffer");
+        return retval;
+    }
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__init_recvs() {
+    nicc_retval_t retval = NICC_SUCCESS;
+    // Initialize the memory region for RECVs
+    const size_t ring_extent_size = kRQDepth * kRecvMbufSize;
+    NICC_ASSERT(ring_extent_size <= HugeAlloc::k_max_class_size); // Currently the max memory size for rx ring is k_max_class_size
+
+    Buffer * ring_extent = this->_huge_alloc->alloc(ring_extent_size);
+    if (ring_extent->buf_ == nullptr) {
+        NICC_WARN_C("failed to allocate memory for the recv ring buffer");
+        return NICC_ERROR_MEMORY_FAILURE;
+    }
+
+    // Initialize constant fields of RECV descriptors
+    for (size_t i = 0; i < kRQDepth; i++) {
+        uint8_t *buf = ring_extent->buf_;
+        const size_t offset = (i * kRecvMbufSize);
+        NICC_ASSERT(offset + kRecvMbufSize <= ring_extent_size);
+        this->_recv_sgl[i].length = kRecvMbufSize;
+        this->_recv_sgl[i].lkey = ring_extent->lkey_;
+        this->_recv_sgl[i].addr = reinterpret_cast<uint64_t>(&buf[offset]);
+        this->_recv_wr[i].wr_id = i;
+        this->_recv_wr[i].sg_list = &this->_recv_sgl[i];
+        this->_recv_wr[i].num_sge = 1;      /// Only one SGE per recv wr
+        this->_rx_ring[i] = new Buffer(&buf[offset], kRecvMbufSize, ring_extent->lkey_);  // RX ring entry
+        this->_rx_ring[i]->state_ = Buffer::kPOSTED;
+        this->_recv_wr[i].next = (i < kRQDepth - 1) ? &this->_recv_wr[i + 1] : &this->_recv_wr[0];
+    }
+
+    // Circular link rx ring
+    for (size_t i = 0; i < kRQDepth; i++) {
+        this->_rx_ring[i]->next_ = (i < kRQDepth - 1) ? this->_rx_ring[i + 1] : this->_rx_ring[0];
+    }
+
+    // Fill the RECV queue. post_recvs() can use fast RECV and therefore not
+    // actually fill the RQ, so post_recvs() isn't usable here.
+    struct ibv_recv_wr *bad_wr;
+    this->_recv_wr[kRQDepth - 1].next = nullptr;  // Breaker of chains, mother of dragons
+
+    int ret = ibv_post_recv(this->_qp, &this->_recv_wr[0], &bad_wr);
+    if (unlikely(ret != 0)) {
+        NICC_WARN_C("failed to fill RECV queue");
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    this->_recv_wr[kRQDepth - 1].next = &this->_recv_wr[0];  // Restore circularity
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__init_sends() {
+    nicc_retval_t retval = NICC_SUCCESS;
+    for (size_t i = 0; i < kSQDepth; i++) {
+        this->_send_wr[i].opcode = IBV_WR_SEND;
+        this->_send_wr[i].send_flags = IBV_SEND_SIGNALED;
+        this->_send_wr[i].sg_list = &this->_send_sgl[i];
+        this->_send_wr[i].num_sge = 1;
+        // Circular link send wr
+        this->_send_wr[i].next = (i < kSQDepth - 1) ? &this->_send_wr[i + 1] : &this->_send_wr[0];
+    }
     return retval;
 }
 

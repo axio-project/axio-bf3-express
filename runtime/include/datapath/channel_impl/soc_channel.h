@@ -15,6 +15,7 @@
 #include "utils/huge_alloc.h"
 #include "utils/qpinfo.hh"
 #include "utils/mgnt_connection.h"
+#include "libutils/buffer.h"
 
 namespace nicc {
 
@@ -50,10 +51,13 @@ class Channel_SoC : public Channel {
 
     static constexpr size_t kPostlist = 32;    ///< Maximum SEND postlist
 
-    static constexpr size_t kGRHBytes = 40;
-    static constexpr size_t kSgeSize = kMTU;  /// seg size cannot exceed MTU
+    // 把MTU补成1024/2048/4096
+    // static constexpr size_t kSgeSize = kMTU;  /// seg size cannot exceed MTU
+    static constexpr size_t kSgeSize = round_up<2048>(kMTU);    /// manully update "2048" to higher if kMTU is > 2048
+    static_assert(is_power_of_two(kSgeSize), "kSgeSize must be a power of 2");
+    static_assert(kSgeSize >= kMTU, "kSgeSize must be >= kMTU");
 
-    static constexpr size_t kRecvMbufSize = kSgeSize + 64;    ///< RECV size (with GRH in first 64B)
+    static constexpr size_t kRecvMbufSize = kSgeSize;    ///< RECV size 
     static constexpr size_t kSendMbufSize = kSgeSize;    ///< SEND size
 
     static constexpr size_t kMaxUDSize = kSendMbufSize * kSQDepth;  ///< Maximum UD message size
@@ -129,6 +133,18 @@ class Channel_SoC : public Channel {
      */
     nicc_retval_t __init_ring();
 
+    /**
+     * @brief Initialize the RECV queue
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __init_recvs();
+
+    /**
+     * @brief Initialize the SEND queue
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __init_sends();
+
 /**
  * ----------------------Internel parameters----------------------
  */
@@ -161,7 +177,25 @@ class Channel_SoC : public Channel {
     ipaddr_t *_daddr = nullptr;  ///< Destination IP address
 
     /// Parameters for tx/rx ring
-
+    struct ibv_mr *_mr = nullptr;
+    /* SEND */
+    struct ibv_send_wr _send_wr[kSQDepth];
+    struct ibv_sge _send_sgl[kSQDepth];
+    struct ibv_wc _send_wc[kSQDepth];
+    size_t _send_head = 0;
+    size_t _send_tail = 0;
+    size_t _free_send_wr_num = kSQDepth;
+    Buffer *_sw_ring[kSQDepth];
+    Buffer *_tx_queue[kSQDepth];
+    size_t _tx_queue_idx = 0;
+    /* RECV */
+    struct ibv_recv_wr _recv_wr[kRQDepth];
+    struct ibv_sge _recv_sgl[kRQDepth];
+    struct ibv_wc _recv_wc[kRQDepth];
+    size_t _recv_head = 0;
+    Buffer *_rx_ring[kRQDepth];
+    size_t _ring_head = 0;
+    size_t _wait_for_disp = 0;
 };
 
 }  // namespace nicc
