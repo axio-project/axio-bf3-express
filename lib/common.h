@@ -181,6 +181,16 @@ static inline void rt_assert(bool condition) {
   }
 }
 
+/// Check a condition at runtime. If the condition is false, print error message
+/// and exit.
+static inline void exit_assert(bool condition, std::string error_msg) {
+  if (unlikely(!condition)) {
+    fprintf(stderr, "%s. Exiting.\n", error_msg.c_str());
+    fflush(stderr);
+    exit(-1);
+  }
+}
+
 /**
  * ----------------------Print related----------------------
  */ 

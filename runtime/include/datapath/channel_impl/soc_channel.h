@@ -79,7 +79,30 @@ class Channel_SoC : public Channel {
         this->_typeid = channel_type;
         this->_mode = channel_mode;
     }
-    ~Channel_SoC() {}
+    ~Channel_SoC() {
+        NICC_DEBUG_C("destory channel for QP %lu", this->_qp_id);
+        // deregister memory region
+        int ret = ibv_dereg_mr(this->_mr);
+        if (ret != 0) {
+            NICC_ERROR_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
+        }
+        NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
+        // delete Buffer in _rx_ring
+        for (size_t i = 0; i < kRQDepth; i++) {
+            delete this->_rx_ring[i];
+        }
+        // delete SHM
+        delete this->_huge_alloc;
+
+        // Destroy QPs and CQs. QPs must be destroyed before CQs.
+        exit_assert(ibv_destroy_qp(this->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
+        exit_assert(ibv_destroy_ah(this->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
+        exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
+    }
 
     /**
      * \brief Allocate channel resources including QP, CQ and application queues
