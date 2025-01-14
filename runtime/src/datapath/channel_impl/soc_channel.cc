@@ -7,7 +7,7 @@ namespace nicc {
 //  * On physical clusters, gid_index = 0 always works (in my experience)
 //  * On VM clusters (AWS/KVM), gid_index = 0 does not work, gid_index = 1 works
 //  * Mellanox's `show_gids` script lists all GIDs on all NICs
-static constexpr size_t kDefaultGIDIndex = 0;   // Currently, the GRH (ipv4 + udp port) is set by CPU
+static constexpr size_t kDefaultGIDIndex = 1;   // Currently, the GRH (ipv4 + udp port) is set by CPU
 
 nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
@@ -104,6 +104,7 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     struct QPInfo remote_qp_info;
     this->__set_local_qp_info(&qp_info);
     TCPClient mgnt_client;
+    NICC_DEBUG_C("connect to server: %s, port: %u", kRemoteIpStr, kDefaultMngtPort);
     mgnt_client.connectToServer(kRemoteIpStr, kDefaultMngtPort);
     mgnt_client.sendMsg(qp_info.serialize());
     remote_qp_info.deserialize(mgnt_client.receiveMsg());
@@ -201,20 +202,25 @@ nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_
     NICC_CHECK_POINTER(local_qp_info);
     NICC_CHECK_POINTER(remote_qp_info);
     struct ibv_ah_attr ah_attr;
+    
     /// Create local AH
     union ibv_gid gid; 
     memset(&gid, 0, sizeof(union ibv_gid));
-    memcpy(&gid, local_qp_info->gid, 16);
+    memcpy(&gid, local_qp_info->gid, sizeof(union ibv_gid));
     memset(&ah_attr, 0, sizeof(struct ibv_ah_attr));
             ah_attr.is_global = 1;
-            ah_attr.dlid = 0;
-            ah_attr.sl = 0;
+            ah_attr.dlid = 0;  // RoCE v2 doesn't use LID
+            ah_attr.sl = 0;    // Service level
             ah_attr.src_path_bits = 0;
-            ah_attr.port_num = local_qp_info->lid; // Local port
-            ah_attr.grh.dgid.global.interface_id = gid.global.interface_id;
-            ah_attr.grh.dgid.global.subnet_prefix = gid.global.subnet_prefix;
+            ah_attr.port_num = _resolve.dev_port_id;  // Use the actual port number
+            
+            // Set GID fields
+            ah_attr.grh.dgid = gid;  // Use the entire GID structure
             ah_attr.grh.sgid_index = kDefaultGIDIndex;
-            ah_attr.grh.hop_limit = 2;
+            ah_attr.grh.hop_limit = 1;  // Typical value for local network
+            ah_attr.grh.traffic_class = 0;
+            ah_attr.grh.flow_label = 0;
+    
     this->_local_ah = ibv_create_ah(this->_pd, &ah_attr);
     if (unlikely(this->_local_ah == nullptr)) {
         NICC_WARN_C("failed to create local AH");

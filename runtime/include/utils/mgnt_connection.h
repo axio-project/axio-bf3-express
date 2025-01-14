@@ -31,7 +31,7 @@ public:
             std::cerr << "Connection failed." << std::endl;
             exit(1);
         }
-        std::cout << "Connected to server." << std::endl;
+        // std::cout << "Connected to server." << std::endl;
     }
 
     void sendMsg(const std::string& msg) {
