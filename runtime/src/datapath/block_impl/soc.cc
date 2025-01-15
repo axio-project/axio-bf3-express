@@ -61,10 +61,10 @@ exit:
 nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;
 
-    _function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED);
     // allocate channel
     if(unlikely(NICC_SUCCESS != (
-        retval = _function_state->channel->allocate_channel(_desp->device_name, _desp->phy_port)
+        retval = this->_function_state->channel->allocate_channel(this->_desp->device_name, this->_desp->phy_port)
     ))) {
         NICC_WARN_C("failed to allocate and init SoC channel: nicc_retval(%u)", retval);
         goto exit;

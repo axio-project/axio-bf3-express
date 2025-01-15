@@ -12,11 +12,19 @@
 
 namespace nicc
 {
-/**
- * ----------------------General structure----------------------
- */ 
 using json = nlohmann::json;
-// Josn file structure
+/**
+ * \brief Host configuration structure for remote and local hosts
+ */
+struct HostConfig {
+    std::string ipv4;           ///< IPv4 address
+    uint16_t mgnt_port;         ///< Management port
+    uint16_t data_port;         ///< Data port
+};
+
+/**
+ * \brief General structure for DAG components
+ */ 
 struct DAGComponent {
     std::string name;
     std::map<std::string, std::string> data_path;  // store data_path
@@ -28,11 +36,22 @@ struct DAGComponent {
  * \brief read json file of app DAG and parse it
  */
 class AppDAG {
-
 public:
     AppDAG(std::string file_path) : _file_path(file_path) {
         load_from_file();
     }
+
+    /**
+     * \brief Get remote host configurations
+     * \return Vector of remote host configurations
+     */
+    const std::vector<HostConfig>& get_remote_hosts() const { return this->_remote_hosts; }
+
+    /**
+     * \brief Get local host configurations
+     * \return Vector of local host configurations
+     */
+    const std::vector<HostConfig>& get_local_hosts() const { return this->_local_hosts; }
 
 /**
  * ----------------------Public Methods----------------------
@@ -40,7 +59,7 @@ public:
     void load_from_file() {
         std::ifstream file(this->_file_path);
         if (!file.is_open()) {
-            throw std::runtime_error("Could not open file " + _file_path);
+            throw std::runtime_error("Could not open file " + this->_file_path);
         }
 
         json j;
@@ -48,6 +67,29 @@ public:
 
         // update app name
         this->_app_name = j["app_name"].get<std::string>();
+        
+        // Parse remote hosts
+        if (j.contains("remote_host")) {
+            for (const auto& host : j["remote_host"]) {
+                HostConfig config;
+                config.ipv4 = host["ipv4"].get<std::string>();
+                config.mgnt_port = host["mgnt_port"].get<uint16_t>();
+                config.data_port = host["data_port"].get<uint16_t>();
+                _remote_hosts.push_back(config);
+            }
+        }
+
+        // Parse local hosts
+        if (j.contains("local_host")) {
+            for (const auto& host : j["local_host"]) {
+                HostConfig config;
+                config.ipv4 = host["ipv4"].get<std::string>();
+                config.mgnt_port = host["mgnt_port"].get<uint16_t>();
+                config.data_port = host["data_port"].get<uint16_t>();
+                _local_hosts.push_back(config);
+            }
+        }
+
         // update enabled components
         for (const auto &v : j["enabled_components"]) {
             if (v == "flow_engine") {
@@ -62,7 +104,7 @@ public:
             }
         }
         // clear current data in the map
-        _components_map.clear();
+        this->_components_map.clear();
         // iterate over the json object
         for (const auto &item : j["dp_graph"]) {
             if (item.contains("component")) {
@@ -104,7 +146,7 @@ public:
                 }
 
                 // store into map
-                _components_map[component_name] = component;
+                this->_components_map[component_name] = component;
             }
         }
     }
@@ -113,8 +155,8 @@ public:
      * \brief get a component config by name
      */
     const DAGComponent* get_component_config(const std::string &name) const {
-        auto it = _components_map.find(name);
-        if (it != _components_map.end()) {
+        auto it = this->_components_map.find(name);
+        if (it != this->_components_map.end()) {
             return &it->second;
         }
         return nullptr;
@@ -129,8 +171,32 @@ public:
      */
     void print() const {
         std::cout << "----------------------" << YELLOW << "Parse App DAG: " << _file_path << RESET << "----------------------" << "\n";
-        std::cout << "=====" << YELLOW << "App Name: " << _app_name << RESET << "=====" << "\n\n";
-        for (const auto &[name, component] : _components_map) {
+        std::cout << "=====" << YELLOW << "App Name: " << this->_app_name << RESET << "=====" << "\n\n";
+        
+        // Print remote hosts
+        if (!_remote_hosts.empty()) {
+            std::cout << "=====" << YELLOW << "Remote Hosts" << RESET << "=====\n";
+            for (const auto& host : _remote_hosts) {
+                std::cout << "  IPv4: " << host.ipv4 << "\n";
+                std::cout << "  Management Port: " << host.mgnt_port << "\n";
+                std::cout << "  Data Port: " << host.data_port << "\n";
+            }
+            std::cout << "\n";
+        }
+
+        // Print local hosts
+        if (!_local_hosts.empty()) {
+            std::cout << "=====" << YELLOW << "Local Hosts" << RESET << "=====\n";
+            for (const auto& host : _local_hosts) {
+                std::cout << "  IPv4: " << host.ipv4 << "\n";
+                std::cout << "  Management Port: " << host.mgnt_port << "\n";
+                std::cout << "  Data Port: " << host.data_port << "\n";
+            }
+            std::cout << "\n";
+        }
+
+        // Print components
+        for (const auto &[name, component] : this->_components_map) {
             std::cout << "=====" << YELLOW << "Component: " << name << RESET << "=====\n";
 
             // print data_path
@@ -182,5 +248,7 @@ private:
     std::string _app_name;
     component_typeid_t _enabled_components = 0;
     std::map<std::string, DAGComponent> _components_map;
+    std::vector<HostConfig> _remote_hosts;    ///< Remote host configurations
+    std::vector<HostConfig> _local_hosts;     ///< Local host configurations
 };
 }

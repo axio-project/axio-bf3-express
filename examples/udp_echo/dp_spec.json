@@ -1,6 +1,20 @@
 {
     "app_name": "udp_echo",
     "enabled_components": ["flow_engine", "dpa", "soc"],
+    "remote_host": [
+        {
+            "ipv4": "10.0.4.101",
+            "mgnt_port": 20086,
+            "data_port": 10010
+        }
+    ],
+    "local_host": [
+        {
+            "ipv4": "10.0.4.102",
+            "mgnt_port": 20086,
+            "data_port": 10010
+        }
+    ],
     "dp_graph": [
         {
             "component": "root",
@@ -68,7 +82,7 @@
                 "entries": [
                     { 
                         "match": "retval=1",
-                        "action": "fwd(host)"
+                        "action": "fwd(local_host)"
                     }
                 ]
             }

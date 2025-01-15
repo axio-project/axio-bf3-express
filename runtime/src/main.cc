@@ -103,16 +103,16 @@ int main(){
     app_cxt.functions.push_back(&dpa_app_func);
 
     /// Flow Engine app context
-    nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
-    NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = K(2);      // need 2k flow entries
-    size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
-    flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
-    NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
-    flow_engine_desp->tx_match_mask->match_sz = 64;
-    flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
-    NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
-    flow_engine_desp->rx_match_mask->match_sz = 64;
+    // nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
+    // NICC_CHECK_POINTER(flow_engine_desp);
+    // flow_engine_desp->base_desp.quota = K(2);      // need 2k flow entries
+    // size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
+    // flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    // NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
+    // flow_engine_desp->tx_match_mask->match_sz = 64;
+    // flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    // NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
+    // flow_engine_desp->rx_match_mask->match_sz = 64;
 
     /// SoC app context
     nicc::AppHandler soc_app_init_handler;

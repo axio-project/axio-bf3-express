@@ -73,30 +73,25 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     this->_pd = ibv_alloc_pd(this->_resolve.ib_ctx);
     NICC_CHECK_POINTER(this->_pd);
 
-    // Create send CQ
-    this->_send_cq = ibv_create_cq(this->_resolve.ib_ctx, kSQDepth, nullptr, nullptr, 0);
-    NICC_CHECK_POINTER(this->_send_cq);
+    // Create prior QP and next QP
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(&this->_prior_qp)))){
+        NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
+        return retval;
+    }
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(&this->_next_qp)))){
+        NICC_WARN_C("failed to create next QP: retval(%u)", retval);
+        return retval;
+    }
 
-    // Create recv CQ
-    this->_recv_cq = ibv_create_cq(this->_resolve.ib_ctx, kRQDepth, nullptr, nullptr, 0);
-    NICC_CHECK_POINTER(this->_recv_cq);
-
-    // Initialize QP creation attributes
-    struct ibv_qp_init_attr create_attr;
-    memset(static_cast<void *>(&create_attr), 0, sizeof(struct ibv_qp_init_attr));
-    create_attr.send_cq = this->_send_cq;
-    create_attr.recv_cq = this->_recv_cq;
-    create_attr.qp_type = IBV_QPT_RC;
-
-    create_attr.cap.max_send_wr = kSQDepth;
-    create_attr.cap.max_recv_wr = kRQDepth;
-    create_attr.cap.max_send_sge = 1;
-    create_attr.cap.max_recv_sge = 1;
-    create_attr.cap.max_inline_data = kMaxInline;
-
-    this->_qp = ibv_create_qp(this->_pd, &create_attr);
-    NICC_CHECK_POINTER(this->_qp);
-    this->_qp_id = this->_qp->qp_num;
+    /// Connect prior QP and next QP for initialization
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(&this->_prior_qp)))){
+        NICC_WARN_C("failed to connect prior QP and next QP: retval(%u)", retval);
+        return retval;
+    }
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(&this->_next_qp)))){
+        NICC_WARN_C("failed to connect next QP and prior QP: retval(%u)", retval);
+        return retval;
+    }
 
     /// exchange qp info via TCP mgmt connection
     // \todo: send queue for host, recv queue for prior component block
@@ -115,8 +110,14 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     init_attr.qp_state = IBV_QPS_INIT;
     init_attr.pkey_index = 0;
     init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
-    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC;
-    int attr_mask = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
+                                IBV_ACCESS_REMOTE_WRITE | 
+                                IBV_ACCESS_REMOTE_READ | 
+                                IBV_ACCESS_REMOTE_ATOMIC;
+    int attr_mask = IBV_QP_STATE | 
+                    IBV_QP_PKEY_INDEX | 
+                    IBV_QP_PORT | 
+                    IBV_QP_ACCESS_FLAGS;
     if (ibv_modify_qp(this->_qp, &init_attr, attr_mask) != 0) {
         NICC_WARN_C("failed to modify QP to INIT: retval(%u)", retval);
         return NICC_ERROR_HARDWARE_FAILURE;
@@ -182,6 +183,44 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(qp);
+    NICC_CHECK_POINTER(this->_pd);
+
+    /// Create send CQ
+    qp->_send_cq = ibv_create_cq(this->_resolve.ib_ctx, kSQDepth, nullptr, nullptr, 0);
+    NICC_CHECK_POINTER(qp->_send_cq);
+
+    /// Create recv CQ
+    qp->_recv_cq = ibv_create_cq(this->_resolve.ib_ctx, kRQDepth, nullptr, nullptr, 0);
+    NICC_CHECK_POINTER(qp->_recv_cq);
+
+    // Initialize QP creation attributes
+    struct ibv_qp_init_attr create_attr;
+    memset(static_cast<void *>(&create_attr), 0, sizeof(struct ibv_qp_init_attr));
+    create_attr.send_cq = qp->_send_cq;
+    create_attr.recv_cq = qp->_recv_cq;
+    create_attr.qp_type = IBV_QPT_RC;
+
+    create_attr.cap.max_send_wr = kSQDepth;
+    create_attr.cap.max_recv_wr = kRQDepth;
+    create_attr.cap.max_send_sge = 1;
+    create_attr.cap.max_recv_sge = 1;
+    create_attr.cap.max_inline_data = kMaxInline;
+
+    qp->_qp = ibv_create_qp(this->_pd, &create_attr);
+    NICC_CHECK_POINTER(qp->_qp);
+    qp->_qp_id = qp->_qp->qp_num;
+
+    /// Allocate memory for send/recv ring
+    qp->_sw_ring = new Buffer*[kSQDepth];
+    qp->_tx_queue = new Buffer*[kSQDepth];
+    qp->_rx_ring = new Buffer*[kRQDepth];
 
     return retval;
 }

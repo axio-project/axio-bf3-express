@@ -186,38 +186,17 @@ class Channel_SoC : public Channel {
     struct ibv_pd *_pd = nullptr;
 
     /// Parameters for qp init
-    struct ibv_cq *_send_cq = nullptr;
-    struct ibv_cq *_recv_cq = nullptr;
-    struct ibv_qp *_qp = nullptr;
-    size_t _qp_id = kInvalidQpId;
+    class RDMA_SoC_QP _prior_qp;        /// QP for prior component block
+    class RDMA_SoC_QP _next_qp;         /// QP for next component block
 
     /// An address handle for this endpoint's port. 
     struct ibv_ah *_local_ah = nullptr;
     size_t _remote_qp_id = kInvalidQpId;  ///< The remote QP ID
     struct ibv_ah *_remote_ah = nullptr;  ///< An address handle for the remote endpoint's port.
-    /// Address handles that we must free in the destructor
-    std::vector<ibv_ah *> _ah_to_free_vec;
-    ipaddr_t *_daddr = nullptr;  ///< Destination IP address
 
     /// Parameters for tx/rx ring
     struct ibv_mr *_mr = nullptr;
-    /* SEND */
-    struct ibv_send_wr _send_wr[kSQDepth];
-    struct ibv_sge _send_sgl[kSQDepth];
-    struct ibv_wc _send_wc[kSQDepth];
-    size_t _send_head = 0;
-    size_t _send_tail = 0;
     size_t _free_send_wr_num = kSQDepth;
-    Buffer *_sw_ring[kSQDepth];
-    Buffer *_tx_queue[kSQDepth];
-    size_t _tx_queue_idx = 0;
-    /* RECV */
-    struct ibv_recv_wr _recv_wr[kRQDepth];
-    struct ibv_sge _recv_sgl[kRQDepth];
-    struct ibv_wc _recv_wc[kRQDepth];
-    size_t _recv_head = 0;
-    Buffer *_rx_ring[kRQDepth];
-    size_t _ring_head = 0;
     size_t _wait_for_disp = 0;
 };
 

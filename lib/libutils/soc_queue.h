@@ -2,27 +2,30 @@
 #include "common.h"
 #include "request_def.h"
 #include "math_utils.h"
+#include "buffer.h"
 
 namespace nicc {
-/**
- * @brief A lock-free queue for storing Application-generated packets. 
- * For TX, application is producer, and dispatcher is consumer. Application 
- * can only operate on the tail of the queue, and dispatcher can only operate
- * on the head of the queue. 
- * For RX, dispatcher is producer, and application is consumer. Similarly, 
- * dispatcher can only operate on the tail of the queue, and application can
- * only operate on the head of the queue.
-*/
-
 #define kWsQueueSize 1024
 
-struct lock_free_queue {
+/**
+ * \brief A lock-free queue for transferring buffer ownership within 
+ * a component block, e.g., SoC cores in a same component block.
+ * Typically, we adopt pipeline-parallelism within a component block, 
+ * where each core can be an application or a dispatcher.
+ * For TX direction, application is producer, and dispatcher is consumer. Application 
+ * can only operate on the tail of the queue, and dispatcher can only operate
+ * on the head of the queue.
+ * For RX, dispatcher is producer, and application is consumer. Similarly, 
+ * dispatcher can only operate on the tail of the queue, and application can
+ * only operate on the head of the queue.q
+ */
+struct soc_shm_lock_free_queue {
     request_t* queue_[kWsQueueSize];
     volatile size_t head_ = 0;
     volatile size_t tail_ = 0;
     const size_t mask_ = kWsQueueSize - 1;  // Assuming kWsQueueSize is a power of 2
     public:
-    lock_free_queue() {
+    soc_shm_lock_free_queue() {
         rt_assert(is_power_of_two<size_t>(kWsQueueSize), "The size of Ws Queue is not power of two.");
         memset(queue_, 0, sizeof(queue_));
     }
@@ -54,5 +57,33 @@ struct lock_free_queue {
     inline bool is_full() {
         return (((tail_ + 1) & mask_) == head_);
     }
+};
+
+/**
+ * \brief A RDMA-based SoC queue pair for transferring buffers between different component blocks.
+ */
+class RDMA_SoC_QP {
+ public:
+    struct ibv_cq *_send_cq = nullptr;
+    struct ibv_cq *_recv_cq = nullptr;
+    struct ibv_qp *_qp = nullptr;
+    size_t _qp_id = SIZE_MAX;
+    /* SEND */
+    struct ibv_send_wr *_send_wr = nullptr;
+    struct ibv_sge *_send_sgl = nullptr;
+    struct ibv_wc *_send_wc = nullptr;
+    size_t _send_head = 0;
+    size_t _send_tail = 0;
+
+    Buffer **_sw_ring = nullptr;
+    Buffer **_tx_queue = nullptr;
+    size_t _tx_queue_idx = 0;
+    /* RECV */
+    struct ibv_recv_wr *_recv_wr = nullptr;
+    struct ibv_sge *_recv_sgl = nullptr;
+    struct ibv_wc *_recv_wc = nullptr;
+    size_t _recv_head = 0;
+    Buffer **_rx_ring = nullptr;
+    size_t _ring_head = 0;
 };
 } // namespace nicc
