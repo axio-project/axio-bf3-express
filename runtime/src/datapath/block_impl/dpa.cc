@@ -290,7 +290,6 @@ exit:
 
 nicc_retval_t ComponentBlock_DPA::__deallocate_wrapper_resources(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
-    flexio_status ret;
 
     NICC_CHECK_POINTER(func_state);
 

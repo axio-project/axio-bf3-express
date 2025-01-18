@@ -32,7 +32,7 @@ int main(){
      * \todo;  these descriptors should be parsed by the resource pool, which
      *         queries the device and creates the descriptors
      */
-    nicc::device_state_t dev_state = { .device_name = "mlx5_0" };
+    nicc::device_state_t dev_state = { .device_name = "mlx5_0"};
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
     nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
@@ -48,7 +48,9 @@ int main(){
 
     nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
     NICC_CHECK_POINTER(soc_desp);  
-    dpa_desp->base_desp.quota = 16; 
+    soc_desp->base_desp.quota = 16; 
+    soc_desp->device_name = "mlx5_2";
+    soc_desp->phy_port = 0;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 1: parse config file
@@ -93,27 +95,42 @@ int main(){
         .base_desp = { .quota = 1 },
         .device_name = "mlx5_0"
     };
-    nicc::AppFunction app_func = nicc::AppFunction(
+    nicc::AppFunction dpa_app_func = nicc::AppFunction(
         /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
-    app_cxt.functions.push_back(&app_func);
+    app_cxt.functions.push_back(&dpa_app_func);
 
     /// Flow Engine app context
-    nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
-    NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = K(2);      // need 2k flow entries
-    size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
-    flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
-    NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
-    flow_engine_desp->tx_match_mask->match_sz = 64;
-    flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
-    NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
-    flow_engine_desp->rx_match_mask->match_sz = 64;
+    // nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
+    // NICC_CHECK_POINTER(flow_engine_desp);
+    // flow_engine_desp->base_desp.quota = K(2);      // need 2k flow entries
+    // size_t flow_match_size = sizeof(*flow_engine_desp->tx_match_mask) + 64;  // 64 bytes for match mask
+    // flow_engine_desp->tx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    // NICC_CHECK_POINTER(flow_engine_desp->tx_match_mask);
+    // flow_engine_desp->tx_match_mask->match_sz = 64;
+    // flow_engine_desp->rx_match_mask = (struct mlx5dv_flow_match_parameters *) calloc(1, flow_match_size);
+    // NICC_CHECK_POINTER(flow_engine_desp->rx_match_mask);
+    // flow_engine_desp->rx_match_mask->match_sz = 64;
 
     /// SoC app context
     nicc::AppHandler soc_app_init_handler;
+    soc_app_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
+
+    nicc::ComponentDesp_SoC_t *soc_block_desp = new nicc::ComponentDesp_SoC_t;
+    NICC_CHECK_POINTER(soc_block_desp);
+    soc_block_desp->base_desp.quota = 1;
+    soc_block_desp->device_name = "mlx5_2";
+    soc_block_desp->phy_port = 0;
+
+    nicc::AppFunction soc_app_func = nicc::AppFunction(
+        /* handlers_ */ { &soc_app_init_handler },
+        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_block_desp),
+        /* cid */ nicc::kComponent_SoC
+    );
+    app_cxt.functions.push_back(&soc_app_func);
+
     /*----------------------------------------------------------------*/
     /*!
      *  \brief  STEP 4: create the datapath pipeline

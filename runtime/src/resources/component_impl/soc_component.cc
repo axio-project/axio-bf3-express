@@ -41,7 +41,8 @@ nicc_retval_t Component_SoC::allocate_block(ComponentBaseDesp_t* desp, Component
     /// base descriptor
     desired_cb->_base_desp->quota = desp->quota;
     /// specific descriptor
-    /* ...... */
+    desired_cb->_desp->device_name = func_input_desp->device_name;
+    desired_cb->_desp->phy_port = func_input_desp->phy_port;
 
     /* Step 3: set target cb's state to default */
     /// reset block state

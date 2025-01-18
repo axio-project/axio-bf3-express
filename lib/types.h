@@ -9,7 +9,13 @@
 
 namespace nicc {
 
-#define __NICC_SPARSE_BITWISE __attribute__((bitwise))
+// Only use bitwise attribute for GCC versions that support it
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 4)
+    #define __NICC_SPARSE_BITWISE __attribute__((bitwise))
+#else
+    #define __NICC_SPARSE_BITWISE
+#endif
+
 #define __NICC_SPARSE_FORCE __attribute__((force))
 
 
