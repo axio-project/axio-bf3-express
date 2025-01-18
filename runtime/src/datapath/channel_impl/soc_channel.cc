@@ -13,7 +13,7 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
     nicc_retval_t retval = NICC_SUCCESS;
     
     this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
-    common_resolve_phy_port(dev_name, phy_port, kMTU, _resolve);
+    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, _resolve);
 
     if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
         NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
@@ -25,7 +25,10 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
         goto exit;
     }
 
-
+    if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
+        NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+        goto exit;
+    }
 
 exit:
     // TODO: destory if failed
@@ -68,121 +71,33 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(this->_resolve.ib_ctx);
+    NICC_CHECK_POINTER(this->_prior_qp=new RDMA_SoC_QP());
+    NICC_CHECK_POINTER(this->_next_qp=new RDMA_SoC_QP());
 
     // Create protection domain, send CQ, and recv CQ
     this->_pd = ibv_alloc_pd(this->_resolve.ib_ctx);
     NICC_CHECK_POINTER(this->_pd);
 
     // Create prior QP and next QP
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(&this->_prior_qp)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->_prior_qp)))){
         NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
         return retval;
     }
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(&this->_next_qp)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->_next_qp)))){
         NICC_WARN_C("failed to create next QP: retval(%u)", retval);
         return retval;
     }
 
-    /// Connect prior QP and next QP for initialization
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(&this->_prior_qp)))){
+    /// Connect prior QP and next QP for exchanging QP info 
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->_prior_qp, true)))){
         NICC_WARN_C("failed to connect prior QP and next QP: retval(%u)", retval);
         return retval;
     }
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(&this->_next_qp)))){
+    /// sleep for 10 seconds
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->_next_qp, false)))){
         NICC_WARN_C("failed to connect next QP and prior QP: retval(%u)", retval);
         return retval;
     }
-
-    /// exchange qp info via TCP mgmt connection
-    // \todo: send queue for host, recv queue for prior component block
-    struct QPInfo qp_info;
-    struct QPInfo remote_qp_info;
-    this->__set_local_qp_info(&qp_info);
-    TCPClient mgnt_client;
-    NICC_DEBUG_C("connect to server: %s, port: %u", kRemoteIpStr, kDefaultMngtPort);
-    mgnt_client.connectToServer(kRemoteIpStr, kDefaultMngtPort);
-    mgnt_client.sendMsg(qp_info.serialize());
-    remote_qp_info.deserialize(mgnt_client.receiveMsg());
-
-    /// Transition QP to INIT state
-    struct ibv_qp_attr init_attr;
-    memset(static_cast<void *>(&init_attr), 0, sizeof(struct ibv_qp_attr));
-    init_attr.qp_state = IBV_QPS_INIT;
-    init_attr.pkey_index = 0;
-    init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
-    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
-                                IBV_ACCESS_REMOTE_WRITE | 
-                                IBV_ACCESS_REMOTE_READ | 
-                                IBV_ACCESS_REMOTE_ATOMIC;
-    int attr_mask = IBV_QP_STATE | 
-                    IBV_QP_PKEY_INDEX | 
-                    IBV_QP_PORT | 
-                    IBV_QP_ACCESS_FLAGS;
-    if (ibv_modify_qp(this->_qp, &init_attr, attr_mask) != 0) {
-        NICC_WARN_C("failed to modify QP to INIT: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-
-    /// RTR state
-    struct ibv_qp_attr rtr_attr;
-    memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
-    rtr_attr.qp_state = IBV_QPS_RTR;
-    switch(kMTU){
-        case 1024:
-            rtr_attr.path_mtu = IBV_MTU_1024;
-            break;
-        case 2048:
-            rtr_attr.path_mtu = IBV_MTU_2048;
-            break;
-        case 4096:
-            rtr_attr.path_mtu = IBV_MTU_4096;
-            break;
-        default:
-            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", kMTU);
-            return NICC_ERROR_HARDWARE_FAILURE;
-    }
-    rtr_attr.dest_qp_num = remote_qp_info.qp_num;
-    rtr_attr.rq_psn = 0;
-    rtr_attr.max_dest_rd_atomic = 1;
-    rtr_attr.min_rnr_timer = 12;
-
-    rtr_attr.ah_attr.sl = 0;
-    rtr_attr.ah_attr.src_path_bits = 0;
-    rtr_attr.ah_attr.port_num = 1;
-    rtr_attr.ah_attr.dlid = remote_qp_info.lid;
-    memcpy(&rtr_attr.ah_attr.grh.dgid, remote_qp_info.gid, 16);
-    rtr_attr.ah_attr.is_global = 1;
-    rtr_attr.ah_attr.grh.sgid_index = kDefaultGIDIndex;
-    rtr_attr.ah_attr.grh.hop_limit = 2;
-    rtr_attr.ah_attr.grh.traffic_class = 0;
-    if (ibv_modify_qp(this->_qp, &rtr_attr,
-                      IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
-                      IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
-                      IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {
-        NICC_WARN_C("failed to modify QP to RTR: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-
-    /// create address handles
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_ah(&qp_info, &remote_qp_info)))){
-        NICC_WARN_C("failed to create address handles: retval(%u)", retval);
-        return retval;
-    }
-
-    /// RTS state
-    rtr_attr.qp_state = IBV_QPS_RTS;
-    rtr_attr.sq_psn = 0;
-    rtr_attr.timeout = 14;
-    rtr_attr.retry_cnt = 7;
-    rtr_attr.rnr_retry = 7;
-    rtr_attr.max_rd_atomic = 1;
-    if (ibv_modify_qp(this->_qp, &rtr_attr,
-                      IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
-                      IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC)) {
-        NICC_WARN_C("failed to modify QP to RTS: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-
 
     return retval;
 }
@@ -217,56 +132,163 @@ nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
     NICC_CHECK_POINTER(qp->_qp);
     qp->_qp_id = qp->_qp->qp_num;
 
-    /// Allocate memory for send/recv ring
-    qp->_sw_ring = new Buffer*[kSQDepth];
-    qp->_tx_queue = new Buffer*[kSQDepth];
-    qp->_rx_ring = new Buffer*[kRQDepth];
-
     return retval;
 }
 
-void Channel_SoC::__set_local_qp_info(QPInfo *qp_info) {
+nicc_retval_t Channel_SoC::__connect_qp(RDMA_SoC_QP *qp, bool is_prior) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(qp);
+    NICC_CHECK_POINTER(this->_pd);
+
+    struct QPInfo qp_info;
+    memset(&qp_info, 0, sizeof(struct QPInfo));
+    struct QPInfo remote_qp_info;
+    memset(&remote_qp_info, 0, sizeof(struct QPInfo));
+
+    this->__set_local_qp_info(&qp_info, qp);
+    if(is_prior) {
+        TCPServer mgnt_server(kDefaultMngtPort);
+        mgnt_server.acceptConnection();
+        mgnt_server.sendMsg(qp_info.serialize());
+        remote_qp_info.deserialize(mgnt_server.receiveMsg());
+        mgnt_server.disconnect();
+    }
+    else {
+        TCPClient mgnt_client;
+        mgnt_client.connectToServer(kNextBlockIpStr, kDefaultMngtPort);
+        mgnt_client.sendMsg(qp_info.serialize());
+        remote_qp_info.deserialize(mgnt_client.receiveMsg());
+        mgnt_client.disconnect();
+    }
+
+    /// Transition QP to INIT state
+    struct ibv_qp_attr init_attr;
+    memset(static_cast<void *>(&init_attr), 0, sizeof(struct ibv_qp_attr));
+    init_attr.qp_state = IBV_QPS_INIT;
+    init_attr.pkey_index = 0;
+    init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
+    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
+                                IBV_ACCESS_REMOTE_WRITE | 
+                                IBV_ACCESS_REMOTE_READ | 
+                                IBV_ACCESS_REMOTE_ATOMIC;
+    int attr_mask = IBV_QP_STATE | 
+                    IBV_QP_PKEY_INDEX | 
+                    IBV_QP_PORT | 
+                    IBV_QP_ACCESS_FLAGS;
+    if (ibv_modify_qp(qp->_qp, &init_attr, attr_mask) != 0) {
+        NICC_WARN_C("failed to modify QP to INIT: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    /// RTR state
+    struct ibv_qp_attr rtr_attr;
+    memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
+    rtr_attr.qp_state = IBV_QPS_RTR;
+    switch(RDMA_SoC_QP::kMTU){
+        case 1024:
+            rtr_attr.path_mtu = IBV_MTU_1024;
+            break;
+        case 2048:
+            rtr_attr.path_mtu = IBV_MTU_2048;
+            break;
+        case 4096:
+            rtr_attr.path_mtu = IBV_MTU_4096;
+            break;
+        default:
+            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", RDMA_SoC_QP::kMTU);
+            return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rtr_attr.dest_qp_num = remote_qp_info.qp_num;
+    rtr_attr.rq_psn = 0;
+    rtr_attr.max_dest_rd_atomic = 1;
+    rtr_attr.min_rnr_timer = 12;
+
+    rtr_attr.ah_attr.sl = 0;
+    rtr_attr.ah_attr.src_path_bits = 0;
+    rtr_attr.ah_attr.port_num = 1;
+    rtr_attr.ah_attr.dlid = remote_qp_info.lid;
+    memcpy(&rtr_attr.ah_attr.grh.dgid, remote_qp_info.gid, 16);
+    rtr_attr.ah_attr.is_global = 1;
+    rtr_attr.ah_attr.grh.sgid_index = kDefaultGIDIndex;
+    rtr_attr.ah_attr.grh.hop_limit = 2;
+    rtr_attr.ah_attr.grh.traffic_class = 0;
+    if (ibv_modify_qp(qp->_qp, &rtr_attr,
+                      IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
+                      IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
+                      IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {
+        NICC_WARN_C("failed to modify QP to RTR: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    /// create address handles
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_ah(&qp_info, &remote_qp_info, qp)))){
+        NICC_WARN_C("failed to create address handles: retval(%u)", retval);
+        return retval;
+    }
+
+    /// RTS state
+    rtr_attr.qp_state = IBV_QPS_RTS;
+    rtr_attr.sq_psn = 0;
+    rtr_attr.timeout = 14;
+    rtr_attr.retry_cnt = 7;
+    rtr_attr.rnr_retry = 7;
+    rtr_attr.max_rd_atomic = 1;
+    if (ibv_modify_qp(qp->_qp, &rtr_attr,
+                      IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
+                      IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC)) {
+        NICC_WARN_C("failed to modify QP to RTS: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    qp->_remote_qp_id = remote_qp_info.qp_num;
+    return retval;
+}
+
+void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
     NICC_CHECK_POINTER(qp_info);
-    qp_info->qp_num = this->_qp_id;
+    NICC_CHECK_POINTER(qp);
+    qp_info->qp_num = qp->_qp_id;
     qp_info->lid = this->_resolve.port_lid;
     for (size_t i = 0; i < 16; i++) {
         qp_info->gid[i] = this->_resolve.gid.raw[i];
     }
-    qp_info->mtu = kMTU;
+    qp_info->mtu = RDMA_SoC_QP::kMTU;
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
 }
 
-nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_info) {
+nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_info, RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(local_qp_info);
     NICC_CHECK_POINTER(remote_qp_info);
+    NICC_CHECK_POINTER(qp);
     struct ibv_ah_attr ah_attr;
-    
-    /// Create local AH
-    union ibv_gid gid; 
-    memset(&gid, 0, sizeof(union ibv_gid));
-    memcpy(&gid, local_qp_info->gid, sizeof(union ibv_gid));
-    memset(&ah_attr, 0, sizeof(struct ibv_ah_attr));
-            ah_attr.is_global = 1;
-            ah_attr.dlid = 0;  // RoCE v2 doesn't use LID
-            ah_attr.sl = 0;    // Service level
-            ah_attr.src_path_bits = 0;
-            ah_attr.port_num = _resolve.dev_port_id;  // Use the actual port number
-            
-            // Set GID fields
-            ah_attr.grh.dgid = gid;  // Use the entire GID structure
-            ah_attr.grh.sgid_index = kDefaultGIDIndex;
-            ah_attr.grh.hop_limit = 1;  // Typical value for local network
-            ah_attr.grh.traffic_class = 0;
-            ah_attr.grh.flow_label = 0;
-    
-    this->_local_ah = ibv_create_ah(this->_pd, &ah_attr);
-    if (unlikely(this->_local_ah == nullptr)) {
-        NICC_WARN_C("failed to create local AH");
-        return NICC_ERROR_HARDWARE_FAILURE;
+    if (this->_local_ah == nullptr) {
+        /// Create local AH, only once
+        union ibv_gid gid; 
+        memset(&gid, 0, sizeof(union ibv_gid));
+        memcpy(&gid, local_qp_info->gid, sizeof(union ibv_gid));
+        memset(&ah_attr, 0, sizeof(struct ibv_ah_attr));
+                ah_attr.is_global = 1;
+                ah_attr.dlid = 0;  // RoCE v2 doesn't use LID
+                ah_attr.sl = 0;    // Service level
+                ah_attr.src_path_bits = 0;
+                ah_attr.port_num = _resolve.dev_port_id;  // Use the actual port number
+                
+                // Set GID fields
+                ah_attr.grh.dgid = gid;  // Use the entire GID structure
+                ah_attr.grh.sgid_index = kDefaultGIDIndex;
+                ah_attr.grh.hop_limit = 1;  // Typical value for local network
+                ah_attr.grh.traffic_class = 0;
+                ah_attr.grh.flow_label = 0;
+        
+        this->_local_ah = ibv_create_ah(this->_pd, &ah_attr);
+        if (unlikely(this->_local_ah == nullptr)) {
+            NICC_WARN_C("failed to create local AH");
+            return NICC_ERROR_HARDWARE_FAILURE;
+        }
     }
+
     /// Create remote AH
-    this->_remote_qp_id = remote_qp_info->qp_num;
+    qp->_remote_qp_id = remote_qp_info->qp_num;
     memset(&ah_attr, 0, sizeof(struct ibv_ah_attr));
             ah_attr.sl = 0;
             ah_attr.src_path_bits = 0;
@@ -277,15 +299,15 @@ nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_
             ah_attr.grh.sgid_index = kDefaultGIDIndex;
             ah_attr.grh.hop_limit = 2;
             ah_attr.grh.traffic_class = 0;
-    this->_remote_ah = ibv_create_ah(this->_pd, &ah_attr);
-    if (unlikely(this->_remote_ah == nullptr)) {
+    qp->_remote_ah = ibv_create_ah(this->_pd, &ah_attr);
+    if (unlikely(qp->_remote_ah == nullptr)) {
         NICC_WARN_C("failed to create remote AH");
         return NICC_ERROR_HARDWARE_FAILURE;
     }
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__init_ring() {
+nicc_retval_t Channel_SoC::__init_rings() {
     nicc_retval_t retval = NICC_SUCCESS;
     // Initialize the ring buffer
     /// Step 1: Allocate memory for the ring buffer
@@ -299,19 +321,27 @@ nicc_retval_t Channel_SoC::__init_ring() {
     this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
 
     /// Step 2: Initialize the ring buffer
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs()))){
-        NICC_WARN_C("failed to initialize the recv ring buffer");
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->_prior_qp)))){
+        NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
         return retval;
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends()))){
-        NICC_WARN_C("failed to initialize the send ring buffer");
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->_prior_qp)))){
+        NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
+        return retval;
+    }
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->_next_qp)))){
+        NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
+        return retval;
+    }
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->_next_qp)))){
+        NICC_WARN_C("failed to initialize the send ring buffer for next component block");
         return retval;
     }
 
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__init_recvs() {
+nicc_retval_t Channel_SoC::__init_recvs(RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     // Initialize the memory region for RECVs
     const size_t ring_extent_size = kRQDepth * kRecvMbufSize;
@@ -328,46 +358,46 @@ nicc_retval_t Channel_SoC::__init_recvs() {
         uint8_t *buf = ring_extent->buf_;
         const size_t offset = (i * kRecvMbufSize);
         NICC_ASSERT(offset + kRecvMbufSize <= ring_extent_size);
-        this->_recv_sgl[i].length = kRecvMbufSize;
-        this->_recv_sgl[i].lkey = ring_extent->lkey_;
-        this->_recv_sgl[i].addr = reinterpret_cast<uint64_t>(&buf[offset]);
-        this->_recv_wr[i].wr_id = i;
-        this->_recv_wr[i].sg_list = &this->_recv_sgl[i];
-        this->_recv_wr[i].num_sge = 1;      /// Only one SGE per recv wr
-        this->_rx_ring[i] = new Buffer(&buf[offset], kRecvMbufSize, ring_extent->lkey_);  // RX ring entry
-        this->_rx_ring[i]->state_ = Buffer::kPOSTED;
-        this->_recv_wr[i].next = (i < kRQDepth - 1) ? &this->_recv_wr[i + 1] : &this->_recv_wr[0];
+        qp->_recv_sgl[i].length = kRecvMbufSize;
+        qp->_recv_sgl[i].lkey = ring_extent->lkey_;
+        qp->_recv_sgl[i].addr = reinterpret_cast<uint64_t>(&buf[offset]);
+        qp->_recv_wr[i].wr_id = i;
+        qp->_recv_wr[i].sg_list = &qp->_recv_sgl[i];
+        qp->_recv_wr[i].num_sge = 1;      /// Only one SGE per recv wr
+        qp->_rx_ring[i] = new Buffer(&buf[offset], kRecvMbufSize, ring_extent->lkey_);  // RX ring entry
+        qp->_rx_ring[i]->state_ = Buffer::kPOSTED;
+        qp->_recv_wr[i].next = (i < kRQDepth - 1) ? &qp->_recv_wr[i + 1] : &qp->_recv_wr[0];
     }
 
     // Circular link rx ring
     for (size_t i = 0; i < kRQDepth; i++) {
-        this->_rx_ring[i]->next_ = (i < kRQDepth - 1) ? this->_rx_ring[i + 1] : this->_rx_ring[0];
+        qp->_rx_ring[i]->next_ = (i < kRQDepth - 1) ? qp->_rx_ring[i + 1] : qp->_rx_ring[0];
     }
 
     // Fill the RECV queue. post_recvs() can use fast RECV and therefore not
     // actually fill the RQ, so post_recvs() isn't usable here.
     struct ibv_recv_wr *bad_wr;
-    this->_recv_wr[kRQDepth - 1].next = nullptr;  // Breaker of chains, mother of dragons
+    qp->_recv_wr[kRQDepth - 1].next = nullptr;  // Breaker of chains, mother of dragons
 
-    int ret = ibv_post_recv(this->_qp, &this->_recv_wr[0], &bad_wr);
+    int ret = ibv_post_recv(qp->_qp, &qp->_recv_wr[0], &bad_wr);
     if (unlikely(ret != 0)) {
         NICC_WARN_C("failed to fill RECV queue");
         return NICC_ERROR_HARDWARE_FAILURE;
     }
-    this->_recv_wr[kRQDepth - 1].next = &this->_recv_wr[0];  // Restore circularity
+    qp->_recv_wr[kRQDepth - 1].next = &qp->_recv_wr[0];  // Restore circularity
 
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__init_sends() {
+nicc_retval_t Channel_SoC::__init_sends(RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     for (size_t i = 0; i < kSQDepth; i++) {
-        this->_send_wr[i].opcode = IBV_WR_SEND;
-        this->_send_wr[i].send_flags = IBV_SEND_SIGNALED;
-        this->_send_wr[i].sg_list = &this->_send_sgl[i];
-        this->_send_wr[i].num_sge = 1;
+        qp->_send_wr[i].opcode = IBV_WR_SEND;
+        qp->_send_wr[i].send_flags = IBV_SEND_SIGNALED;
+        qp->_send_wr[i].sg_list = &qp->_send_sgl[i];
+        qp->_send_wr[i].num_sge = 1;
         // Circular link send wr
-        this->_send_wr[i].next = (i < kSQDepth - 1) ? &this->_send_wr[i + 1] : &this->_send_wr[0];
+        qp->_send_wr[i].next = (i < kSQDepth - 1) ? &qp->_send_wr[i + 1] : &qp->_send_wr[0];
     }
     return retval;
 }

@@ -46,7 +46,7 @@ public:
 
     void disconnect() {
         close(sockfd);
-        std::cout << "Disconnected from server." << std::endl;
+        // std::cout << "Disconnected from server." << std::endl;
     }
 
     ~TCPClient() {
@@ -88,7 +88,7 @@ public:
             std::cerr << "Accept failed." << std::endl;
             exit(1);
         }
-        std::cout << "Connection accepted." << std::endl;
+        // std::cout << "Connection accepted." << std::endl;
     }
 
     void sendMsg(const std::string &msg) {
@@ -103,7 +103,7 @@ public:
 
     void disconnect() {
         close(new_socket);
-        std::cout << "Client disconnected." << std::endl;
+        // std::cout << "Client disconnected." << std::endl;
     }
 
     ~TCPServer() {

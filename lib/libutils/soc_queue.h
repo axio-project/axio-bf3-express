@@ -3,6 +3,7 @@
 #include "request_def.h"
 #include "math_utils.h"
 #include "buffer.h"
+#include <infiniband/verbs.h>
 
 namespace nicc {
 #define kWsQueueSize 1024
@@ -64,26 +65,38 @@ struct soc_shm_lock_free_queue {
  */
 class RDMA_SoC_QP {
  public:
+    static constexpr size_t kNumRxRingEntries = 2048;
+    static_assert(is_power_of_two<size_t>(kNumRxRingEntries), "The num of RX ring entries is not power of two.");
+    static constexpr size_t kNumTxRingEntries = 2048;
+    static_assert(is_power_of_two<size_t>(kNumTxRingEntries), "The num of TX ring entries is not power of two.");
+    static constexpr size_t kMTU = 1024;
+    static_assert(is_power_of_two<size_t>(kMTU), "The size of MTU is not power of two.");
+
     struct ibv_cq *_send_cq = nullptr;
     struct ibv_cq *_recv_cq = nullptr;
     struct ibv_qp *_qp = nullptr;
     size_t _qp_id = SIZE_MAX;
+    size_t _remote_qp_id = SIZE_MAX;
+    /// An address handle for this endpoint's port. 
+    struct ibv_ah *_remote_ah = nullptr;  ///< An address handle for the remote endpoint's port.
+
     /* SEND */
-    struct ibv_send_wr *_send_wr = nullptr;
-    struct ibv_sge *_send_sgl = nullptr;
-    struct ibv_wc *_send_wc = nullptr;
+    struct ibv_send_wr _send_wr[kNumTxRingEntries];
+    struct ibv_sge _send_sgl[kNumTxRingEntries];
+    struct ibv_wc _send_wc[kNumTxRingEntries];
     size_t _send_head = 0;
     size_t _send_tail = 0;
 
-    Buffer **_sw_ring = nullptr;
-    Buffer **_tx_queue = nullptr;
+    Buffer *_sw_ring[kNumTxRingEntries];
+    Buffer *_tx_queue[kNumTxRingEntries];
     size_t _tx_queue_idx = 0;
     /* RECV */
-    struct ibv_recv_wr *_recv_wr = nullptr;
-    struct ibv_sge *_recv_sgl = nullptr;
-    struct ibv_wc *_recv_wc = nullptr;
+    struct ibv_recv_wr _recv_wr[kNumRxRingEntries];
+    struct ibv_sge _recv_sgl[kNumRxRingEntries];
+    struct ibv_wc _recv_wc[kNumRxRingEntries];
     size_t _recv_head = 0;
-    Buffer **_rx_ring = nullptr;
+    Buffer *_rx_ring[kNumRxRingEntries];
     size_t _ring_head = 0;
 };
 } // namespace nicc
+
