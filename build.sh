@@ -87,7 +87,8 @@ build_nicc() {
   fi
   cd $script_dir
   if [ $BUILD_TARGET = "./lib" ]; then
-    cp -r $2/build/lib/libnicc.a ./bin
+    mv $2/build/lib/libnicc.a ./bin
+    mv $2/build/lib/libnicc.a.p ./bin
   fi
 }
 

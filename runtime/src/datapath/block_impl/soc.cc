@@ -1,6 +1,7 @@
 #include "datapath/block_impl/soc.h"
 
 namespace nicc {
+static void __soc_wrapper_thread_func(ComponentFuncState_SoC_t *func_state);
 
 nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
@@ -70,6 +71,14 @@ nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_
         goto exit;
     }   
 
+    // create wrapper process for the function
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__create_wrapper_process(func_state)
+    ))) {
+        NICC_WARN_C("failed to create wrapper process for the function: nicc_retval(%u)", retval);
+        goto exit;
+    }
+
 exit:
 
     // TODO: destory if failed
@@ -77,5 +86,27 @@ exit:
     return retval;
 }
 
+
+nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_SoC_t *func_state){
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(func_state->context = new SoCWrapper::SoCWrapperContext());
+    // NICC_CHECK_POINTER(context->pkt_handler = func_state->pkt_handler);
+    // NICC_CHECK_POINTER(context->match_action_table = func_state->match_action_table);
+    NICC_CHECK_POINTER(func_state->context->prior_qp = func_state->channel->prior_qp);
+    NICC_CHECK_POINTER(func_state->context->next_qp = func_state->channel->next_qp);
+
+    // create wrapper process for the function
+    NICC_CHECK_POINTER(func_state->wrapper_thread = new std::thread(__soc_wrapper_thread_func, func_state));
+    // bind the thread to the core
+    size_t core = bind_to_core(*func_state->wrapper_thread, /*SoC only has numa 0*/0, /*thread id, \todo: enable multiple threads*/0);
+    NICC_LOG("Successfully created SoC wrapper thread: core(%lu)", core);
+
+    return retval;
+}
+
+static void __soc_wrapper_thread_func(ComponentFuncState_SoC_t *func_state) {
+    // Create a SoCWrapper object and call its run method
+    SoCWrapper wrapper(SoCWrapper::kSoC_Dispatcher, func_state->context);
+}
 
 } // namespace nicc

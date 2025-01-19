@@ -19,7 +19,7 @@
 # arg3: Directory to install the DPA Device build, final output is <arg2>/<arg1>.a
 
 CUR_DIR=$(pwd)
-LIB_UTIL_DIR=$CUR_DIR/../../libutils
+LIB_UTIL_DIR=$CUR_DIR/../../common
 KERNEL_DIR=$CUR_DIR/../../../examples/udp_echo
 
 # Input parameters

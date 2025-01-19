@@ -2,7 +2,7 @@
 
 namespace nicc {
 
-SoCWrapper::SoCWrapper(soc_wrapper_type_t type) {
+SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     nicc_retval_t retval = NICC_SUCCESS;
     if (type & kSoC_Dispatcher) {
         // init the dispatcher

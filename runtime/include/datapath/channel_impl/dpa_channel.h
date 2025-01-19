@@ -8,7 +8,7 @@
 #include "common.h"
 #include "log.h"
 #include "datapath/channel.h"
-#include "libutils/dpa_queue.h"
+#include "common/dpa_queue.h"
 
 namespace nicc {
 class Channel_DPA : public Channel {

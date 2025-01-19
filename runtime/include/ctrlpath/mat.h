@@ -10,7 +10,7 @@
 #include "common.h"
 #include "log.h"
 #include "types.h"
-#include "libutils/crc32.h"
+#include "common/crc32.h"
 
 
 namespace nicc

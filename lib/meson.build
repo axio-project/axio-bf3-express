@@ -16,7 +16,8 @@ configure_file(input : root_dir + '/lib/log/debug.h.in', output : 'debug.h', con
 
 # compile targets
 subdir('log')
-# subdir('wrapper/soc')
+subdir('common')
+subdir('wrapper/soc')
 
 # build nicc library
 message('source files: ' + ' '.join(lib_sources))
@@ -33,5 +34,6 @@ nicc_lib = static_library(
     cpp_args: lib_c_args,
     link_args: lib_ld_args,
     include_directories: lib_inc_dirs,
-    install: false
+    install: false,
+    pic: true
 )

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.h"
-#include "libutils/iphdr.h"
+#include "common/iphdr.h"
 #include <netinet/udp.h>
 
 namespace nicc {

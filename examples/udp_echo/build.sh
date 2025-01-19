@@ -19,7 +19,7 @@
 # arg3: Directory to install the DPA Device build, final output is <arg2>/<arg1>.a
 
 CUR_DIR=$(pwd)
-LIB_DIR=$CUR_DIR/../../lib/libutils
+LIB_DIR=$CUR_DIR/../../lib/common
 
 # Input parameters
 SOURCE_FILE="$CUR_DIR/src/dpa_kernel.c"

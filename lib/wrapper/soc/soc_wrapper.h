@@ -1,6 +1,6 @@
 #pragma once
 #include "common.h"
-// \todo #include "comm_lib.h" for queue management and communication
+#include "common/soc_queue.h"
 
 namespace nicc {
 
@@ -11,22 +11,26 @@ class SoCWrapper {
 /**
  * ----------------------Parameters used in SoCWrapper----------------------
  */ 
-enum soc_wrapper_type_t {
-    kSoC_Dispatcher = 0x01,     /// The thread will communicate with other component blocks
-    kSoC_Worker = 0x02          /// The thread will execute the app function
-};
 /**
- * ----------------------Internel Structures----------------------
+ * ----------------------Public Structures----------------------
  */ 
+ public:
+    enum soc_wrapper_type_t {
+        kSoC_Dispatcher = 0x01,     /// The thread will communicate with other component blocks
+        kSoC_Worker = 0x02          /// The thread will execute the app function
+    };
     /**
-     * \brief   \todo Add local SoCWrapper context for executing SoC functions, including
+     * \brief   local SoCWrapper context for executing SoC functions, including
      *                - function state ptr
      *                - event handler ptr
+     *                - queue pair ptrs for component block communication
      */
-    struct SoCContext{
+    struct SoCWrapperContext{
         /* ========== metadata for dispatcher ========== */
-        /// e.g. comm_lib
-        /// e.g. MT for dispatching rules
+        RDMA_SoC_QP *prior_qp;    /// QP for communicating with the prior component block
+        RDMA_SoC_QP *next_qp;     /// QP for communicating with the next component block
+        /// e.g. pkt handler ptr
+        /// e.g. match-action table ptr
         /* ========== metadata for worker ========== */
         /// e.g. function state ptr
         /// e.g. event handler ptr
@@ -40,9 +44,9 @@ enum soc_wrapper_type_t {
      * \brief Constructor, ComponentBlock_SoC calls this when allocating a thread for SoCWrapper.
      *        For dispatcher, 
      * \param type  type of the SoCWrapper
-     * \param context \todo   context of the SoCWrapper, registered by the ComponentBlock_SoC
+     * \param context context of the SoCWrapper, registered by the ComponentBlock_SoC
      */
-    SoCWrapper(soc_wrapper_type_t type);
+    SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context);
     ~SoCWrapper(){}
 
 /**
