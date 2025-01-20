@@ -25,14 +25,6 @@ class Channel_SoC : public Channel {
  */ 
  public:
     // static constexpr size_t kMaxPayloadSize = kMTU - sizeof(iphdr) - sizeof(udphdr);
-    /// Minimal number of buffered packets for collect_tx_pkts
-    static constexpr size_t kTxBatchSize = 32;
-    /// Maximum number of transmitted packets for tx_burst
-    static constexpr size_t kTxPostSize = 32;
-    /// Minimal number of buffered packets before dispatching
-    static constexpr size_t kRxBatchSize = 32;
-    /// Maximum number of packets received in rx_burst
-    static constexpr size_t kRxPostSize = 128;
 
     static constexpr size_t kMaxRoutingInfoSize = 48;  ///< Space for routing info
     static constexpr size_t kMaxInline = 60;   ///< Maximum send wr inline data
@@ -217,8 +209,6 @@ class Channel_SoC : public Channel {
 
     /// Parameters for tx/rx ring
     struct ibv_mr *_mr = nullptr;
-    size_t _free_send_wr_num = kSQDepth;
-    size_t _wait_for_disp = 0;
 };
 
 }  // namespace nicc

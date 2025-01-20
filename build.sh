@@ -99,6 +99,7 @@ clean_nicc() {
   cd $script_dir
   if [ $2 = "./lib" ]; then
     rm ./bin/libnicc.a
+    rm -r ./bin/libnicc.a.p
   fi
   cd $2
   log ">> cleaning $1..."

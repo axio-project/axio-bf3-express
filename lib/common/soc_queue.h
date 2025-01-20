@@ -21,7 +21,7 @@ namespace nicc {
  * only operate on the head of the queue.q
  */
 struct soc_shm_lock_free_queue {
-    request_t* queue_[kWsQueueSize];
+    uint8_t* queue_[kWsQueueSize];
     volatile size_t head_ = 0;
     volatile size_t tail_ = 0;
     const size_t mask_ = kWsQueueSize - 1;  // Assuming kWsQueueSize is a power of 2
@@ -30,16 +30,16 @@ struct soc_shm_lock_free_queue {
         rt_assert(is_power_of_two<size_t>(kWsQueueSize), "The size of Ws Queue is not power of two.");
         memset(queue_, 0, sizeof(queue_));
     }
-    inline bool enqueue(request_t *pkt) {
+    inline bool enqueue(uint8_t *pkt) {
         size_t next_tail = (tail_ + 1) & mask_;
         if (next_tail == head_) return false;
         queue_[tail_] = pkt;
         tail_ = next_tail;
         return true;
     }
-    inline request_t* dequeue() {
+    inline uint8_t* dequeue() {
         if (head_ == tail_) return nullptr;
-        request_t* ret = queue_[head_];
+        uint8_t* ret = queue_[head_];
         head_ = (head_ + 1) & mask_;
         return ret;
     }
@@ -97,6 +97,11 @@ class RDMA_SoC_QP {
     size_t _recv_head = 0;
     Buffer *_rx_ring[kNumRxRingEntries];
     size_t _ring_head = 0;
+
+    // idx for ownership transfer between dispatcher and worker
+    struct soc_shm_lock_free_queue *_worker_queue = nullptr;
+    size_t _free_send_wr_num = kNumTxRingEntries;
+    size_t _wait_for_disp = 0;
 };
 } // namespace nicc
 

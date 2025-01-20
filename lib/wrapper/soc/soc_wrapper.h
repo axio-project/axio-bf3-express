@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "log.h"
 #include "common/soc_queue.h"
 
 namespace nicc {
@@ -11,11 +12,21 @@ class SoCWrapper {
 /**
  * ----------------------Parameters used in SoCWrapper----------------------
  */ 
+ public:
+    /// Minimal number of buffered packets for collect_tx_pkts
+    static constexpr size_t kTxBatchSize = 32;
+    /// Maximum number of transmitted packets for tx_burst
+    static constexpr size_t kTxPostSize = 32;
+    /// Minimal number of buffered packets before dispatching
+    static constexpr size_t kRxBatchSize = 32;
+    /// Maximum number of packets received in rx_burst
+    static constexpr size_t kRxPostSize = 128;
 /**
  * ----------------------Public Structures----------------------
  */ 
  public:
     enum soc_wrapper_type_t {
+        kSoC_Invalid = 0x00,
         kSoC_Dispatcher = 0x01,     /// The thread will communicate with other component blocks
         kSoC_Worker = 0x02          /// The thread will execute the app function
     };
@@ -72,9 +83,34 @@ class SoCWrapper {
     /**
      * \brief Post receive wrs to the NIC, and update the recv head
      * \param RDMA_SoC_QP *qp, the QP for receiving packets
-     * \return the number of packets received
+     * \param size_t num_recvs, the number of receive wrs to be posted
      */
-    size_t __post_recvs(RDMA_SoC_QP *qp);
+    static void __post_recvs(RDMA_SoC_QP *qp, size_t num_recvs) {
+        // The recvs posted are @first_wr through @last_wr, inclusive
+        struct ibv_recv_wr *first_wr, *last_wr, *temp_wr, *bad_wr;
+
+        int ret;
+        size_t first_wr_i = qp->_recv_head;
+        size_t last_wr_i = first_wr_i + (num_recvs - 1);
+        if (last_wr_i >= RDMA_SoC_QP::kNumRxRingEntries) last_wr_i -= RDMA_SoC_QP::kNumRxRingEntries;
+
+        first_wr = &qp->_recv_wr[first_wr_i];
+        last_wr = &qp->_recv_wr[last_wr_i];
+        temp_wr = last_wr->next;
+
+        last_wr->next = nullptr;  // Breaker of chains, queen of the First Men
+
+        ret = ibv_post_recv(qp->_qp, first_wr, &bad_wr);
+        if (unlikely(ret != 0)) {
+            NICC_ERROR("SoCWrapper: Post RECV (normal) error %d\n", ret);
+        }
+
+        last_wr->next = temp_wr;  // Restore circularity
+
+        // Update RECV head: go to the last wr posted and take 1 more step
+        qp->_recv_head = last_wr_i;
+        qp->_recv_head = (qp->_recv_head + 1) % RDMA_SoC_QP::kNumRxRingEntries;
+    }
 
     /**
      * \brief Receive packets from the NIC and put them into the dispatcher rx queue.
@@ -93,6 +129,13 @@ class SoCWrapper {
     size_t __dispatch_rx_pkts(RDMA_SoC_QP *qp);
 
     /**
+     * \brief Iterate all worker queues assigned to this dispatcher, and collect packets from them.
+     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \return the number of packets collected
+     */
+    size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+
+    /**
      * \brief Flush the dispatcher tx queue to the NIC. Dispatcher will be blocked
      * until all packets are sent
      * \param RDMA_SoC_QP *qp, the QP for sending packets
@@ -100,12 +143,16 @@ class SoCWrapper {
      */
     size_t __tx_flush(RDMA_SoC_QP *qp);
 
-    /**
-     * \brief Iterate all worker queues assigned to this dispatcher, and collect packets from them.
-     * \param RDMA_SoC_QP *qp, the QP for sending packets
-     * \return the number of packets collected
-     */
-    size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+
+/**
+ * ----------------------Internel parameters----------------------
+ */
+ private:
+    soc_wrapper_type_t _type = kSoC_Invalid;
+    SoCWrapperContext *_context = nullptr;
+    /// QPs
+    RDMA_SoC_QP *_prior_qp = nullptr;
+    RDMA_SoC_QP *_next_qp = nullptr;
 };
 
 
