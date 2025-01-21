@@ -101,6 +101,8 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
     size_t core = bind_to_core(*func_state->wrapper_thread, /*SoC only has numa 0*/0, /*thread id, \todo: enable multiple threads*/0);
     NICC_LOG("Successfully created SoC wrapper thread: core(%lu)", core);
 
+    /// wait thread join. \todo move this to __pipeline_run()
+    func_state->wrapper_thread->join();
     return retval;
 }
 

@@ -24,7 +24,6 @@ class Channel_SoC : public Channel {
  * ----------------------Parameters of SoC Channel----------------------
  */ 
  public:
-    // static constexpr size_t kMaxPayloadSize = kMTU - sizeof(iphdr) - sizeof(udphdr);
 
     static constexpr size_t kMaxRoutingInfoSize = 48;  ///< Space for routing info
     static constexpr size_t kMaxInline = 60;   ///< Maximum send wr inline data

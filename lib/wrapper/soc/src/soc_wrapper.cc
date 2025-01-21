@@ -24,12 +24,17 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
             return;
         }
     }
+    /// run the SoCWrapper
+    this->__run(10.0);
+    return;
 }
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {
     /// Allocate the SHM queue for transferring buffers between dispatcher and worker
-    this->_prior_qp->_worker_queue = new soc_shm_lock_free_queue();
-    this->_next_qp->_worker_queue = new soc_shm_lock_free_queue();
+    this->_prior_qp->_rx_worker_queue = new soc_shm_lock_free_queue();
+    this->_prior_qp->_tx_worker_queue = new soc_shm_lock_free_queue();
+    this->_next_qp->_rx_worker_queue = new soc_shm_lock_free_queue();
+    this->_next_qp->_tx_worker_queue = new soc_shm_lock_free_queue();
     return NICC_SUCCESS;
 }
 
@@ -37,8 +42,53 @@ nicc_retval_t SoCWrapper::__init_worker() {
     return NICC_SUCCESS;
 }
 
-nicc_retval_t SoCWrapper::__run() {
-    return NICC_SUCCESS;
+void SoCWrapper::__run(double seconds) {
+    double freq_ghz = measure_rdtsc_freq();
+    size_t timeout_tsc = ms_to_cycles(1000*seconds, freq_ghz);
+    size_t interval_tsc = us_to_cycles(1.0, freq_ghz);  // launch an event loop once per one us
+
+    /* Start loop */
+    size_t start_tsc = rdtsc();
+    size_t loop_tsc = start_tsc;
+    while (true) {
+        if (rdtsc() - loop_tsc > interval_tsc) {
+            loop_tsc = rdtsc();
+            this->__launch();
+        }
+        if (unlikely(rdtsc() - start_tsc > timeout_tsc)) {
+            /// Only the first workspace records the stats
+            // update_stats(seconds);
+            break;
+        }
+    }
+    return;
+}
+
+void SoCWrapper::__launch() {
+    /* 1. RX Direction, from piror component block to next component block */
+    size_t nb_rx = this->__rx_burst(this->_prior_qp);
+    if (likely(nb_rx)) {
+        /// \todo add user's pkt handler
+        size_t nb_disp = this->__dispatch_rx_pkts(this->_prior_qp);
+    }
+    size_t worker_queue_size = this->_prior_qp->get_rx_worker_queue_size();
+    size_t msg_num = worker_queue_size / kAppReponsePktsNum;
+    if (msg_num > kAppRxMsgBatchSize) {
+        udphdr uh;
+        ws_hdr hdr;
+        for (size_t i = 0; i < msg_num; i++) {
+            for (size_t j = 0; j < kAppReponsePktsNum; j++) {
+                Buffer *m = (Buffer*)this->_prior_qp->_rx_worker_queue->dequeue();
+                rt_assert(m != nullptr, "Get invalid mbuf!");
+                /// handle received messages \todo add user's msg handler
+                /// Generate echo response and add to the tx direction
+                this->__set_echo(m, kAppRespPayloadSize);
+            }
+        }
+    }
+
+
+    /* 2. TX Direction, from next component block to prior component block */
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {

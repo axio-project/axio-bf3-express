@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "common/iphdr.h"
+#include "common/ws_hdr.h"
 #include <netinet/udp.h>
 
 namespace nicc {
@@ -28,12 +29,32 @@ class Buffer {
     return ret.str();
   }
 
+  std::string buffer_print() {
+    struct udphdr *uh = NULL;
+    struct ws_hdr *wsh = NULL;
+
+    char log[2048] = {0};
+    uh = reinterpret_cast<udphdr*>(get_uh());
+    wsh = reinterpret_cast<ws_hdr*>(get_ws_hdr());
+    snprintf(log, sizeof(log),
+        "buffer: %u -> %u, ws_type: %u, ws_seg: %lu, payload_size: %lu\n",
+        ntohs(uh->source),
+        ntohs(uh->dest),
+        wsh->workload_type_,
+        wsh->segment_num_,
+        strlen(reinterpret_cast<char*>(wsh) + sizeof(struct ws_hdr)));
+    return std::string(log);
+  }
+
   void set_lkey(uint32_t lkey) { lkey_ = lkey; }
 
   uint8_t* get_buf() { return buf_; }
   uint8_t* get_buf_offset(size_t offset) { return buf_ + offset; }
+  uint8_t* get_ws_payload() { return buf_ + 14 + sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct ws_hdr);}
+  uint8_t* get_ws_hdr() { return buf_ + 14 + sizeof(struct iphdr) + sizeof(struct udphdr); }
   uint8_t* get_uh() { return buf_ + 14 + sizeof(struct iphdr); }
   uint8_t* get_iph() { return buf_ + 14; }
+  
   void set_length(uint32_t length) { length_ = length; }
 
   /// The backing memory of this Buffer. The Buffer is invalid if this is null.

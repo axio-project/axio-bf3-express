@@ -2,8 +2,69 @@
 #include "common.h"
 #include "log.h"
 #include "common/soc_queue.h"
+#include "common/ws_hdr.h"
+#include "common/timer.h"
+
+#include <net/ethernet.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 
 namespace nicc {
+
+/**
+ * ======================Quick test for the application======================
+ */
+enum msg_handler_type_t : uint8_t {
+  kRxMsgHandler_Empty = 0,
+  kRxMsgHandler_T_APP,
+  kRxMsgHandler_L_APP,
+  kRxMsgHandler_M_APP,
+  kRxMsgHandler_FS_WRITE,
+  kRxMsgHandler_FS_READ,
+  kRxMsgHandler_KV
+};
+enum pkt_handler_type_t : uint8_t {
+  kRxPktHandler_Empty = 0,
+  kRxPktHandler_Echo
+};
+/* -----Message-level specification----- */
+#define kRxMsgHandler kRxMsgHandler_T_APP
+#define ApplyNewMbuf false
+static constexpr size_t kAppTicksPerMsg = 0;    // extra execution ticks for each message, used for more accurate emulation
+/// Payload size for CLIENT behavior
+// Corresponding MAC frame len: 22 -> 64; 86 -> 128; 214 -> 256; 470 -> 512; 982 -> 1024; 1458 -> 1500
+constexpr size_t kAppReqPayloadSize = 
+    (kRxMsgHandler == kRxMsgHandler_Empty) ? 0 :
+    (kRxMsgHandler == kRxMsgHandler_T_APP) ? 982 :
+    (kRxMsgHandler == kRxMsgHandler_L_APP) ? 86 :
+    (kRxMsgHandler == kRxMsgHandler_M_APP) ? 86 : 
+    (kRxMsgHandler == kRxMsgHandler_FS_WRITE) ? KB(16) : 
+    (kRxMsgHandler == kRxMsgHandler_FS_READ) ? 22 : 
+    (kRxMsgHandler == kRxMsgHandler_KV) ?  81 : //type + key size + value size
+    0;
+static_assert(kAppReqPayloadSize > 0, "Invalid application payload size");
+/// Payload size for SERVER behavior
+constexpr size_t kAppRespPayloadSize = 
+    (kRxMsgHandler == kRxMsgHandler_Empty) ? 0 :
+    (kRxMsgHandler == kRxMsgHandler_T_APP) ? 22 :
+    (kRxMsgHandler == kRxMsgHandler_L_APP) ? 86 :
+    (kRxMsgHandler == kRxMsgHandler_M_APP) ? 86 : 
+    (kRxMsgHandler == kRxMsgHandler_FS_WRITE) ? 22 : 
+    (kRxMsgHandler == kRxMsgHandler_FS_READ) ? KB(100) : 
+    (kRxMsgHandler == kRxMsgHandler_KV) ? 81 : // type + key size + value size
+    0;
+static_assert(kAppRespPayloadSize > 0, "Invalid application response payload size");
+// M_APP specific
+static constexpr size_t kMemoryAccessRangePerPkt    = KB(1);
+static constexpr size_t kStatefulMemorySizePerCore  = KB(256);
+
+/* -----Packet-level specification----- */
+#define kRxPktHandler  kRxPktHandler_Empty
+
+// client specific
+#define EnableInflyMessageLimit true    // whether to enable infly message limit, if false, the client will send messages as fast as possible
+static constexpr uint64_t kInflyMessageBudget = 1024;
+
 
 /**
  * \brief Wrapper for executing SoC functions, created and initialized by ComponentBlock_SoC
@@ -13,6 +74,17 @@ class SoCWrapper {
  * ----------------------Parameters used in SoCWrapper----------------------
  */ 
  public:
+    static constexpr uint16_t kAppTxMsgBatchSize = 32;
+    static constexpr uint16_t kAppRxMsgBatchSize = 32;
+
+    /// TX specific
+    static constexpr size_t kAppRequestPktsNum = ceil((double)kAppReqPayloadSize / (double)RDMA_SoC_QP::kMaxPayloadSize);  // number of packets in a request message
+    static constexpr size_t kAppFullPaddingSize = RDMA_SoC_QP::kMaxPayloadSize - sizeof(ws_hdr);
+    static constexpr size_t kAppLastPaddingSize = kAppReqPayloadSize - (kAppRequestPktsNum - 1) * RDMA_SoC_QP::kMaxPayloadSize - sizeof(ws_hdr);
+    // RX specific
+    static constexpr size_t kAppReponsePktsNum = ceil((double)kAppRespPayloadSize / (double)RDMA_SoC_QP::kMaxPayloadSize); // number of packets in a response message
+    static constexpr size_t kAppRespFullPaddingSize = RDMA_SoC_QP::kMaxPayloadSize - sizeof(ws_hdr);
+
     /// Minimal number of buffered packets for collect_tx_pkts
     static constexpr size_t kTxBatchSize = 32;
     /// Maximum number of transmitted packets for tx_burst
@@ -68,15 +140,22 @@ class SoCWrapper {
      * \brief Initialize the dispatcher, including comm_lib
      */
     nicc_retval_t __init_dispatcher();
+
     /**
      * \brief Initialize the worker, registering 
      */
     nicc_retval_t __init_worker();
+
     /**
-     * \brief Run the SoCWrapper datapath in the sequence of worker tx, dispatcher tx, worker rx,
-     *        and dispatcher rx.
+     * \brief Run the SoCWrapper datapath in the sequence of worker tx, dispatcher tx, worker rx, and dispatcher rx.
+     * \param double seconds, the time to run the datapath
      */
-    nicc_retval_t __run();
+    void __run(double seconds);
+
+    /**
+     * \brief Launch the SoC kernel loop
+     */
+    void __launch();
 
     /* ========================SoC Datapath ========================*/
 
@@ -142,6 +221,29 @@ class SoCWrapper {
      * \return the number of packets sent
      */
     size_t __tx_flush(RDMA_SoC_QP *qp);
+
+    /**
+     * \brief set the payload of a buffer
+     * \param Buffer *m, [in] the buffer to be set
+     * \param size_t payload_size, [in] the size of the payload
+     */
+    static void __set_echo(Buffer *m, size_t payload_size) {
+        m->length_ = /* eth + ip + udp */42 + sizeof(ws_hdr) + payload_size;
+        /// switch src udp port and dst udp port
+        udphdr *uh = (udphdr *)m->get_uh();
+        uint16_t src_port = ntohs(uh->source);
+        uint16_t dst_port = ntohs(uh->dest);
+        uh->source = htons(dst_port);
+        uh->dest = htons(src_port);
+        /// set the payload
+        if (unlikely(payload_size == 0)) {
+            return;
+        }
+        char *payload_ptr = (char *)m->get_ws_payload();
+        memset(payload_ptr, 'a', payload_size - 1);
+        payload_ptr[payload_size - 1] = '\0'; 
+        return;
+    }
 
 
 /**
