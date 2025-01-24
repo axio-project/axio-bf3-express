@@ -11,6 +11,8 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     NICC_CHECK_POINTER(this->_context = context);
     NICC_CHECK_POINTER(this->_prior_qp = context->prior_qp);
     NICC_CHECK_POINTER(this->_next_qp = context->next_qp);
+    NICC_CHECK_POINTER(this->_tmp_worker_rx_queue = new soc_shm_lock_free_queue());
+    NICC_CHECK_POINTER(this->_tmp_worker_tx_queue = new soc_shm_lock_free_queue());
     if (type & kSoC_Dispatcher) {
         // init the dispatcher
         if (this->__init_dispatcher() != NICC_SUCCESS) {
@@ -31,10 +33,8 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {
     /// Allocate the SHM queue for transferring buffers between dispatcher and worker
-    this->_prior_qp->_rx_worker_queue = new soc_shm_lock_free_queue();
-    this->_prior_qp->_tx_worker_queue = new soc_shm_lock_free_queue();
-    this->_next_qp->_rx_worker_queue = new soc_shm_lock_free_queue();
-    this->_next_qp->_tx_worker_queue = new soc_shm_lock_free_queue();
+    this->_prior_qp->_disp_worker_queue = this->_tmp_worker_rx_queue;
+    this->_next_qp->_collect_worker_queue = this->_tmp_worker_tx_queue;
     return NICC_SUCCESS;
 }
 
@@ -64,6 +64,7 @@ void SoCWrapper::__run(double seconds) {
     return;
 }
 
+/// \todo divide into worker and dispatcher, now we write in one function
 void SoCWrapper::__launch() {
     /* 1. RX Direction, from piror component block to next component block */
     size_t nb_rx = this->__rx_burst(this->_prior_qp);
@@ -71,24 +72,36 @@ void SoCWrapper::__launch() {
         /// \todo add user's pkt handler
         size_t nb_disp = this->__dispatch_rx_pkts(this->_prior_qp);
     }
-    size_t worker_queue_size = this->_prior_qp->get_rx_worker_queue_size();
-    size_t msg_num = worker_queue_size / kAppReponsePktsNum;
+
+    /// Worker Logic
+    size_t worker_queue_size = this->_tmp_worker_rx_queue->get_size();
+    /// \todo get packets per message within header; now assume 1 packet per message
+    size_t msg_num = worker_queue_size / 1;
     if (msg_num > kAppRxMsgBatchSize) {
-        udphdr uh;
-        ws_hdr hdr;
-        for (size_t i = 0; i < msg_num; i++) {
-            for (size_t j = 0; j < kAppReponsePktsNum; j++) {
-                Buffer *m = (Buffer*)this->_prior_qp->_rx_worker_queue->dequeue();
-                rt_assert(m != nullptr, "Get invalid mbuf!");
-                /// handle received messages \todo add user's msg handler
-                /// Generate echo response and add to the tx direction
-                this->__set_echo(m, kAppRespPayloadSize);
-            }
+        /// handle received messages, \todo add user's msg handler
+
+        /// dequeue from worker queue, and enqueue into next worker for pipelined processing
+        for (size_t i = 0; i < msg_num * 1; i++) {
+            Buffer *m = (Buffer*)this->_tmp_worker_rx_queue->dequeue();
+            this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
         }
     }
 
+    size_t nb_collect = this->__collect_tx_pkts(this->_next_qp);
+
+    if (this->_next_qp->get_tx_queue_size() >= kTxBatchSize) {
+        /// \todo use MAT to decide dst qp_id
+        this->__tx_flush(this->_next_qp);
+    }
 
     /* 2. TX Direction, from next component block to prior component block */
+    nb_rx = this->__rx_burst(this->_next_qp);
+
+    /// immediately send the packets
+    size_t nb_direct_tx = this->__direct_tx_burst(this->_next_qp, this->_prior_qp);
+    if (nb_direct_tx) {
+        size_t nb_tx = this->__tx_flush(this->_prior_qp);
+    }
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
@@ -107,22 +120,21 @@ size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
     /// poll cq
     int ret = ibv_poll_cq(qp->_recv_cq, kRxBatchSize, qp->_recv_wc);
     assert(ret >= 0);
+    /// set buffer's length
+    for (int i = 0; i < ret; i++) {
+        qp->_rx_ring[(qp->_ring_head + qp->_wait_for_disp + i) % RDMA_SoC_QP::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
+    }
     qp->_wait_for_disp += ret;
 
     return static_cast<size_t>(ret);
 }
 
 size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
-    /// \todo dispatch rx_burst packets to worker rx queue; flush the rx queue
-    struct soc_shm_lock_free_queue *worker_queue = qp->_worker_queue;
     size_t dispatch_total = 0;
     Buffer *ring_entry = qp->_rx_ring[qp->_ring_head];
+    struct soc_shm_lock_free_queue *worker_queue = qp->_disp_worker_queue;
     for (size_t i = 0; i < qp->_wait_for_disp; i++) {
-        /// \todo resolve pkt header to get workload_type
-        /// \todo get corresponding workspace id
-        /// \todo get workspace rx queue
         if (unlikely(!worker_queue->enqueue((uint8_t*)ring_entry))) {
-            /// \todo drop the packet if the ws queue is full
             ring_entry->state_ = Buffer::kFREE_BUF;
             ring_entry = ring_entry->next_;
             continue;
@@ -137,11 +149,10 @@ size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
 }
 
 size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
-    size_t remain_ring_size = RDMA_SoC_QP::kMTU - qp->_tx_queue_idx;
+    size_t remain_ring_size = RDMA_SoC_QP::kNumTxRingEntries - qp->_tx_queue_idx;
     uint8_t nb_collect_queue = 0;
     size_t nb_collect_num = 0;
-    /// \todo collect tx_burst packets from worker tx queues
-    struct soc_shm_lock_free_queue *worker_queue = qp->_worker_queue;
+    struct soc_shm_lock_free_queue *worker_queue = qp->_collect_worker_queue;
     size_t tx_size = (worker_queue->get_size() > remain_ring_size) 
                           ? remain_ring_size : worker_queue->get_size();
     for (size_t i = 0; i < tx_size; i++) {
@@ -154,7 +165,7 @@ size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
     return tx_size;
 }
 
-size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
+size_t SoCWrapper::__tx_burst(RDMA_SoC_QP *qp, Buffer **tx, size_t tx_size) {
     // Mount buffers to send wr, generate corresponding sge
     size_t nb_tx_res = 0;   // total number of mounted wr for this burst tx
     /// post send cq first
@@ -168,10 +179,10 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
     /// post send wr
     struct ibv_send_wr* first_wr = &qp->_send_wr[qp->_send_tail];
     struct ibv_send_wr* tail_wr = nullptr;
-    while (qp->_free_send_wr_num > 0 && nb_tx_res < RDMA_SoC_QP::kNumTxRingEntries) {
+    while (qp->_free_send_wr_num > 0 && nb_tx_res < tx_size) {
         tail_wr = &qp->_send_wr[qp->_send_tail];
         struct ibv_sge* sgl = &qp->_send_sgl[qp->_send_tail];
-        Buffer *m = qp->_tx_queue[qp->_tx_queue_idx];
+        Buffer *m = tx[nb_tx_res];
         m->state_ = Buffer::kPOSTED;
         sgl->addr = reinterpret_cast<uint64_t>(m->get_buf());
         sgl->length = m->length_;
@@ -194,6 +205,33 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
         tail_wr->next = temp_wr;  // Restore circularity
     }
     return nb_tx_res;
+}
+
+size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
+    size_t nb_tx = 0, tx_total = 0;
+    Buffer **tx = &qp->_tx_queue[0];
+    while(tx_total < qp->_tx_queue_idx) {
+        nb_tx = this->__tx_burst(qp, tx, qp->_tx_queue_idx - tx_total);
+        tx += nb_tx;
+        tx_total += nb_tx;
+    }
+    qp->_tx_queue_idx = 0;
+    return tx_total;
+}
+
+size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
+    size_t remain_tx_queue_size = (RDMA_SoC_QP::kNumTxRingEntries - tx_qp->_tx_queue_idx > rx_qp->_wait_for_disp) 
+                                    ? rx_qp->_wait_for_disp : RDMA_SoC_QP::kNumTxRingEntries - tx_qp->_tx_queue_idx;
+    
+    for (size_t i = 0; i < remain_tx_queue_size; i++) {
+        Buffer *m = rx_qp->_rx_ring[(rx_qp->_ring_head + i) % RDMA_SoC_QP::kNumRxRingEntries];
+        tx_qp->_tx_queue[tx_qp->_tx_queue_idx] = m;
+        tx_qp->_tx_queue_idx++;
+    }
+    rx_qp->_ring_head = (rx_qp->_ring_head + remain_tx_queue_size) % RDMA_SoC_QP::kNumRxRingEntries;
+    rx_qp->_wait_for_disp -= remain_tx_queue_size;
+
+    return remain_tx_queue_size;
 }
 
 } // namespace nicc

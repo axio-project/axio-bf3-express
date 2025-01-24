@@ -86,6 +86,8 @@ static constexpr size_t kMaxPhyPorts = 2;
 static constexpr size_t kMaxNumaNodes = 2;
 static constexpr size_t kMaxQueuesPerPort = 1;
 static constexpr size_t kHugepageSize = (2 * 1024 * 1024);  ///< Hugepage size
+static constexpr uint8_t kSoCWorkspaceMaxNum = 16;    // max number of workspaces in SoC, including dispatcher and worker
+static constexpr uint16_t kDPAWorkspaceMaxNum = 128;    // max number of workspaces in DPA, including dispatcher and worker
 
 // return values
 enum nicc_retval_t {

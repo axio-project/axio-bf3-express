@@ -1,10 +1,10 @@
 #pragma once
 #include "common.h"
-#include "request_def.h"
-#include "math_utils.h"
-#include "buffer.h"
 #include <infiniband/verbs.h>
+#include <vector>
 
+#include "common/math_utils.h"
+#include "common/buffer.h"
 #include "common/iphdr.h"
 // #include "common/ethhdr.h"
 
@@ -80,10 +80,10 @@ class RDMA_SoC_QP {
     }
 
     size_t get_rx_worker_queue_size() {
-      return this->_rx_worker_queue->get_size();
+      return this->_disp_worker_queue->get_size();
     }
     size_t get_tx_worker_queue_size() {
-      return this->_tx_worker_queue->get_size();
+      return this->_collect_worker_queue->get_size();
     }
 
  public:
@@ -123,8 +123,8 @@ class RDMA_SoC_QP {
     size_t _ring_head = 0;
 
     // idx for ownership transfer between dispatcher and worker
-    struct soc_shm_lock_free_queue *_rx_worker_queue = nullptr;
-    struct soc_shm_lock_free_queue *_tx_worker_queue = nullptr;
+    soc_shm_lock_free_queue* _collect_worker_queue = nullptr;
+    soc_shm_lock_free_queue* _disp_worker_queue = nullptr;
     size_t _free_send_wr_num = kNumTxRingEntries;
     size_t _wait_for_disp = 0;
 };
