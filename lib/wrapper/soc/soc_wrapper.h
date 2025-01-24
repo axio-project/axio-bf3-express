@@ -22,9 +22,9 @@ class SoCWrapper {
     /// Maximum number of transmitted packets for tx_burst
     static constexpr size_t kTxPostSize = 32;
     /// Minimal number of buffered packets before dispatching
-    static constexpr size_t kRxBatchSize = 32;
+    static constexpr size_t kRxBatchSize = 128;
     /// Maximum number of packets received in rx_burst
-    static constexpr size_t kRxPostSize = 128;
+    static constexpr size_t kRxPostSize = 32;
 /**
  * ----------------------Public Structures----------------------
  */ 
