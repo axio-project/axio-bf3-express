@@ -1,6 +1,8 @@
 #pragma once
 #include "common.h"
-// \todo #include "comm_lib.h" for queue management and communication
+#include "log.h"
+#include "common/soc_queue.h"
+#include "common/timer.h"
 
 namespace nicc {
 
@@ -11,27 +13,45 @@ class SoCWrapper {
 /**
  * ----------------------Parameters used in SoCWrapper----------------------
  */ 
-enum soc_wrapper_type_t {
-    kSoC_Dispatcher = 0x01,     /// The thread will communicate with other component blocks
-    kSoC_Worker = 0x02          /// The thread will execute the app function
-};
+ public:
+    static constexpr uint16_t kAppTxMsgBatchSize = 32;
+    static constexpr uint16_t kAppRxMsgBatchSize = 32;
+
+    /// Minimal number of buffered packets for collect_tx_pkts
+    static constexpr size_t kTxBatchSize = 32;
+    /// Maximum number of transmitted packets for tx_burst
+    static constexpr size_t kTxPostSize = 32;
+    /// Minimal number of buffered packets before dispatching
+    static constexpr size_t kRxBatchSize = 32;
+    /// Maximum number of packets received in rx_burst
+    static constexpr size_t kRxPostSize = 128;
 /**
- * ----------------------Internel Structures----------------------
+ * ----------------------Public Structures----------------------
  */ 
+ public:
+    enum soc_wrapper_type_t {
+        kSoC_Invalid = 0x00,
+        kSoC_Dispatcher = 0x01,     /// The thread will communicate with other component blocks
+        kSoC_Worker = 0x02          /// The thread will execute the app function
+    };
     /**
-     * \brief   \todo Add local SoCWrapper context for executing SoC functions, including
+     * \brief   local SoCWrapper context for executing SoC functions, including
      *                - function state ptr
      *                - event handler ptr
+     *                - queue pair ptrs for component block communication
      */
-    struct SoCContext{
+    struct SoCWrapperContext{
         /* ========== metadata for dispatcher ========== */
-        /// e.g. comm_lib
-        /// e.g. MT for dispatching rules
+        RDMA_SoC_QP *prior_qp;    /// QP for communicating with the prior component block
+        RDMA_SoC_QP *next_qp;     /// QP for communicating with the next component block
+        /// e.g. pkt handler ptr
+        /// e.g. match-action table ptr
         /* ========== metadata for worker ========== */
         /// e.g. function state ptr
         /// e.g. event handler ptr
         /// lock-free queue
     };
+
 /**
  * ----------------------Public Methods----------------------
  */ 
@@ -40,9 +60,9 @@ enum soc_wrapper_type_t {
      * \brief Constructor, ComponentBlock_SoC calls this when allocating a thread for SoCWrapper.
      *        For dispatcher, 
      * \param type  type of the SoCWrapper
-     * \param context \todo   context of the SoCWrapper, registered by the ComponentBlock_SoC
+     * \param context context of the SoCWrapper, registered by the ComponentBlock_SoC
      */
-    SoCWrapper(soc_wrapper_type_t type);
+    SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context);
     ~SoCWrapper(){}
 
 /**
@@ -53,18 +73,118 @@ enum soc_wrapper_type_t {
      * \brief Initialize the dispatcher, including comm_lib
      */
     nicc_retval_t __init_dispatcher();
+
     /**
      * \brief Initialize the worker, registering 
      */
     nicc_retval_t __init_worker();
+
     /**
-     * \brief Run the SoCWrapper datapath in the sequence of worker tx, dispatcher tx, worker rx,
-     *        and dispatcher rx.
+     * \brief Run the SoCWrapper datapath in the sequence of worker tx, dispatcher tx, worker rx, and dispatcher rx.
+     * \param double seconds, the time to run the datapath
      */
-    nicc_retval_t __run();
+    void __run(double seconds);
+
+    /**
+     * \brief Launch the SoC kernel loop
+     */
+    void __launch();
 
     /* ========================SoC Datapath ========================*/
-    
+
+    /**
+     * \brief Post receive wrs to the NIC, and update the recv head
+     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \param size_t num_recvs, the number of receive wrs to be posted
+     */
+    static void __post_recvs(RDMA_SoC_QP *qp, size_t num_recvs) {
+        // The recvs posted are @first_wr through @last_wr, inclusive
+        struct ibv_recv_wr *first_wr, *last_wr, *temp_wr, *bad_wr;
+
+        int ret;
+        size_t first_wr_i = qp->_recv_head;
+        size_t last_wr_i = first_wr_i + (num_recvs - 1);
+        if (last_wr_i >= RDMA_SoC_QP::kNumRxRingEntries) last_wr_i -= RDMA_SoC_QP::kNumRxRingEntries;
+
+        first_wr = &qp->_recv_wr[first_wr_i];
+        last_wr = &qp->_recv_wr[last_wr_i];
+        temp_wr = last_wr->next;
+
+        last_wr->next = nullptr;  // Breaker of chains, queen of the First Men
+
+        ret = ibv_post_recv(qp->_qp, first_wr, &bad_wr);
+        if (unlikely(ret != 0)) {
+            NICC_ERROR("SoCWrapper: Post RECV (normal) error %d\n", ret);
+        }
+
+        last_wr->next = temp_wr;  // Restore circularity
+
+        // Update RECV head: go to the last wr posted and take 1 more step
+        qp->_recv_head = last_wr_i;
+        qp->_recv_head = (qp->_recv_head + 1) % RDMA_SoC_QP::kNumRxRingEntries;
+    }
+
+    /**
+     * \brief Receive packets from the NIC and put them into the dispatcher rx queue.
+     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \return the number of packets received
+     */
+    size_t __rx_burst(RDMA_SoC_QP *qp);
+
+    /**
+     * \brief Dispatch packets from the dispatcher rx queue to the worker rx queue 
+     * based on packet UDP field. Workspace will be blocked until all packets are
+     * dispatched.
+     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \return the number of packets dispatched
+     */
+    size_t __dispatch_rx_pkts(RDMA_SoC_QP *qp);
+
+    /**
+     * \brief Iterate all worker queues assigned to this dispatcher, and collect packets from them.
+     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \return the number of packets collected
+     */
+    size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+
+    /**
+     * \brief Post send wrs to the NIC, and update the send head
+     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \param Buffer **tx, the array of buffers to be sent
+     * \param size_t tx_size, the number of buffers to be sent
+     * \return the number of packets sent
+     */
+    size_t __tx_burst(RDMA_SoC_QP *qp, Buffer **tx, size_t tx_size);
+
+    /**
+     * \brief Flush the dispatcher tx queue to the NIC. Dispatcher will be blocked
+     * until all packets are sent
+     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \return the number of packets sent
+     */
+    size_t __tx_flush(RDMA_SoC_QP *qp);
+
+    /**
+     * \brief Directly send packets from the one qp's rx queue to the another qp's tx queue.
+     * \param RDMA_SoC_QP *rx_qp, the QP for receiving packets
+     * \param RDMA_SoC_QP *tx_qp, the QP for sending packets
+     * \return the number of packets sent
+     */
+    size_t __direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
+
+/**
+ * ----------------------Internel parameters----------------------
+ */
+ private:
+    soc_wrapper_type_t _type = kSoC_Invalid;
+    SoCWrapperContext *_context = nullptr;
+    /// QPs
+    RDMA_SoC_QP *_prior_qp = nullptr;
+    RDMA_SoC_QP *_next_qp = nullptr;
+
+    /// tmp shm queue for testing
+    soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;
+    soc_shm_lock_free_queue* _tmp_worker_tx_queue = nullptr;
 };
 
 

@@ -152,8 +152,8 @@ static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size
   double total_gbps = num_lanes * gbps_per_lane;
   resolve.bandwidth = total_gbps * (1000 * 1000 * 1000) / 8.0;
 
-  NICC_LOG(
-      " [SoC Channel] Port %u resolved to device %s, port %u. Speed = %.2f Gbps.\n",
+  NICC_DEBUG(
+      "[SoC Channel] Port %u resolved to device %s, port %u. Speed = %.2f Gbps.\n",
       phy_port, ib_ctx->device->name, phy_port, total_gbps);
   
   // If we are here, port resolution has failed

@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <thread>
 
 #include "common.h"
 #include "log.h"
@@ -9,6 +10,7 @@
 // nicc_lib headers
 #include "wrapper/soc/soc_wrapper.h"
 #include "datapath/channel_impl/soc_channel.h"
+#include "common/numautils.h"
 
 namespace nicc {
 /**
@@ -50,8 +52,11 @@ typedef struct ComponentFuncState_SoC {
     /* ========== wrapper metadata ========== */
     ComponentFuncBaseState_t base_state;
 
+    // wrapper thread, \todo: use vector for multiple threads
+    SoCWrapper::SoCWrapperContext *context;
+    std::thread *wrapper_thread;
     // Communication Channel
-    Channel_SoC                 *channel;           // Communication channel for DPA
+    Channel_SoC                 *channel;           // Communication channel for SoC
     /* ========== Specific fields ========== */
 } ComponentFuncState_SoC_t;
 
@@ -99,7 +104,7 @@ private:
      *  \brief  (de)allocate wrapper resource for handlers running on SoC
      *  \note   this function is called within register_app_function
      *  \param  app_func        application function which the event handler comes from
-     *  \param  func_state      state of the function on this DPA block
+     *  \param  func_state      state of the function on this SoC block
      *  \return NICC_SUCCESS for successful (de)allocation
      */
     nicc_retval_t __allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state);
@@ -107,10 +112,18 @@ private:
     /*!
      *  \brief  deallocate wrapper resource for handlers running on SoC
      *  \note   this function is called within unregister_app_function
-     *  \param  func_state  state of the function on this DPA block
+     *  \param  func_state  state of the function on this SoC block
      *  \return NICC_SUCCESS for successful deallocation
      */
     nicc_retval_t __deallocate_wrapper_resources(ComponentFuncState_SoC_t *func_state);
+
+    /**
+     *  \brief  create wrapper process for the function
+     *  \param  func_state  state of the function on this SoC block
+     *  \return NICC_SUCCESS for successful creation
+     */
+    nicc_retval_t __create_wrapper_process(ComponentFuncState_SoC_t *func_state);
+
 /**
  * ----------------------Internel Parameters----------------------
  */ 

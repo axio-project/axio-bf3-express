@@ -9,13 +9,13 @@
 #include "common.h"
 #include "log.h"
 #include "datapath/channel.h"
-#include "libutils/soc_queue.h"
+#include "common/soc_queue.h"
 #include "utils/verbs_common.h"
-#include "libutils/math_utils.h"
+#include "common/math_utils.h"
 #include "utils/huge_alloc.h"
 #include "utils/qpinfo.hh"
 #include "utils/mgnt_connection.h"
-#include "libutils/buffer.h"
+#include "common/buffer.h"
 
 namespace nicc {
 
@@ -24,15 +24,6 @@ class Channel_SoC : public Channel {
  * ----------------------Parameters of SoC Channel----------------------
  */ 
  public:
-    // static constexpr size_t kMaxPayloadSize = kMTU - sizeof(iphdr) - sizeof(udphdr);
-    /// Minimal number of buffered packets for collect_tx_pkts
-    static constexpr size_t kTxBatchSize = 32;
-    /// Maximum number of transmitted packets for tx_burst
-    static constexpr size_t kTxPostSize = 32;
-    /// Minimal number of buffered packets before dispatching
-    static constexpr size_t kRxBatchSize = 32;
-    /// Maximum number of packets received in rx_burst
-    static constexpr size_t kRxPostSize = 128;
 
     static constexpr size_t kMaxRoutingInfoSize = 48;  ///< Space for routing info
     static constexpr size_t kMaxInline = 60;   ///< Maximum send wr inline data
@@ -75,7 +66,7 @@ class Channel_SoC : public Channel {
         this->_mode = channel_mode;
     }
     ~Channel_SoC() {
-        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->_prior_qp->_qp_id, this->_next_qp->_qp_id);
+        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->prior_qp->_qp_id, this->next_qp->_qp_id);
         // deregister memory region
         int ret = ibv_dereg_mr(this->_mr);
         if (ret != 0) {
@@ -84,22 +75,22 @@ class Channel_SoC : public Channel {
         NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
         // delete Buffer in _rx_ring
         for (size_t i = 0; i < kRQDepth; i++) {
-            delete this->_prior_qp->_rx_ring[i];
-            delete this->_next_qp->_rx_ring[i];
+            delete this->prior_qp->_rx_ring[i];
+            delete this->next_qp->_rx_ring[i];
         }
         // delete SHM
         delete this->_huge_alloc;
 
         // Destroy QPs and CQs. QPs must be destroyed before CQs.
-        exit_assert(ibv_destroy_qp(this->_prior_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->_prior_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->_prior_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_qp(this->_next_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->_next_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->_next_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->prior_qp->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->prior_qp->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->prior_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->next_qp->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->next_qp->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->next_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
         exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
-        exit_assert(ibv_destroy_ah(this->_prior_qp->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_destroy_ah(this->_next_qp->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->prior_qp->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->next_qp->_remote_ah) == 0, "Failed to destroy remote AH");
         exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
         exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
     }
@@ -119,6 +110,14 @@ class Channel_SoC : public Channel {
      * \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t deallocate_channel();
+
+/**
+ * ----------------------Public parameters----------------------
+ */
+ public:
+    /// Parameters for qp init
+    class RDMA_SoC_QP *prior_qp;        /// QP for prior component block
+    class RDMA_SoC_QP *next_qp;         /// QP for next component block
 
 /**
  * ----------------------Internel methods----------------------
@@ -204,17 +203,11 @@ class Channel_SoC : public Channel {
     /// Protection domain
     struct ibv_pd *_pd = nullptr;
 
-    /// Parameters for qp init
-    class RDMA_SoC_QP *_prior_qp;        /// QP for prior component block
-    class RDMA_SoC_QP *_next_qp;         /// QP for next component block
-
     /// An address handle for this endpoint's port. 
     struct ibv_ah *_local_ah = nullptr;
 
     /// Parameters for tx/rx ring
     struct ibv_mr *_mr = nullptr;
-    size_t _free_send_wr_num = kSQDepth;
-    size_t _wait_for_disp = 0;
 };
 
 }  // namespace nicc

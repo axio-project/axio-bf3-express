@@ -1,9 +1,12 @@
 #pragma once
 #include "common.h"
-#include "request_def.h"
-#include "math_utils.h"
-#include "buffer.h"
 #include <infiniband/verbs.h>
+#include <vector>
+
+#include "common/math_utils.h"
+#include "common/buffer.h"
+#include "common/iphdr.h"
+// #include "common/ethhdr.h"
 
 namespace nicc {
 #define kWsQueueSize 1024
@@ -21,7 +24,7 @@ namespace nicc {
  * only operate on the head of the queue.q
  */
 struct soc_shm_lock_free_queue {
-    request_t* queue_[kWsQueueSize];
+    uint8_t* queue_[kWsQueueSize];
     volatile size_t head_ = 0;
     volatile size_t tail_ = 0;
     const size_t mask_ = kWsQueueSize - 1;  // Assuming kWsQueueSize is a power of 2
@@ -30,16 +33,16 @@ struct soc_shm_lock_free_queue {
         rt_assert(is_power_of_two<size_t>(kWsQueueSize), "The size of Ws Queue is not power of two.");
         memset(queue_, 0, sizeof(queue_));
     }
-    inline bool enqueue(request_t *pkt) {
+    inline bool enqueue(uint8_t *pkt) {
         size_t next_tail = (tail_ + 1) & mask_;
         if (next_tail == head_) return false;
         queue_[tail_] = pkt;
         tail_ = next_tail;
         return true;
     }
-    inline request_t* dequeue() {
+    inline uint8_t* dequeue() {
         if (head_ == tail_) return nullptr;
-        request_t* ret = queue_[head_];
+        uint8_t* ret = queue_[head_];
         head_ = (head_ + 1) & mask_;
         return ret;
     }
@@ -64,6 +67,25 @@ struct soc_shm_lock_free_queue {
  * \brief A RDMA-based SoC queue pair for transferring buffers between different component blocks.
  */
 class RDMA_SoC_QP {
+  /**
+   * ----------------------Util methods----------------------
+   */ 
+ public:
+    size_t get_tx_queue_size() {
+      return this->_tx_queue_idx;
+    }
+
+    size_t get_rx_queue_size() {
+      return this->_wait_for_disp;
+    }
+
+    size_t get_rx_worker_queue_size() {
+      return this->_disp_worker_queue->get_size();
+    }
+    size_t get_tx_worker_queue_size() {
+      return this->_collect_worker_queue->get_size();
+    }
+
  public:
     static constexpr size_t kNumRxRingEntries = 2048;
     static_assert(is_power_of_two<size_t>(kNumRxRingEntries), "The num of RX ring entries is not power of two.");
@@ -71,6 +93,8 @@ class RDMA_SoC_QP {
     static_assert(is_power_of_two<size_t>(kNumTxRingEntries), "The num of TX ring entries is not power of two.");
     static constexpr size_t kMTU = 1024;
     static_assert(is_power_of_two<size_t>(kMTU), "The size of MTU is not power of two.");
+
+    static constexpr size_t kMaxPayloadSize = kMTU - sizeof(iphdr) - sizeof(udphdr);
 
     struct ibv_cq *_send_cq = nullptr;
     struct ibv_cq *_recv_cq = nullptr;
@@ -97,6 +121,12 @@ class RDMA_SoC_QP {
     size_t _recv_head = 0;
     Buffer *_rx_ring[kNumRxRingEntries];
     size_t _ring_head = 0;
+
+    // idx for ownership transfer between dispatcher and worker
+    soc_shm_lock_free_queue* _collect_worker_queue = nullptr;
+    soc_shm_lock_free_queue* _disp_worker_queue = nullptr;
+    size_t _free_send_wr_num = kNumTxRingEntries;
+    size_t _wait_for_disp = 0;
 };
 } // namespace nicc
 

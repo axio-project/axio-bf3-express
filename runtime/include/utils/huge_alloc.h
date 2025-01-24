@@ -7,9 +7,9 @@
 
 #include "common.h"
 #include "log.h"
-#include "libutils/buffer.h"
+#include "common/buffer.h"
 #include "utils/rand.h"
-#include "libutils/math_utils.h"
+#include "common/math_utils.h"
 
 namespace nicc {
 

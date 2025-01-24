@@ -4,7 +4,7 @@
 #include "common.h"
 #include "log.h"
 #include <numa.h>
-#include "utils/numautils.h"
+#include "common/numautils.h"
 #include <iostream>
 #include <fstream>
 #include <sys/stat.h>

@@ -87,7 +87,8 @@ build_nicc() {
   fi
   cd $script_dir
   if [ $BUILD_TARGET = "./lib" ]; then
-    cp -r $2/build/lib/libnicc.a ./bin
+    mv $2/build/lib/libnicc.a ./bin
+    mv $2/build/lib/libnicc.a.p ./bin
   fi
 }
 
@@ -98,6 +99,7 @@ clean_nicc() {
   cd $script_dir
   if [ $2 = "./lib" ]; then
     rm ./bin/libnicc.a
+    rm -r ./bin/libnicc.a.p
   fi
   cd $2
   log ">> cleaning $1..."
