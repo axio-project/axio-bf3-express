@@ -68,10 +68,7 @@ void SoCWrapper::__run(double seconds) {
 void SoCWrapper::__launch() {
     /* 1. RX Direction, from piror component block to next component block */
     size_t nb_rx = this->__rx_burst(this->_prior_qp);
-    if (likely(nb_rx)) {
-        /// \todo add user's pkt handler
-        size_t nb_disp = this->__dispatch_rx_pkts(this->_prior_qp);
-    }
+    size_t nb_disp = this->__dispatch_rx_pkts(this->_prior_qp);
 
     /// Worker Logic
     size_t worker_queue_size = this->_tmp_worker_rx_queue->get_size();
@@ -96,12 +93,9 @@ void SoCWrapper::__launch() {
 
     /* 2. TX Direction, from next component block to prior component block */
     nb_rx = this->__rx_burst(this->_next_qp);
-
     /// immediately send the packets
     size_t nb_direct_tx = this->__direct_tx_burst(this->_next_qp, this->_prior_qp);
-    if (nb_direct_tx) {
-        size_t nb_tx = this->__tx_flush(this->_prior_qp);
-    }
+    size_t nb_tx = this->__tx_flush(this->_prior_qp);
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
@@ -119,7 +113,6 @@ size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
 
     /// poll cq
     int ret = ibv_poll_cq(qp->_recv_cq, kRxBatchSize, qp->_recv_wc);
-    assert(ret >= 0);
     /// set buffer's length
     for (int i = 0; i < ret; i++) {
         qp->_rx_ring[(qp->_ring_head + qp->_wait_for_disp + i) % RDMA_SoC_QP::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
