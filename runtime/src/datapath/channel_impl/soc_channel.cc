@@ -316,7 +316,9 @@ nicc_retval_t Channel_SoC::__init_rings() {
         NICC_WARN_C("failed to allocate memory for the ring buffer");
         return NICC_ERROR_MEMORY_FAILURE;
     }
-    NICC_CHECK_POINTER(this->_mr = ibv_reg_mr(this->_pd, raw_mr.buf_, kMemRegionSize, IBV_ACCESS_LOCAL_WRITE));
+    NICC_CHECK_POINTER(this->_mr = ibv_reg_mr(this->_pd, 
+                                                raw_mr.buf_, 
+                                                kMemRegionSize, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC));
     raw_mr.set_lkey(this->_mr->lkey);
     this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
 

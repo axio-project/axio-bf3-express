@@ -36,9 +36,8 @@ class Channel_SoC : public Channel {
 
     static constexpr size_t kPostlist = 32;    ///< Maximum SEND postlist
 
-    // 把MTU补成1024/2048/4096
     // static constexpr size_t kSgeSize = kMTU;  /// seg size cannot exceed MTU
-    static constexpr size_t kSgeSize = round_up<2048>(RDMA_SoC_QP::kMTU);    /// manully update "2048" to higher if kMTU is > 2048
+    static constexpr size_t kSgeSize = round_up<4096>(RDMA_SoC_QP::kMTU);    /// manully update "2048" to higher if kMTU is > 2048
     static_assert(is_power_of_two(kSgeSize), "kSgeSize must be a power of 2");
     static_assert(kSgeSize >= RDMA_SoC_QP::kMTU, "kSgeSize must be >= kMTU");
 
