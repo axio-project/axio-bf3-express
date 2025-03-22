@@ -60,23 +60,20 @@ class Channel_DPA : public Channel {
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
                                     struct ibv_context *ibv_ctx);
-    nicc_retval_t __deallocate_sq_cq(struct flexio_process *flexio_process);
-    nicc_retval_t __deallocate_rq_cq(struct flexio_process *flexio_process);
-
-    /**
-     * \brief   create queue pair, including SQ/RQ, calling after __allocate_sq_cq/__allocate_rq_cq
-     * \return  NICC_SUCCESS on success and NICC_ERROR otherwise
-     */
     nicc_retval_t __create_qp(struct ibv_pd *pd, 
                               struct mlx5dv_devx_uar *uar, 
                               struct flexio_process *flexio_process);
+    nicc_retval_t __deallocate_sq_cq(struct flexio_process *flexio_process);
+    nicc_retval_t __deallocate_rq_cq(struct flexio_process *flexio_process);
+    nicc_retval_t __destroy_qp(struct flexio_process *flexio_process);
+
     nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
                                        struct mlx5dv_devx_uar *uar, 
                                        struct flexio_process *flexio_process);
 
     /*!
      *  \brief  allocate memory resource for SQ/RQ
-     *  \note   this function is called within __allocate_sq_cq / __allocate_rq_cq
+     *  \note   this function is called within __create_qp
      *  \param  process         flexIO process
      *  \param  log_depth       log2 of the SQ/RQ depth
      *  \param  wqe_size        size of wqe on the ring
@@ -89,7 +86,7 @@ class Channel_DPA : public Channel {
 
     /*!
      *  \brief  deallocate memory resource for SQ/RQ
-     *  \note   this function is called within __deallocate_sq_cq / __deallocate_rq_cq
+     *  \note   this function is called within __destroy_qp
      *  \param  process         flexIO process
      *  \param  sq_transf       created SQ/RQ resource
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
@@ -117,7 +114,7 @@ class Channel_DPA : public Channel {
     
     /*!
      *  \brief  initialize WQEs on RQ ring (after allocation)
-     *  \note   this function is called within __allocate_rq_cq
+     *  \note   this function is called within __create_qp
      *  \param  process         flexIO process
      *  \param  rq_ring_daddr   base address of the allocated RQ ring
      *  \param  log_depth       log2 of the RQ ring depth
@@ -132,7 +129,7 @@ class Channel_DPA : public Channel {
 
     /*!
      *  \brief  allocates doorbell record and return its address on the device's memory
-     *  \note   this function is called within __allocate_cq_memory, __allocate_sq_memory and __allocate_rq_cq
+     *  \note   this function is called within __allocate_cq_memory / __allocate_wq_memory
      *  \param  process   flexIO process
      *  \param  dbr_daddr doorbell record address on the device's memory
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
@@ -141,7 +138,7 @@ class Channel_DPA : public Channel {
 
     /*!
      *  \brief  deallocates doorbell record and return its address on the device's memory
-     *  \note   this function is called within __deallocate_cq_memory, __deallocate_sq_memory and __deallocate_rq_cq
+     *  \note   this function is called within __deallocate_cq_memory / __deallocate_wq_memory
      *  \param  process   flexIO process
      *  \param  dbr_daddr doorbell record address on the device's memory
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
