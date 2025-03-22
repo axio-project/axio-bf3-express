@@ -215,7 +215,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
-    _function_state->channel = new Channel_DPA(Channel::RDMA, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED);
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(

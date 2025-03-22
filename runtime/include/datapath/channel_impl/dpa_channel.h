@@ -63,6 +63,17 @@ class Channel_DPA : public Channel {
     nicc_retval_t __deallocate_sq_cq(struct flexio_process *flexio_process);
     nicc_retval_t __deallocate_rq_cq(struct flexio_process *flexio_process);
 
+    /**
+     * \brief   create queue pair, including SQ/RQ, calling after __allocate_sq_cq/__allocate_rq_cq
+     * \return  NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __create_qp(struct ibv_pd *pd, 
+                              struct mlx5dv_devx_uar *uar, 
+                              struct flexio_process *flexio_process);
+    nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
+                                       struct mlx5dv_devx_uar *uar, 
+                                       struct flexio_process *flexio_process);
+
     /*!
      *  \brief  allocate memory resource for SQ/RQ
      *  \note   this function is called within __allocate_sq_cq / __allocate_rq_cq

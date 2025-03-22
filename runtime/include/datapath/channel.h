@@ -21,7 +21,8 @@ public:
     enum channel_typeid_t : uint8_t { 
         UNKONW_TYPE = 0, 
         RDMA,
-        SHM
+        SHM,
+        ETHERNET  // only for communication between DPA/SoC and NIC
     };
     /**
      * \brief mode of the established channel
