@@ -351,7 +351,6 @@ nicc_retval_t ComponentBlock_DPA::__add_control_plane_rule(struct mlx5dv_dr_doma
 
     struct dr_flow_table *rx_flow_table;
     struct dr_flow_rule *rx_rule;
-    printf("Adding control plane rule\n");
 
     // allocate match mask
     flow_match_size = sizeof(*match_mask) + 64;

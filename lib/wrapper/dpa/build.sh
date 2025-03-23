@@ -18,9 +18,25 @@
 # arg2: Source file - Device source code
 # arg3: Directory to install the DPA Device build, final output is <arg2>/<arg1>.a
 
+# Parse the example name from first argument or use rdma_simple as default
+EXAMPLE=${1:-rdma_simple}
+
 CUR_DIR=$(pwd)
 LIB_UTIL_DIR=$CUR_DIR/../../common
-KERNEL_DIR=$CUR_DIR/../../../examples/udp_echo
+KERNEL_DIR=$CUR_DIR/../../../examples/$EXAMPLE
+
+# Check if the kernel directory exists
+if [ ! -d "$KERNEL_DIR" ]; then
+    echo "Error: Example directory $KERNEL_DIR not found!"
+    exit 1
+fi
+
+# Check if dpa_kernel.dpa.o file exists in the kernel directory
+if [ ! -f "$KERNEL_DIR/dpa_kernel.dpa.o" ]; then
+    echo "Error: dpa_kernel.dpa.o not found in $KERNEL_DIR!"
+    echo "Please make sure the example has been built successfully first."
+    exit 1
+fi
 
 # Input parameters
 APP_NAME=l2_swap_wrapper
@@ -39,6 +55,10 @@ DEVICE_OPTIONS="${DEV_CC_FLAGS},${DEV_INC_DIR}"
 
 # Host flags
 HOST_OPTIONS="-Wno-deprecated-declarations"
+
+# Print info about the build
+echo "Building wrapper with example: $EXAMPLE"
+echo "Using kernel object: $KERNEL_DIR/dpa_kernel.dpa.o"
 
 # Compile the DPA (kernel) device source code using the DPACC
 ${DPACC} ${SOURCE_FILE} -o "${BUILD_DIR}/${OUTPUT_NAME}.a" \

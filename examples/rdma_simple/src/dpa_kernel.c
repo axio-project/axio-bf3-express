@@ -20,7 +20,7 @@ process_packet(struct flexio_dev_thread_ctx *dtctx)
   /* MAC address has 6 bytes: ff:ff:ff:ff:ff:ff */
   const int nb_mac_address_bytes = 6;
 
-
+  // flexio_dev_print("Processing packet!\n");
   /* Extract relevant data from CQE */
   rq_wqe_idx = flexio_dev_cqe_get_wqe_counter(dev_ctx.rqcq_ctx.cqe);
   data_sz = flexio_dev_cqe_get_byte_cnt(dev_ctx.rqcq_ctx.cqe);

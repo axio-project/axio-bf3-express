@@ -17,6 +17,9 @@ do_clean=false
 # whether the build process involve third parties
 involve_third_party=false
 
+# example to build (default: all examples)
+example=""
+
 log() {
   echo -e "\033[37m [NICC Build Log] $1 \033[0m"
 }
@@ -33,8 +36,9 @@ error() {
 # print helping
 print_usage() {
   echo ">>>>>>>>>> NICC build routine <<<<<<<<<<"
-  echo "usage: $0 [-c] [-t <target_1>,<target_2>] [-h]"
+  echo "usage: $0 [-c] [-t <target_1>,<target_2>] [-e <example>] [-h]"
   echo "  -t  target to be built or cleaned, supported targets: $targets_string"
+  echo "  -e  specific example to build (only works with -t lib)"
   echo "  -c  clean previously built assets"
   echo "  -h  help message"
 }
@@ -64,6 +68,32 @@ build_nicc() {
   ntp_server="ntp.aliyun.com"
   log ">>>> sync system time with $ntp_server..."
   sudo ntpdate -u $ntp_server
+
+  # For lib target, first build the required DPA components
+  if [ $2 = "./lib" ]; then
+    
+    # If example is specified, build that specific example
+    if [ -n "$example" ]; then
+      if [ -d "$script_dir/examples/$example" ]; then
+        log ">>>> building specific example: $example..."
+        (cd $script_dir/examples/$example && bash build.sh)
+        if [ $? -ne 0 ]; then
+          error ">>>> building $example example failed"
+        fi
+        # Set flag to rebuild wrapper since example was built
+        log ">>>> building DPA wrapper with example: $example..."
+        (cd $script_dir/lib/wrapper/dpa && bash build.sh "$example")
+        if [ $? -ne 0 ]; then
+          error ">>>> building DPA wrapper failed"
+        fi
+      else
+        error ">>>> example $example not found in $script_dir/examples/"
+      fi
+    else
+      # Skip building examples if -e is not specified
+      log ">>>> skipping example build (none specified with -e)"
+    fi
+  fi
 
   if [ ! -d "$2/build" ]; then
     log ">>>> generate building processing via meson..."
@@ -135,7 +165,7 @@ check_deps
 
 # parse command line options
 args=("$@")
-while getopts ":hc3t:" opt; do
+while getopts ":hc3t:e:" opt; do
   case $opt in
   h)
     print_usage
@@ -146,6 +176,9 @@ while getopts ":hc3t:" opt; do
     ;;
   t)
     u_targets=(${OPTARG//,/ })
+    ;;
+  e)
+    example=$OPTARG
     ;;
   3)
     involve_third_party=true
