@@ -36,6 +36,14 @@ class Channel_DPA : public Channel {
     nicc_retval_t deallocate_channel(struct flexio_process *flexio_process);
 
 /**
+ * ----------------------Util Methods----------------------
+ */ 
+ public:
+    struct flexio_rq *get_flexio_rq_ptr() {
+        return this->_flexio_rq_ptr;
+    }
+
+/**
  * ----------------------Public parameters----------------------
  */ 
  public:

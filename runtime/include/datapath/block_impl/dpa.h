@@ -3,6 +3,8 @@
 #include <iostream>
 
 #include <libflexio/flexio.h>
+#include <chrono>
+#include <thread>
 
 #include "mlx5/mlx5dv.h"
 #include "mlx5/mlx5_api.h"
@@ -12,6 +14,7 @@
 #include "app_context.h"
 #include "datapath/component_block.h"
 #include "datapath/channel_impl/dpa_channel.h"
+#include "datapath/block_impl/dpa_mat.h"
 
 namespace nicc {
 /**
@@ -67,6 +70,9 @@ typedef struct ComponentFuncState_DPA {
 
     // Communication Channel
     Channel_DPA                 *channel;           // Communication channel for DPA
+
+    // Debugging
+    struct flexio_msg_stream    *stream;
 
     /* ========== global device metadata ========== */
     struct ibv_context          *ibv_ctx;		    // IB device context
@@ -161,6 +167,11 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return NICC_SUCCESS for successful initialization
      */
     nicc_retval_t __init_wrapper_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
+
+    /**
+     * \brief temporary method to add control plane rule to redirect all traffic to the DPA block; \todo delete this
+     */
+    nicc_retval_t __add_control_plane_rule(struct mlx5dv_dr_domain *domain);
 
 /**
  * ----------------------Internel Parameters----------------------
