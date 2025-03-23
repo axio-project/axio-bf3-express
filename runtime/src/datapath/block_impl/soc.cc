@@ -92,8 +92,8 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
     NICC_CHECK_POINTER(func_state->context = new SoCWrapper::SoCWrapperContext());
     // NICC_CHECK_POINTER(context->pkt_handler = func_state->pkt_handler);
     // NICC_CHECK_POINTER(context->match_action_table = func_state->match_action_table);
-    NICC_CHECK_POINTER(func_state->context->prior_qp = func_state->channel->prior_qp);
-    NICC_CHECK_POINTER(func_state->context->next_qp = func_state->channel->next_qp);
+    NICC_CHECK_POINTER(func_state->context->qp_for_prior = func_state->channel->qp_for_prior);
+    NICC_CHECK_POINTER(func_state->context->qp_for_next = func_state->channel->qp_for_next);
 
     // create wrapper process for the function
     NICC_CHECK_POINTER(func_state->wrapper_thread = new std::thread(__soc_wrapper_thread_func, func_state));

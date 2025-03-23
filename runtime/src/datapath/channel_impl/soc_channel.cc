@@ -71,30 +71,30 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(this->_resolve.ib_ctx);
-    NICC_CHECK_POINTER(this->prior_qp=new RDMA_SoC_QP());
-    NICC_CHECK_POINTER(this->next_qp=new RDMA_SoC_QP());
+    NICC_CHECK_POINTER(this->qp_for_prior=new RDMA_SoC_QP());
+    NICC_CHECK_POINTER(this->qp_for_next=new RDMA_SoC_QP());
 
     // Create protection domain, send CQ, and recv CQ
     this->_pd = ibv_alloc_pd(this->_resolve.ib_ctx);
     NICC_CHECK_POINTER(this->_pd);
 
     // Create prior QP and next QP
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->prior_qp)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_prior)))){
         NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
         return retval;
     }
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->next_qp)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_next)))){
         NICC_WARN_C("failed to create next QP: retval(%u)", retval);
         return retval;
     }
 
     /// Connect prior QP and next QP for exchanging QP info 
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->prior_qp, true)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->qp_for_prior, true)))){
         NICC_WARN_C("failed to connect prior QP and next QP: retval(%u)", retval);
         return retval;
     }
     /// sleep for 10 seconds
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->next_qp, false)))){
+    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->qp_for_next, false)))){
         NICC_WARN_C("failed to connect next QP and prior QP: retval(%u)", retval);
         return retval;
     }
@@ -323,19 +323,19 @@ nicc_retval_t Channel_SoC::__init_rings() {
     this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
 
     /// Step 2: Initialize the ring buffer
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->prior_qp)))){
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_prior)))){
         NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
         return retval;
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->prior_qp)))){
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_prior)))){
         NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
         return retval;
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->next_qp)))){
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_next)))){
         NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
         return retval;
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->next_qp)))){
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_next)))){
         NICC_WARN_C("failed to initialize the send ring buffer for next component block");
         return retval;
     }

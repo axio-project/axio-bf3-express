@@ -65,7 +65,7 @@ class Channel_SoC : public Channel {
         this->_mode = channel_mode;
     }
     ~Channel_SoC() {
-        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->prior_qp->_qp_id, this->next_qp->_qp_id);
+        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->qp_for_prior->_qp_id, this->qp_for_next->_qp_id);
         // deregister memory region
         int ret = ibv_dereg_mr(this->_mr);
         if (ret != 0) {
@@ -74,22 +74,22 @@ class Channel_SoC : public Channel {
         NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
         // delete Buffer in _rx_ring
         for (size_t i = 0; i < kRQDepth; i++) {
-            delete this->prior_qp->_rx_ring[i];
-            delete this->next_qp->_rx_ring[i];
+            delete this->qp_for_prior->_rx_ring[i];
+            delete this->qp_for_next->_rx_ring[i];
         }
         // delete SHM
         delete this->_huge_alloc;
 
         // Destroy QPs and CQs. QPs must be destroyed before CQs.
-        exit_assert(ibv_destroy_qp(this->prior_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->prior_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->prior_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_qp(this->next_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->next_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->next_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->qp_for_prior->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->qp_for_prior->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->qp_for_prior->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->qp_for_next->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->qp_for_next->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->qp_for_next->_recv_cq) == 0, "Failed to destroy recv CQ");
         exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
-        exit_assert(ibv_destroy_ah(this->prior_qp->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_destroy_ah(this->next_qp->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->qp_for_prior->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->qp_for_next->_remote_ah) == 0, "Failed to destroy remote AH");
         exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
         exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
     }
@@ -115,8 +115,8 @@ class Channel_SoC : public Channel {
  */
  public:
     /// Parameters for qp init
-    class RDMA_SoC_QP *prior_qp;        /// QP for prior component block
-    class RDMA_SoC_QP *next_qp;         /// QP for next component block
+    class RDMA_SoC_QP *qp_for_prior;        /// QP for prior component block
+    class RDMA_SoC_QP *qp_for_next;         /// QP for next component block
 
 /**
  * ----------------------Internel methods----------------------

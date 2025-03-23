@@ -100,7 +100,7 @@ int main(){
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
-    app_cxt.functions.push_back(&dpa_app_func);
+    // app_cxt.functions.push_back(&dpa_app_func);
 
     /// Flow Engine app context
     // nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
@@ -129,7 +129,7 @@ int main(){
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_block_desp),
         /* cid */ nicc::kComponent_SoC
     );
-    // app_cxt.functions.push_back(&soc_app_func);
+    app_cxt.functions.push_back(&soc_app_func);
 
     /*----------------------------------------------------------------*/
     /*!
