@@ -49,7 +49,7 @@ class Channel_SoC : public Channel {
 
     static constexpr size_t kInvalidQpId = SIZE_MAX;
 
-    /// Address of the remote endpoint
+    /// Default values for address of the remote endpoint (used as fallback)
     static constexpr uint16_t kDefaultUdpPort = 10010;
     static constexpr uint16_t kDefaultMngtPort = 20086;
     const char* kPriorBlockIpStr = "10.0.4.101";  // \todo: set it via config file
@@ -63,6 +63,8 @@ class Channel_SoC : public Channel {
         : Channel() {
         this->_typeid = channel_type;
         this->_mode = channel_mode;
+        this->qp_for_prior_info = (QPInfo*)malloc(sizeof(QPInfo));
+        this->qp_for_next_info = (QPInfo*)malloc(sizeof(QPInfo));
     }
     ~Channel_SoC() {
         NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->qp_for_prior->_qp_id, this->qp_for_next->_qp_id);
@@ -110,6 +112,14 @@ class Channel_SoC : public Channel {
      */
     nicc_retval_t deallocate_channel();
 
+    /**
+     * @brief Connect QP to next component block or remote host
+     * @param next_qp_info [in] QP info of the next component block
+     * @param remote_qp_info [in] QP info of the remote component block
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t connect_qp(const QPInfo *next_qp_info, const QPInfo *remote_qp_info);
+
 /**
  * ----------------------Public parameters----------------------
  */
@@ -117,7 +127,8 @@ class Channel_SoC : public Channel {
     /// Parameters for qp init
     class RDMA_SoC_QP *qp_for_prior;        /// QP for prior component block
     class RDMA_SoC_QP *qp_for_next;         /// QP for next component block
-
+    QPInfo *qp_for_prior_info;
+    QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel methods----------------------
  */ 
@@ -142,19 +153,19 @@ class Channel_SoC : public Channel {
     nicc_retval_t __create_qp(RDMA_SoC_QP *qp);
 
     /**
-     * @brief Connect QP to remote QP and initialize QP
-     * @param qp RDMA_SoC_QP
-     * @param is_prior Whether the QP is communicating with prior or next component block
-     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
-     */
-    nicc_retval_t __connect_qp(RDMA_SoC_QP *qp, bool is_prior);
-
-    /**
      * @brief Set local QP info
      * @param qp_info [out] QP info recording the gid, lid, qp_num, mtu, nic_name
      * @param qp [in] RDMA_SoC_QP
      */
     void __set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp);
+
+    /**
+     * @brief connect qp_for_prior to remote host or next component block
+     * @param qp_info [in] QP info of the target component block
+     * @param is_remote [in] whether the qp_info is for remote host
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __connect_qp(const QPInfo *qp_info, bool is_remote);
 
     /**
      * @brief Create address handles for local and remote endpoints
@@ -184,6 +195,19 @@ class Channel_SoC : public Channel {
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __init_sends(RDMA_SoC_QP *qp);
+
+    /**
+     * @brief Connect prior QP and next QP for exchanging QP info
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __connect_channels();
+
+    /**
+     * @brief Fill the RECV queue
+     * @param qp [in] RDMA_SoC_QP for prior or next component block
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __fill_recv_queue(RDMA_SoC_QP *qp);
 
 /**
  * ----------------------Internel parameters----------------------

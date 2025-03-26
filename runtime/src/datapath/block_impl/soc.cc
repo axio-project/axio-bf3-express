@@ -40,7 +40,7 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
     if(unlikely(NICC_SUCCESS !=
         (retval = this->__allocate_wrapper_resources(app_func, func_state))
     )){
-        NICC_WARN_C("failed to allocate reosurce on DPA block: retval(%u)", retval);
+        NICC_WARN_C("failed to allocate reosurce on SoC block: retval(%u)", retval);
         goto exit;
     }
     
@@ -57,6 +57,23 @@ nicc_retval_t ComponentBlock_SoC::unregister_app_function(){
     /* ...... */
 exit:
     return retval;
+}
+
+nicc_retval_t ComponentBlock_SoC::connect_to_neighbor_component(const QPInfo *next_qp_info, 
+                                                                const QPInfo *remote_qp_info){
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(next_qp_info);
+    NICC_CHECK_POINTER(remote_qp_info);
+    NICC_CHECK_POINTER(this->_function_state->channel);
+    return this->_function_state->channel->connect_qp(next_qp_info, remote_qp_info);
+}
+
+QPInfo *ComponentBlock_SoC::get_qp_for_prior_info(){
+    return this->_function_state->channel->qp_for_prior_info;
+}
+
+QPInfo *ComponentBlock_SoC::get_qp_for_next_info(){
+    return this->_function_state->channel->qp_for_next_info;
 }
 
 nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state) {

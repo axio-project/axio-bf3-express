@@ -67,6 +67,7 @@ class ComponentBlock_SoC : public ComponentBlock {
  */ 
  public:
     ComponentBlock_SoC() {
+        this->component_id = kComponent_SoC;
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_SoC_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_SoC_t);
         NICC_CHECK_POINTER(this->_function_state = new ComponentFuncState_SoC_t);
@@ -95,6 +96,22 @@ class ComponentBlock_SoC : public ComponentBlock {
      *  \return NICC_SUCCESS for successful unregisteration
      */
     nicc_retval_t unregister_app_function() override;
+
+    /**
+     *  \brief  connect to a neighbor component, typically is the next component in the app DAG
+     *  \param  next_qp_info      [in] the qp info of the next component
+     *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \return NICC_SUCCESS for successful connection
+     */
+    nicc_retval_t connect_to_neighbor_component(const QPInfo *next_qp_info, 
+                                                const QPInfo *remote_qp_info) override;
+
+    /**
+     *  \brief  get the qp info of the current component
+     *  \return the qp info of the current component
+     */
+    QPInfo *get_qp_for_prior_info() override;
+    QPInfo *get_qp_for_next_info() override;
 
 /**
  * ----------------------Internel Methonds----------------------

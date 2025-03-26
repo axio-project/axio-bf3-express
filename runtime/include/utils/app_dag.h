@@ -20,6 +20,7 @@ struct HostConfig {
     std::string ipv4;           ///< IPv4 address
     uint16_t mgnt_port;         ///< Management port
     uint16_t data_port;         ///< Data port
+    std::vector<component_typeid_t> connect_to; ///< Components to connect to
 };
 
 /**
@@ -27,9 +28,11 @@ struct HostConfig {
  */ 
 struct DAGComponent {
     std::string name;
+    component_typeid_t component_id;
     std::map<std::string, std::string> data_path;  // store data_path
     std::map<std::string, std::vector<std::string>> ctrl_path; // store ctrl_path
     std::vector<std::map<std::string, std::string>> ctrl_entries; // store ctrl_path entries
+    component_typeid_t next_component; // store next component
 };
 
 /**
@@ -75,7 +78,10 @@ public:
                 config.ipv4 = host["ipv4"].get<std::string>();
                 config.mgnt_port = host["mgnt_port"].get<uint16_t>();
                 config.data_port = host["data_port"].get<uint16_t>();
-                _remote_hosts.push_back(config);
+                for (const auto& component : host["connect_to"]) {
+                    config.connect_to.push_back(component_name_to_id(component));
+                }
+                this->_remote_hosts.push_back(config);
             }
         }
 
@@ -86,7 +92,10 @@ public:
                 config.ipv4 = host["ipv4"].get<std::string>();
                 config.mgnt_port = host["mgnt_port"].get<uint16_t>();
                 config.data_port = host["data_port"].get<uint16_t>();
-                _local_hosts.push_back(config);
+                for (const auto& component : host["connect_to"]) {
+                    config.connect_to.push_back(component_name_to_id(component));
+                }
+                this->_local_hosts.push_back(config);
             }
         }
 
@@ -113,6 +122,7 @@ public:
 
                 DAGComponent component;
                 component.name = component_name;
+                component.component_id = component_name_to_id(component_name);
 
                 // parse data_path
                 if (item.contains("data_path")) {
@@ -131,6 +141,12 @@ public:
                                         {"match", entry["match"].get<std::string>()},
                                         {"action", entry["action"].get<std::string>()}
                                     });
+                                    /// update next components
+                                    /// get the component name from the action
+                                    std::string component_name = extract_string_in_parentheses(entry["action"].get<std::string>());
+                                    if (!component_name.empty()) {
+                                        component.next_component = component_name_to_id(component_name);
+                                    }
                                 }
                             } else {
                                 for (const auto &v : value) {
@@ -149,17 +165,6 @@ public:
                 this->_components_map[component_name] = component;
             }
         }
-    }
-
-    /**
-     * \brief get a component config by name
-     */
-    const DAGComponent* get_component_config(const std::string &name) const {
-        auto it = this->_components_map.find(name);
-        if (it != this->_components_map.end()) {
-            return &it->second;
-        }
-        return nullptr;
     }
     
 /**
@@ -180,6 +185,11 @@ public:
                 std::cout << "  IPv4: " << host.ipv4 << "\n";
                 std::cout << "  Management Port: " << host.mgnt_port << "\n";
                 std::cout << "  Data Port: " << host.data_port << "\n";
+                std::cout << "  Connect to: ";
+                for (const auto& component : host.connect_to) {
+                    std::cout << component << " ";
+                }
+                std::cout << "\n";
             }
             std::cout << "\n";
         }
@@ -191,6 +201,11 @@ public:
                 std::cout << "  IPv4: " << host.ipv4 << "\n";
                 std::cout << "  Management Port: " << host.mgnt_port << "\n";
                 std::cout << "  Data Port: " << host.data_port << "\n";
+                std::cout << "  Connect to: ";
+                for (const auto& component : host.connect_to) {
+                    std::cout << component << " ";
+                }
+                std::cout << "\n";
             }
             std::cout << "\n";
         }
@@ -238,6 +253,102 @@ public:
      */
     component_typeid_t get_enabled_components() {
         return this->_enabled_components;
+    }
+
+    /**
+     * \brief get host config by name
+     */
+    const HostConfig* get_host_config(const std::string &name) const {
+        if (name == "remote") {
+            return &this->_remote_hosts[0];
+        }
+        else if (name == "local") {
+            return &this->_local_hosts[0];
+        }
+        else {
+            NICC_ERROR("[Application DAG]: Unknown host type: %s, the input should be either remote or local", name.c_str());
+            return nullptr;
+        }
+    }
+
+    /**
+     * \brief get a component config by name
+     */
+    const DAGComponent* get_component_config(const std::string &name) const {
+        auto it = this->_components_map.find(name);
+        if (it != this->_components_map.end()) {
+            return &it->second;
+        }
+        return nullptr;
+    }
+
+    /**
+     * \brief get a component block config by component id
+     */
+    const DAGComponent* get_component_config(const component_typeid_t &component_id) const {
+        for (const auto &[name, component] : this->_components_map) {
+            if (component.component_id == component_id) {
+                return &component;
+            }
+        }
+        return nullptr;
+    }
+    /**
+     * \brief find neighbor component block by component id
+     */
+    component_typeid_t find_neighbor_component(const component_typeid_t &component_id) const {
+        const DAGComponent* component = this->get_component_config(component_id);
+        if (component == nullptr) {
+            NICC_ERROR("[Application DAG]: Failed to find component: %d", component_id);
+            return kComponent_Unknown;
+        }
+        // search neighbor component in ctrl_path
+        return component->next_component;  
+    }
+
+    /**
+     * \brief extract string between parentheses
+     * \param str input string like "fwd(dpa)"
+     * \return string between parentheses, empty string if not found
+     */
+    static std::string extract_string_in_parentheses(const std::string& str) {
+        size_t start = str.find('(');
+        if (start == std::string::npos) {
+            return "";
+        }
+        size_t end = str.find(')', start);
+        if (end == std::string::npos) {
+            return "";
+        }
+        return str.substr(start + 1, end - start - 1);
+    }
+
+    /**
+     * \brief component name to component id
+     */
+    static component_typeid_t component_name_to_id(const std::string& name) {
+        if (name == "root") {
+            return kComponent_Unknown;
+        }
+        else if (name == "flow_engine") {
+            return kComponent_FlowEngine;
+        }
+        else if (name == "dpa") {
+            return kComponent_DPA;
+        }
+        else if (name == "soc") {
+            return kComponent_SoC;
+        }
+        else if (name == "remote_host") {
+            return kRemote_Host;
+        }
+        else if (name == "local_host") {
+            return kLocal_Host;
+        }
+        else {
+            NICC_ERROR("[Application DAG]: Unknown component: %s, the component name should be either root, flow_engine, dpa, soc, remote_host, or local_host", name.c_str());
+            return kComponent_Unknown;
+        }
     }
 
 /**

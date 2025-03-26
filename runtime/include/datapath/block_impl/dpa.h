@@ -82,6 +82,7 @@ typedef struct ComponentFuncState_DPA {
 class ComponentBlock_DPA : public ComponentBlock {
  public:
     ComponentBlock_DPA() {
+        this->component_id = kComponent_DPA;
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_DPA_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
         NICC_CHECK_POINTER(this->_function_state = new ComponentFuncState_DPA_t);

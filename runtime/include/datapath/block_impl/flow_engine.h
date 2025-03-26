@@ -236,6 +236,7 @@ class ComponentBlock_FlowEngine : public ComponentBlock {
  */ 
  public:
     ComponentBlock_FlowEngine() {
+        this->component_id = kComponent_FlowEngine;
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_FlowEngine_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_FlowEngine_t);
         NICC_CHECK_POINTER(this->_base_desp = &this->_desp->base_desp);

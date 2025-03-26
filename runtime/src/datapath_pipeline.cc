@@ -26,6 +26,14 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, dev
         goto deallocate_cb;
     }
 
+    // \todo initialize control plane (e.g., update MAT and connect channels for each component)
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__init_control_plane(device_state)
+    ))){
+        NICC_WARN_C("failed to initialize control plane: retval(%u)", retval);
+        goto deallocate_cb;
+    }
+
     goto exit;
 
 deallocate_cb:
@@ -98,7 +106,8 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
             goto exit;
         }
         NICC_CHECK_POINTER(component_block);
-        this->_component_block_map.insert({ app_func, component_block });
+        this->_component_app2block_map.insert({ app_func, component_block });
+        this->_component_id2block_map.insert({ app_func->component_id, component_block });
 
         // componeng-specific initialization
         switch (app_func->component_id) {
@@ -112,7 +121,7 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
     
 exit:
     if(unlikely(NICC_SUCCESS != retval)){
-        for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+        for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
             NICC_CHECK_POINTER(cb_map_iter->first);
             NICC_CHECK_POINTER(cb_map_iter->second);
             retval = rpool.deallocate(
@@ -141,7 +150,7 @@ nicc_retval_t DatapathPipeline::__deallocate_component_blocks(ResourcePool& rpoo
     nicc_retval_t retval = NICC_SUCCESS;
     typename std::map<AppFunction*, ComponentBlock*>::iterator cb_map_iter;
 
-    for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+    for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
         NICC_CHECK_POINTER(cb_map_iter->first);
         NICC_CHECK_POINTER(cb_map_iter->second);
         retval = rpool.deallocate(
@@ -172,7 +181,7 @@ nicc_retval_t DatapathPipeline::__register_functions(device_state_t &device_stat
     ComponentBlock *component_block;
     std::map<AppFunction*, ComponentBlock*> __register_pairs;
 
-    for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+    for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
         NICC_CHECK_POINTER(app_func = cb_map_iter->first);
         NICC_CHECK_POINTER(component_block = cb_map_iter->second);
 
@@ -212,6 +221,74 @@ exit:
             }
         }
     }
+
+    return retval;
+}
+
+nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_state) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    typename std::map<AppFunction*, ComponentBlock*>::iterator cb_map_iter;
+    ComponentBlock *component_block, *next_component_block;
+    component_typeid_t next_component_id;
+    std::vector<component_typeid_t> remote_connect_to = this->_app_dag->get_host_config("remote")->connect_to;
+    struct QPInfo remote_qp_info, local_qp_info, *next_qp_info;
+    // TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
+    TCPClient mgnt_client;
+    memset(&remote_qp_info, 0, sizeof(QPInfo));
+    memset(&local_qp_info, 0, sizeof(QPInfo));
+
+    /* \todo, update MAT rules */
+
+    /* connect channels based on the app DAG */
+    // Obtain the remote host and local host's QPInfo
+    // mgnt_client.connect(this->_app_dag->get_host_config("local")->ip, this->_app_dag->get_host_config("local")->mgnt_port);
+    // local_qp_info.deserialize(mgnt_client.receiveMsg());
+
+    // mgnt_server.acceptConnection();
+    // remote_qp_info.deserialize(mgnt_server.receiveMsg());
+
+    // iteratively connect channels based on the app DAG
+    for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
+        NICC_CHECK_POINTER(component_block = cb_map_iter->second);
+        // Only DPA and SoC components are connected via RDMA
+        if (component_block->component_id != kComponent_DPA && 
+            component_block->component_id != kComponent_SoC) {
+            continue;
+        }
+        /// use block id to find the corresponding component block should be connected
+        next_component_id = this->_app_dag->find_neighbor_component(component_block->component_id);
+        NICC_CHECK_POINTER(next_component_block = this->_component_id2block_map[next_component_id]);
+        switch(next_component){
+            case kComponent_DPA:
+                next_qp_info = next_component_block->get_qp_for_prior_info();
+                break;
+            case kComponent_SoC:
+                next_qp_info = next_component_block->get_qp_for_prior_info();
+                break;
+            case kRemote_Host:
+                next_qp_info = &remote_qp_info;
+                break;
+            case kLocal_Host:
+                next_qp_info = &local_qp_info;
+                break;
+            default:
+                NICC_ERROR_C("unknown next component: next_component(%u)", next_component_id);
+                break;
+        }
+
+        if(unlikely(NICC_SUCCESS != (
+            if (std::find(remote_connect_to.begin(), remote_connect_to.end(), next_component_id) != remote_connect_to.end()) {
+                retval = component_block->connect_to_neighbor_component(next_qp_info, remote_qp_info);
+            } else {
+                retval = component_block->connect_to_neighbor_component(next_qp_info, nullptr);
+            }
+        ))){
+            NICC_WARN_C("failed to connect to neighbor component: retval(%u)", retval);
+            goto exit;
+        }   
+    }
+
+exit:
 
     return retval;
 }

@@ -2,6 +2,7 @@
 #include "common.h"
 #include "app_context.h"
 #include "utils/ibv_device.h"
+#include "utils/qp_info.hh"
 #include "ctrlpath/mat.h"
 
 namespace nicc {
@@ -32,6 +33,24 @@ class ComponentBlock {
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
+    /**
+     *  \brief  connect to a neighbor component, typically is the next component in the app DAG
+     *  \param  next_qp_info      [in] the qp info of the next component
+     *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \return NICC_SUCCESS for successful connection
+     */
+    virtual nicc_retval_t connect_to_neighbor_component(const QPInfo *next_qp_info, 
+                                                        const QPInfo *remote_qp_info){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
+     *  \brief  get the qp info of the current component
+     *  \return the qp info of the current component
+     */
+    virtual QPInfo *get_qp_info(){
+        return nullptr;
+    }
 
     /* ========= wrapper functions for flow management ========= */
     /**
@@ -49,6 +68,12 @@ class ComponentBlock {
      */
     nicc_retval_t destory_table(FlowMAT* table);
 
+/**
+ * ----------------------Public Parameters----------------------
+ */ 
+ public:
+    // component block id
+    component_typeid_t component_id = kComponent_Unknown;
 /**
  * ----------------------Protected Parameters----------------------
  */ 

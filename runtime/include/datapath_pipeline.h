@@ -7,6 +7,8 @@
 #include "resources/resource_pool.h"
 #include "utils/ibv_device.h"
 #include "utils/app_dag.h"
+#include "utils/qpinfo.hh"
+#include "utils/mgnt_connection.h"
 #include "datapath/block_impl/dpa.h"
 #include "datapath/block_impl/flow_engine.h"
 #include "datapath/block_impl/soc.h"
@@ -28,7 +30,10 @@ class DatapathPipeline {
 
  private:
     // app_func -> component block
-    std::map<AppFunction*, ComponentBlock*> _component_block_map;
+    std::map<AppFunction*, ComponentBlock*> _component_app2block_map;
+
+    // component block id -> component block
+    std::map<component_typeid_t, ComponentBlock*> _component_id2block_map;
     
     // application context on this datapath pipeline
     AppContext *_app_cxt;
@@ -54,11 +59,19 @@ class DatapathPipeline {
     nicc_retval_t __deallocate_component_blocks(ResourcePool& rpool);
 
     /*!
-     *  \brief  register all functions onto the component block after allocation
+     *  \brief  register all functions onto the component block after allocation, 
+     *   this function will create wrapper, communication channels, and ctrl-plane MAT
      *  \param  device_state        global device state
      *  \return NICC_SUCCESS for successfully registration
      */ 
     nicc_retval_t __register_functions(device_state_t &device_state);
+
+    /**
+     *  \brief  initialize control plane (e.g., update MAT and connect channels for each component)
+     *  \param  device_state        global device state
+     *  \return NICC_SUCCESS for successfully initialization
+     */
+    nicc_retval_t __init_control_plane(device_state_t &device_state);
 
     /*!
      *  \brief  start to run the datapath pipeline
