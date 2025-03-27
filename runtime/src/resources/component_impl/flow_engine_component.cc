@@ -48,6 +48,8 @@ nicc_retval_t Component_FlowEngine::allocate_block(ComponentBaseDesp_t* desp, Co
     /* Step 3: set target cb's state to default */
     /// reset block state
     memset(desired_cb->_state, 0, sizeof(ComponentState_FlowEngine_t));
+    /// init block name
+    strcpy(desired_cb->block_name, desp->block_name);
 
     NICC_DEBUG_C(
         "allocate block to application context: "

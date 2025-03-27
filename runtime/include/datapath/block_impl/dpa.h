@@ -3,6 +3,8 @@
 #include <iostream>
 
 #include <libflexio/flexio.h>
+#include <chrono>
+#include <thread>
 
 #include "mlx5/mlx5dv.h"
 #include "mlx5/mlx5_api.h"
@@ -12,6 +14,7 @@
 #include "app_context.h"
 #include "datapath/component_block.h"
 #include "datapath/channel_impl/dpa_channel.h"
+#include "datapath/block_impl/dpa_mat.h"
 
 namespace nicc {
 /**
@@ -68,6 +71,9 @@ typedef struct ComponentFuncState_DPA {
     // Communication Channel
     Channel_DPA                 *channel;           // Communication channel for DPA
 
+    // Debugging
+    struct flexio_msg_stream    *stream;
+
     /* ========== global device metadata ========== */
     struct ibv_context          *ibv_ctx;		    // IB device context
 } ComponentFuncState_DPA_t;
@@ -76,6 +82,7 @@ typedef struct ComponentFuncState_DPA {
 class ComponentBlock_DPA : public ComponentBlock {
  public:
     ComponentBlock_DPA() {
+        this->component_id = kComponent_DPA;
         NICC_CHECK_POINTER(this->_desp = new ComponentDesp_DPA_t);
         NICC_CHECK_POINTER(this->_state = new ComponentState_DPA_t);
         NICC_CHECK_POINTER(this->_function_state = new ComponentFuncState_DPA_t);
@@ -103,6 +110,42 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return NICC_SUCCESS for successful unregisteration
      */
     nicc_retval_t unregister_app_function() override;
+
+    /**
+     *  \brief  connect to a neighbor component, this method will be called multiple times, and each may connect to prior or next or both components
+     *  \param  prior_component_block [in] the previous component block
+     *  \param  next_component_block  [in] the next component block
+     *  \param  is_connected_to_remote [in] whether the current component is connected to the remote component
+     *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \param  is_connected_to_local [in] whether the current component is connected to the local component
+     *  \param  local_qp_info     [in] the qp info of the local component
+     *  \return NICC_SUCCESS for successful connection
+     */
+    nicc_retval_t connect_to_neighbour( const ComponentBlock *prior_component_block, 
+                                        const ComponentBlock *next_component_block,
+                                        bool is_connected_to_remote,
+                                        const QPInfo *remote_qp_info,
+                                        bool is_connected_to_local,
+                                        const QPInfo *local_qp_info) override {
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
+     *  \brief  run the component block
+     *  \return NICC_SUCCESS for successful run
+     */
+    nicc_retval_t run_block() override {
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
+     *  \brief  get the qp info of the current component
+     *  \param  is_prior  [in] whether the qp is for the prior component
+     *  \return the qp info of the current component
+     */
+    QPInfo *get_qp_info(bool is_prior) override {
+        return nullptr;
+    }
 
 /**
  * ----------------------Internel Methonds----------------------
@@ -161,6 +204,11 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return NICC_SUCCESS for successful initialization
      */
     nicc_retval_t __init_wrapper_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
+
+    /**
+     * \brief temporary method to add control plane rule to redirect all traffic to the DPA block; \todo delete this
+     */
+    nicc_retval_t __add_control_plane_rule(struct mlx5dv_dr_domain *domain);
 
 /**
  * ----------------------Internel Parameters----------------------

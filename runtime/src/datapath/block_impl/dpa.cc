@@ -79,6 +79,16 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     // insert to function map
     this->_function_state = func_state;
 
+    // add control plane rule to redirect all traffic to the DPA block
+    /// \todo delete this
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__add_control_plane_rule(device_state.rx_domain)
+    ))){
+        NICC_WARN_C("failed to add control plane rule to redirect all traffic to the DPA block: retval(%u)", retval);
+        goto exit;
+    }
+
+
  exit:
     // TODO: destory if failed
     return retval;
@@ -97,7 +107,7 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
                         this->_function_state ))
     )){
         NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
-        goto exit;
+        return retval;
     }
 
     // unregister event handler
@@ -106,13 +116,12 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
                         this->_function_state ))
     )){
         NICC_WARN_C("failed to unregister event handler on DPA block: retval(%u)", retval);
-        goto exit;
+        return retval;
     }
 
     // delete the function state
     delete this->_function_state;
 
-exit:
     return retval;
 }
 
@@ -158,6 +167,12 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     flexio_status res;
     struct flexio_event_handler_attr event_handler_attr = {0};
 
+    // create stream for debugging DPA event handler
+    /// \todo delete this
+    flexio_msg_stream_attr_t stream_fattr;
+    memset(&stream_fattr, 0, sizeof(stream_fattr));
+
+
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(app_handler);
     NICC_CHECK_POINTER(func_state);
@@ -198,6 +213,23 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
         goto exit;
     }
 
+    // add stream for debugging DPA event handler
+    /// \todo delete this
+    stream_fattr.uar=func_state->flexio_uar;
+    stream_fattr.data_bsize = 4 * 2048;
+    stream_fattr.sync_mode = FLEXIO_LOG_DEV_SYNC_MODE_SYNC;
+    stream_fattr.level = FLEXIO_MSG_DEV_DEBUG;
+    stream_fattr.stream_name="DEFAULT STREAM";
+    stream_fattr.mgmt_affinity.type = FLEXIO_AFFINITY_NONE;
+    flexio_msg_stream_create(
+        func_state->flexio_process,
+        &stream_fattr,
+        stdout,
+        NULL,
+        &func_state->stream
+    );
+
+
  exit:
     if(unlikely(retval != NICC_SUCCESS)){
         if(func_state->flexio_process != nullptr){
@@ -215,7 +247,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
-    _function_state->channel = new Channel_DPA(Channel::RDMA, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED);
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(
@@ -228,9 +260,11 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     }
 
  exit:
-
-    // TODO: destory if failed
-
+    if(unlikely(retval != NICC_SUCCESS)){
+        if(this->_function_state->channel != nullptr){
+            delete this->_function_state->channel;
+        }
+    }
     return retval;
 }
 
@@ -259,10 +293,8 @@ nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppFunction *app_func
             func_state->flexio_process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
-        goto exit;
+        return retval;
     }
-
-exit:
     return retval;
 }
 
@@ -279,11 +311,9 @@ nicc_retval_t ComponentBlock_DPA::__unregister_event_handler(ComponentFuncState_
         ))){
             NICC_WARN_C("failed to destory process on DPA block: flexio_retval(%d)", ret);
             retval = NICC_ERROR_HARDWARE_FAILURE;
-            goto exit;
+            return retval;
         }
     }
-
-exit:
     return retval;
 }
 
@@ -300,12 +330,118 @@ nicc_retval_t ComponentBlock_DPA::__deallocate_wrapper_resources(ComponentFuncSt
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
         );
-        goto exit;
+        return retval;
     }    
 
-exit:
     return retval;
 }
 
+nicc_retval_t ComponentBlock_DPA::__add_control_plane_rule(struct mlx5dv_dr_domain *domain){
+    int ret = 0;
+    struct mlx5dv_flow_match_parameters *match_mask;
+    struct mlx5dv_dr_action *actions[1];
+    nicc_retval_t retval = NICC_SUCCESS;
+    size_t flow_match_size;
+    doca_error_t result = DOCA_SUCCESS;
+    const int actions_len = 1;
+
+    struct dr_flow_table *rx_flow_table;
+    struct dr_flow_rule *rx_rule;
+
+    // allocate match mask
+    flow_match_size = sizeof(*match_mask) + 64;
+    match_mask = (struct mlx5dv_flow_match_parameters *)calloc(1, flow_match_size);
+    if(unlikely(match_mask == nullptr)){
+        NICC_WARN_C("failed to allocate match mask");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    match_mask->match_sz = 64;
+    // fill match mask, match on all source mac bits
+    DEVX_SET(dr_match_spec, match_mask->match_buf, smac_47_16, 0xffffffff);
+    DEVX_SET(dr_match_spec, match_mask->match_buf, smac_15_0, 0xffff);
+
+    // create flow table
+    result = __create_flow_table(domain, 0, 0, match_mask, &rx_flow_table);
+    if(unlikely(result != DOCA_SUCCESS)){
+        NICC_WARN_C("failed to create RX flow table");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
+    // create rule
+    rx_rule = (struct dr_flow_rule *)calloc(1, sizeof(struct dr_flow_rule));
+    if(unlikely(rx_rule == nullptr)){
+        NICC_WARN_C("failed to allocate memory for rx rule");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit_with_table;
+    }
+
+    // Create action to forward traffic to the DPA RQ
+    rx_rule->dr_action = mlx5dv_dr_action_create_dest_devx_tir(
+        flexio_rq_get_tir(this->_function_state->channel->get_flexio_rq_ptr())
+    );
+    if(unlikely(rx_rule->dr_action == nullptr)){
+        NICC_WARN_C("failed to create rx rule action");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit_with_rule;
+    }
+
+    // Set the rule with the action
+    actions[0] = rx_rule->dr_action;
+
+    // Fill rule match, using a wildcard match to catch all traffic
+    // You might want to modify this to match specific traffic patterns
+#define SRC_MAC (0xa088c2bf464e)
+    DEVX_SET(dr_match_spec, match_mask->match_buf, smac_47_16, SRC_MAC >> 16);
+    DEVX_SET(dr_match_spec, match_mask->match_buf, smac_15_0, SRC_MAC % (1 << 16));
+
+    // Create the rule
+    rx_rule->dr_rule = mlx5dv_dr_rule_create(rx_flow_table->dr_matcher, match_mask, actions_len, actions);
+    if(unlikely(rx_rule->dr_rule == nullptr)){
+        NICC_WARN_C("failed to create rx rule");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit_with_action;
+    }
+
+    // run the event handler; 
+    /// \todo move this to __pipeline_run()
+    ret = flexio_event_handler_run(this->_function_state->event_handler, 0);
+    if(unlikely(ret != FLEXIO_STATUS_SUCCESS)){
+        NICC_WARN_C("failed to run event handler on DPA block: flexio_retval(%d)", ret);
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    while (1) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    // Clean up and return
+    free(match_mask);
+    return retval;
+
+exit_with_action:
+    if(rx_rule->dr_action)
+        mlx5dv_dr_action_destroy(rx_rule->dr_action);
+
+exit_with_rule:
+    free(rx_rule);
+
+exit_with_table:
+    if(rx_flow_table) {
+        if(rx_flow_table->dr_matcher)
+            mlx5dv_dr_matcher_destroy(rx_flow_table->dr_matcher);
+        if(rx_flow_table->dr_table)
+            mlx5dv_dr_table_destroy(rx_flow_table->dr_table);
+        free(rx_flow_table);
+    }
+
+exit:
+    if(match_mask != nullptr){
+        free(match_mask);
+    }
+
+    return retval;
+}
 
 } // namespace nicc

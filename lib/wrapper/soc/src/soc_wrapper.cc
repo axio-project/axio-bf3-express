@@ -9,8 +9,8 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     }
     this->_type = type;
     NICC_CHECK_POINTER(this->_context = context);
-    NICC_CHECK_POINTER(this->_prior_qp = context->prior_qp);
-    NICC_CHECK_POINTER(this->_next_qp = context->next_qp);
+    NICC_CHECK_POINTER(this->_qp_for_prior = context->qp_for_prior);
+    NICC_CHECK_POINTER(this->_qp_for_next = context->qp_for_next);
     NICC_CHECK_POINTER(this->_tmp_worker_rx_queue = new soc_shm_lock_free_queue());
     NICC_CHECK_POINTER(this->_tmp_worker_tx_queue = new soc_shm_lock_free_queue());
     if (type & kSoC_Dispatcher) {
@@ -33,8 +33,8 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {
     /// Allocate the SHM queue for transferring buffers between dispatcher and worker
-    this->_prior_qp->_disp_worker_queue = this->_tmp_worker_rx_queue;
-    this->_next_qp->_collect_worker_queue = this->_tmp_worker_tx_queue;
+    this->_qp_for_prior->_disp_worker_queue = this->_tmp_worker_rx_queue;
+    this->_qp_for_next->_collect_worker_queue = this->_tmp_worker_tx_queue;
     return NICC_SUCCESS;
 }
 
@@ -67,8 +67,8 @@ void SoCWrapper::__run(double seconds) {
 /// \todo divide into worker and dispatcher, now we write in one function
 void SoCWrapper::__launch() {
     /* 1. RX Direction, from piror component block to next component block */
-    size_t nb_rx = this->__rx_burst(this->_prior_qp);
-    size_t nb_disp = this->__dispatch_rx_pkts(this->_prior_qp);
+    size_t nb_rx = this->__rx_burst(this->_qp_for_prior);
+    size_t nb_disp = this->__dispatch_rx_pkts(this->_qp_for_prior);
 
     /// Worker Logic
     size_t worker_queue_size = this->_tmp_worker_rx_queue->get_size();
@@ -84,18 +84,18 @@ void SoCWrapper::__launch() {
         }
     }
 
-    size_t nb_collect = this->__collect_tx_pkts(this->_next_qp);
+    size_t nb_collect = this->__collect_tx_pkts(this->_qp_for_next);
 
-    if (this->_next_qp->get_tx_queue_size() >= kTxBatchSize) {
+    if (this->_qp_for_next->get_tx_queue_size() >= kTxBatchSize) {
         /// \todo use MAT to decide dst qp_id
-        this->__tx_flush(this->_next_qp);
+        this->__tx_flush(this->_qp_for_next);
     }
 
     /* 2. TX Direction, from next component block to prior component block */
-    nb_rx = this->__rx_burst(this->_next_qp);
+    nb_rx = this->__rx_burst(this->_qp_for_next);
     /// immediately send the packets
-    size_t nb_direct_tx = this->__direct_tx_burst(this->_next_qp, this->_prior_qp);
-    size_t nb_tx = this->__tx_flush(this->_prior_qp);
+    size_t nb_direct_tx = this->__direct_tx_burst(this->_qp_for_next, this->_qp_for_prior);
+    size_t nb_tx = this->__tx_flush(this->_qp_for_prior);
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {

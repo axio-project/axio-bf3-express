@@ -21,6 +21,9 @@
 __dpa_rpc__ uint64_t
 dpa_device_init(uint64_t data)
 {
+	struct flexio_dev_thread_ctx *dtctx;
+	flexio_dev_get_thread_ctx(&dtctx);
+	
 	struct dpa_data_queues *shared_data = (struct dpa_data_queues *)data;
 
 	dev_ctx.lkey = shared_data->sq_data.wqd_mkey_id;
@@ -33,6 +36,7 @@ dpa_device_init(uint64_t data)
 	dev_ctx.dt_ctx.tx_buff_idx = 0;
 
 	dev_ctx.is_initalized = 1;
+	// flexio_dev_print("Entering DPA device init!\n");
 	return 0;
 }
 
@@ -51,9 +55,12 @@ __dpa_global__ dpa_event_handler(uint64_t __unused arg0)
 	if (dev_ctx.is_initalized == 0)
 		flexio_dev_thread_reschedule();
 
+
 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit) {
 		__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
+		flexio_dev_print("Received packet!\n");
 		process_packet(dtctx);
+		flexio_dev_print("Processed packet!\n");
 		step_cq(&dev_ctx.rqcq_ctx, DPA_RQ_IDX_MASK);
 	}
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);

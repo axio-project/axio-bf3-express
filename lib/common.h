@@ -34,6 +34,8 @@ namespace nicc {
 typedef struct ComponentBaseDesp {
     // quota of the component
     uint64_t quota;
+    // name of the component
+    char block_name[64];
 } ComponentBaseDesp_t;
 
 
@@ -112,6 +114,8 @@ static constexpr component_typeid_t kComponent_DPA = 0x02;
 static constexpr component_typeid_t kComponent_SoC = 0x04;
 static constexpr component_typeid_t kComponent_Decompress = 0x08;
 static constexpr component_typeid_t kComponent_SHA = 0x10;
+static constexpr component_typeid_t kRemote_Host = 0x1000;
+static constexpr component_typeid_t kLocal_Host = 0x2000;
 static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
 static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
 

@@ -5,6 +5,7 @@
 
 #pragma once
 #include "common.h"
+#include "datapath/component_block.h"
 
 namespace nicc {
 /**
@@ -21,7 +22,8 @@ public:
     enum channel_typeid_t : uint8_t { 
         UNKONW_TYPE = 0, 
         RDMA,
-        SHM
+        SHM,
+        ETHERNET  // only for communication between DPA/SoC and NIC
     };
     /**
      * \brief mode of the established channel
@@ -32,6 +34,15 @@ public:
         PAKT_ORDERED,
         STREAM
     };
+    /*!
+    *  \brief  mask for channel state
+    */
+    using channel_state_t = uint16_t;
+    static constexpr channel_state_t kChannel_State_Uninit = 0x0000;
+    static constexpr channel_state_t kChannel_State_Prior_Connected = 0x0001;
+    static constexpr channel_state_t kChannel_State_Next_Connected = 0x0010;
+    static constexpr channel_state_t kChannel_State_Both_Connected = 0x0011;
+
 /**
  * ----------------------Channel internal structures----------------------
  */ 
@@ -64,6 +75,7 @@ public:
 protected:
     channel_typeid_t _typeid;
     channel_mode_t _mode;
+    channel_state_t _state = kChannel_State_Uninit;
 };
 } 
 

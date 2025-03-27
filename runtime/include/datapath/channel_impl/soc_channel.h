@@ -49,7 +49,7 @@ class Channel_SoC : public Channel {
 
     static constexpr size_t kInvalidQpId = SIZE_MAX;
 
-    /// Address of the remote endpoint
+    /// Default values for address of the remote endpoint (used as fallback)
     static constexpr uint16_t kDefaultUdpPort = 10010;
     static constexpr uint16_t kDefaultMngtPort = 20086;
     const char* kPriorBlockIpStr = "10.0.4.101";  // \todo: set it via config file
@@ -63,33 +63,35 @@ class Channel_SoC : public Channel {
         : Channel() {
         this->_typeid = channel_type;
         this->_mode = channel_mode;
+        this->qp_for_prior_info = (QPInfo*)malloc(sizeof(QPInfo));
+        this->qp_for_next_info = (QPInfo*)malloc(sizeof(QPInfo));
     }
     ~Channel_SoC() {
-        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->prior_qp->_qp_id, this->next_qp->_qp_id);
+        NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->qp_for_prior->_qp_id, this->qp_for_next->_qp_id);
         // deregister memory region
         int ret = ibv_dereg_mr(this->_mr);
         if (ret != 0) {
-            NICC_ERROR_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
+            NICC_WARN_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
         }
         NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
         // delete Buffer in _rx_ring
         for (size_t i = 0; i < kRQDepth; i++) {
-            delete this->prior_qp->_rx_ring[i];
-            delete this->next_qp->_rx_ring[i];
+            delete this->qp_for_prior->_rx_ring[i];
+            delete this->qp_for_next->_rx_ring[i];
         }
         // delete SHM
         delete this->_huge_alloc;
 
         // Destroy QPs and CQs. QPs must be destroyed before CQs.
-        exit_assert(ibv_destroy_qp(this->prior_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->prior_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->prior_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_qp(this->next_qp->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->next_qp->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->next_qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->qp_for_prior->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->qp_for_prior->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->qp_for_prior->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_qp(this->qp_for_next->_qp) == 0, "Failed to destroy send QP");
+        exit_assert(ibv_destroy_cq(this->qp_for_next->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(this->qp_for_next->_recv_cq) == 0, "Failed to destroy recv CQ");
         exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
-        exit_assert(ibv_destroy_ah(this->prior_qp->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_destroy_ah(this->next_qp->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->qp_for_prior->_remote_ah) == 0, "Failed to destroy remote AH");
+        exit_assert(ibv_destroy_ah(this->qp_for_next->_remote_ah) == 0, "Failed to destroy remote AH");
         exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
         exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
     }
@@ -110,14 +112,24 @@ class Channel_SoC : public Channel {
      */
     nicc_retval_t deallocate_channel();
 
+    /**
+     * @brief Connect QP to a component block or remote/local host
+     * @param is_prior [in] whether the connection is for qp_for_prior or qp_for_next
+     * @param neighbour_component_block [in] the neighbour component block
+     * @param qp_info [in] QP info of the remote/local host
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t connect_qp(bool is_prior, const ComponentBlock *neighbour_component_block, const QPInfo *qp_info);
+
 /**
  * ----------------------Public parameters----------------------
  */
  public:
     /// Parameters for qp init
-    class RDMA_SoC_QP *prior_qp;        /// QP for prior component block
-    class RDMA_SoC_QP *next_qp;         /// QP for next component block
-
+    class RDMA_SoC_QP *qp_for_prior;        /// QP for prior component block
+    class RDMA_SoC_QP *qp_for_next;         /// QP for next component block
+    QPInfo *qp_for_prior_info;
+    QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel methods----------------------
  */ 
@@ -142,14 +154,6 @@ class Channel_SoC : public Channel {
     nicc_retval_t __create_qp(RDMA_SoC_QP *qp);
 
     /**
-     * @brief Connect QP to remote QP and initialize QP
-     * @param qp RDMA_SoC_QP
-     * @param is_prior Whether the QP is communicating with prior or next component block
-     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
-     */
-    nicc_retval_t __connect_qp(RDMA_SoC_QP *qp, bool is_prior);
-
-    /**
      * @brief Set local QP info
      * @param qp_info [out] QP info recording the gid, lid, qp_num, mtu, nic_name
      * @param qp [in] RDMA_SoC_QP
@@ -163,7 +167,7 @@ class Channel_SoC : public Channel {
      * @param qp [in] RDMA_SoC_QP
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_info, RDMA_SoC_QP *qp);
+    nicc_retval_t __create_ah(const QPInfo *local_qp_info, const QPInfo *remote_qp_info, RDMA_SoC_QP *qp);
     
     /**
      * @brief Initialize and allocate memory for TX/RX rings
@@ -184,6 +188,28 @@ class Channel_SoC : public Channel {
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __init_sends(RDMA_SoC_QP *qp);
+
+    /**
+     * @brief connect a qp to a component block
+     * @param qp [in] RDMA_SoC_QP
+     * @param neighbour_component_block [in] the neighbour component block
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __connect_qp_to_component_block(RDMA_SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info);
+
+    /**
+     * @brief connect a qp to a remote/local host
+     * @param qp [in] RDMA_SoC_QP
+     * @param remote_qp_info [in] QP info of the target component block
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info);
+    /**
+     * @brief Fill the RECV queue
+     * @param qp [in] RDMA_SoC_QP for prior or next component block
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __fill_recv_queue(RDMA_SoC_QP *qp);
 
 /**
  * ----------------------Internel parameters----------------------

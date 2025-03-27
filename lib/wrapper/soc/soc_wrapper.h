@@ -42,8 +42,8 @@ class SoCWrapper {
      */
     struct SoCWrapperContext{
         /* ========== metadata for dispatcher ========== */
-        RDMA_SoC_QP *prior_qp;    /// QP for communicating with the prior component block
-        RDMA_SoC_QP *next_qp;     /// QP for communicating with the next component block
+        RDMA_SoC_QP *qp_for_prior;    /// QP for communicating with the prior component block
+        RDMA_SoC_QP *qp_for_next;     /// QP for communicating with the next component block
         /// e.g. pkt handler ptr
         /// e.g. match-action table ptr
         /* ========== metadata for worker ========== */
@@ -179,8 +179,8 @@ class SoCWrapper {
     soc_wrapper_type_t _type = kSoC_Invalid;
     SoCWrapperContext *_context = nullptr;
     /// QPs
-    RDMA_SoC_QP *_prior_qp = nullptr;
-    RDMA_SoC_QP *_next_qp = nullptr;
+    RDMA_SoC_QP *_qp_for_prior = nullptr;
+    RDMA_SoC_QP *_qp_for_next = nullptr;
 
     /// tmp shm queue for testing
     soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;

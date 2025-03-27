@@ -26,6 +26,22 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, dev
         goto deallocate_cb;
     }
 
+    // \todo initialize control plane (e.g., update MAT and connect channels for each component)
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__init_control_plane(device_state)
+    ))){
+        NICC_WARN_C("failed to initialize control plane: retval(%u)", retval);
+        goto deallocate_cb;
+    }
+
+    // run the pipeline
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__run_pipeline()
+    ))){
+        NICC_WARN_C("failed to run the pipeline: retval(%u)", retval);
+        goto exit;
+    }
+
     goto exit;
 
 deallocate_cb:
@@ -71,13 +87,13 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
         component_block = nullptr;
         switch (app_func->component_id) {
             case kComponent_DPA:
-                NICC_CHECK_POINTER(component_block = new ComponentBlock_DPA);
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_DPA());
                 break;
             case kComponent_FlowEngine:
-                NICC_CHECK_POINTER(component_block = new ComponentBlock_FlowEngine);
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_FlowEngine());
                 break;
             case kComponent_SoC:
-                NICC_CHECK_POINTER(component_block = new ComponentBlock_SoC);
+                NICC_CHECK_POINTER(component_block = new ComponentBlock_SoC());
                 break;
             default:
                 NICC_ERROR_C("unknown component id: component_id(%u)", app_func->component_id);
@@ -98,8 +114,9 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
             goto exit;
         }
         NICC_CHECK_POINTER(component_block);
-        this->_component_block_map.insert({ app_func, component_block });
-
+        this->_component_app2block_map.insert({ app_func, component_block });
+        this->_component_blocks.push_back(component_block);
+        
         // componeng-specific initialization
         switch (app_func->component_id) {
             case kComponent_FlowEngine:
@@ -112,7 +129,7 @@ nicc_retval_t DatapathPipeline::__allocate_component_blocks(ResourcePool& rpool,
     
 exit:
     if(unlikely(NICC_SUCCESS != retval)){
-        for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+        for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
             NICC_CHECK_POINTER(cb_map_iter->first);
             NICC_CHECK_POINTER(cb_map_iter->second);
             retval = rpool.deallocate(
@@ -141,7 +158,7 @@ nicc_retval_t DatapathPipeline::__deallocate_component_blocks(ResourcePool& rpoo
     nicc_retval_t retval = NICC_SUCCESS;
     typename std::map<AppFunction*, ComponentBlock*>::iterator cb_map_iter;
 
-    for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+    for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
         NICC_CHECK_POINTER(cb_map_iter->first);
         NICC_CHECK_POINTER(cb_map_iter->second);
         retval = rpool.deallocate(
@@ -172,7 +189,7 @@ nicc_retval_t DatapathPipeline::__register_functions(device_state_t &device_stat
     ComponentBlock *component_block;
     std::map<AppFunction*, ComponentBlock*> __register_pairs;
 
-    for(cb_map_iter = this->_component_block_map.begin(); cb_map_iter != this->_component_block_map.end(); cb_map_iter++){
+    for(cb_map_iter = this->_component_app2block_map.begin(); cb_map_iter != this->_component_app2block_map.end(); cb_map_iter++){
         NICC_CHECK_POINTER(app_func = cb_map_iter->first);
         NICC_CHECK_POINTER(component_block = cb_map_iter->second);
 
@@ -216,8 +233,101 @@ exit:
     return retval;
 }
 
+nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_state) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    std::vector<std::string> remote_connect_to = this->_app_dag->get_host_config("remote")->connect_to;
+    std::vector<std::string> local_connect_to = this->_app_dag->get_host_config("local")->connect_to;
+
+    /* \todo, update MAT rules */
+
+    /* connect channels based on the app DAG */
+    // Obtain the remote host and local host's QPInfo
+    QPInfo remote_qp_info, local_qp_info;
+    bool is_connected_to_remote = false, is_connected_to_local = false;
+    TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
+    TCPClient mgnt_client;
+    memset(&remote_qp_info, 0, sizeof(QPInfo));
+    memset(&local_qp_info, 0, sizeof(QPInfo));
+    mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), this->_app_dag->get_host_config("local")->mgnt_port);
+    local_qp_info.deserialize(mgnt_client.receiveMsg());
+
+    mgnt_server.acceptConnection();
+    remote_qp_info.deserialize(mgnt_server.receiveMsg());
+
+    /* iteratively connect channels based on the app DAG */
+    typename std::vector<ComponentBlock*>::iterator cb_iter;
+    ComponentBlock *prior_component_block = nullptr, *cur_component_block = nullptr;
+    for(cb_iter = this->_component_blocks.begin(); cb_iter != this->_component_blocks.end(); cb_iter++){
+        NICC_CHECK_POINTER(cur_component_block = *cb_iter);
+        
+        std::string component_name = cur_component_block->get_block_name();
+        
+        if (std::find(remote_connect_to.begin(), remote_connect_to.end(), component_name) != remote_connect_to.end()) {
+            is_connected_to_remote = true;
+        }
+        
+        if (std::find(local_connect_to.begin(), local_connect_to.end(), component_name) != local_connect_to.end()) {
+            is_connected_to_local = true;
+        }
+        
+        if(unlikely(NICC_SUCCESS != (retval = cur_component_block->connect_to_neighbour(
+                                    /* prior block */ prior_component_block,
+                                    /* next block*/ nullptr,
+                                    is_connected_to_remote,
+                                    /* remote qp info */ &remote_qp_info,
+                                    is_connected_to_local,
+                                    /* local qp info */ &local_qp_info)))){
+            NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
+            return retval;
+        }
+        // check if the block is connected to both remote and local
+        if(is_connected_to_remote){
+            // complete the connection to remote host
+            mgnt_server.sendMsg(cur_component_block->get_qp_info(true)->serialize());
+            
+        }
+        if(is_connected_to_local){
+            // complete the connection to local host
+            mgnt_client.sendMsg(cur_component_block->get_qp_info(false)->serialize());
+        }
+
+        if (prior_component_block != nullptr){
+            if(unlikely(NICC_SUCCESS != (retval = prior_component_block->connect_to_neighbour(
+                                        /* prior block */ nullptr,
+                                        /* next block*/ cur_component_block,
+                                        false,
+                                        /* remote qp info */ nullptr,
+                                        false,
+                                        /* local qp info */ nullptr)))){
+                NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
+                return retval;
+            }
+        }
+        prior_component_block = cur_component_block;
+    }
+    // Check if remote host and local host are connected
+    if (!(is_connected_to_remote && is_connected_to_local)){
+        NICC_ERROR_C("failed to init control plane: failed to connect to both remote and local host");
+        return NICC_ERROR;
+    }
+    return retval;
+}
+
 nicc_retval_t DatapathPipeline::__run_pipeline() {
-    return NICC_SUCCESS;
+    nicc_retval_t retval = NICC_SUCCESS;
+    typename std::vector<ComponentBlock*>::iterator cb_iter;
+    for(cb_iter = this->_component_blocks.begin(); cb_iter != this->_component_blocks.end(); cb_iter++){
+        NICC_CHECK_POINTER(*cb_iter);
+        retval = (*cb_iter)->run_block();
+        if(unlikely(retval != NICC_SUCCESS)){
+            NICC_WARN_C("failed to run component block: retval(%u)", retval);
+            goto exit;
+        }
+    }
+
+exit:
+    /// \todo remove all allocated resources
+    return retval;
 }
 
 nicc_retval_t DatapathPipeline::__reschedule_block() {
