@@ -34,6 +34,8 @@ namespace nicc {
 typedef struct ComponentBaseDesp {
     // quota of the component
     uint64_t quota;
+    // name of the component
+    char block_name[64];
 } ComponentBaseDesp_t;
 
 

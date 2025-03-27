@@ -32,8 +32,8 @@ class DatapathPipeline {
     // app_func -> component block
     std::map<AppFunction*, ComponentBlock*> _component_app2block_map;
 
-    // component block id -> component block
-    std::map<component_typeid_t, ComponentBlock*> _component_id2block_map;
+    // component block vector
+    std::vector<ComponentBlock*> _component_blocks;
     
     // application context on this datapath pipeline
     AppContext *_app_cxt;

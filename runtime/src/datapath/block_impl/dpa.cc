@@ -107,7 +107,7 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
                         this->_function_state ))
     )){
         NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
-        goto exit;
+        return retval;
     }
 
     // unregister event handler
@@ -116,13 +116,12 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
                         this->_function_state ))
     )){
         NICC_WARN_C("failed to unregister event handler on DPA block: retval(%u)", retval);
-        goto exit;
+        return retval;
     }
 
     // delete the function state
     delete this->_function_state;
 
-exit:
     return retval;
 }
 
@@ -261,9 +260,11 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     }
 
  exit:
-
-    // TODO: destory if failed
-
+    if(unlikely(retval != NICC_SUCCESS)){
+        if(this->_function_state->channel != nullptr){
+            delete this->_function_state->channel;
+        }
+    }
     return retval;
 }
 
@@ -292,10 +293,8 @@ nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppFunction *app_func
             func_state->flexio_process, ret
         );
         retval = NICC_ERROR_HARDWARE_FAILURE;
-        goto exit;
+        return retval;
     }
-
-exit:
     return retval;
 }
 
@@ -312,11 +311,9 @@ nicc_retval_t ComponentBlock_DPA::__unregister_event_handler(ComponentFuncState_
         ))){
             NICC_WARN_C("failed to destory process on DPA block: flexio_retval(%d)", ret);
             retval = NICC_ERROR_HARDWARE_FAILURE;
-            goto exit;
+            return retval;
         }
     }
-
-exit:
     return retval;
 }
 
@@ -333,10 +330,9 @@ nicc_retval_t ComponentBlock_DPA::__deallocate_wrapper_resources(ComponentFuncSt
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
         );
-        goto exit;
+        return retval;
     }    
 
-exit:
     return retval;
 }
 

@@ -2,7 +2,7 @@
 #include "common.h"
 #include "app_context.h"
 #include "utils/ibv_device.h"
-#include "utils/qp_info.hh"
+#include "utils/qpinfo.hh"
 #include "ctrlpath/mat.h"
 
 namespace nicc {
@@ -34,21 +34,38 @@ class ComponentBlock {
     }
 
     /**
-     *  \brief  connect to a neighbor component, typically is the next component in the app DAG
-     *  \param  next_qp_info      [in] the qp info of the next component
+     *  \brief  connect to a neighbor component, this method will be called multiple times, and each may connect to prior or next or both components
+     *  \param  prior_component_block [in] the previous component block
+     *  \param  next_component_block  [in] the next component block
+     *  \param  is_connected_to_remote [in] whether the current component is connected to the remote component
      *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \param  is_connected_to_local [in] whether the current component is connected to the local component
+     *  \param  local_qp_info     [in] the qp info of the local component
      *  \return NICC_SUCCESS for successful connection
      */
-    virtual nicc_retval_t connect_to_neighbor_component(const QPInfo *next_qp_info, 
-                                                        const QPInfo *remote_qp_info){
+    virtual nicc_retval_t connect_to_neighbour( const ComponentBlock *prior_component_block, 
+                                                const ComponentBlock *next_component_block,
+                                                bool is_connected_to_remote,
+                                                const QPInfo *remote_qp_info,
+                                                bool is_connected_to_local,
+                                                const QPInfo *local_qp_info){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
+     *  \brief  run the component block
+     *  \return NICC_SUCCESS for successful run
+     */
+    virtual nicc_retval_t run_block(){
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 
     /**
      *  \brief  get the qp info of the current component
+     *  \param  is_prior  [in] whether the qp is for the prior component
      *  \return the qp info of the current component
      */
-    virtual QPInfo *get_qp_info(){
+    virtual QPInfo *get_qp_info(bool is_prior){
         return nullptr;
     }
 
@@ -69,11 +86,21 @@ class ComponentBlock {
     nicc_retval_t destory_table(FlowMAT* table);
 
 /**
+ * ----------------------Util Methods----------------------
+ */
+ public:
+    std::string get_block_name(){
+        return std::string(this->block_name);
+    }
+
+/**
  * ----------------------Public Parameters----------------------
  */ 
  public:
     // component block id
     component_typeid_t component_id = kComponent_Unknown;
+    // component block name
+    char block_name[64];
 /**
  * ----------------------Protected Parameters----------------------
  */ 

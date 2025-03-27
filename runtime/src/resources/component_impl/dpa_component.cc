@@ -50,6 +50,8 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
     /// reset block state
     memset(desired_cb->_state, 0, sizeof(ComponentState_DPA_t));
     desired_cb->_base_state->quota = desp->quota;
+    /// init block name
+    strcpy(desired_cb->block_name, desp->block_name);
     
     NICC_DEBUG_C(
         "allocate block to application context: "

@@ -30,122 +30,46 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
         goto exit;
     }
 
-    if(unlikely(NICC_SUCCESS != (retval = __connect_channels()))){
-        NICC_WARN_C("failed to connect channels: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
-        goto exit;
-    }
-
 exit:
     // TODO: destory if failed
     return retval;
 }
 
-nicc_retval_t Channel_SoC::connect_qp(const QPInfo *next_qp_info, const QPInfo *remote_qp_info) {
+nicc_retval_t Channel_SoC::connect_qp(bool is_prior, const ComponentBlock *neighbour_component_block, const QPInfo *qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
-    NICC_CHECK_POINTER(next_qp_info);
-    NICC_CHECK_POINTER(remote_qp_info);
-    NICC_CHECK_POINTER(this->_pd);
-
-    /// Transition QP to INIT state
-    struct ibv_qp_attr init_attr;
-    memset(static_cast<void *>(&init_attr), 0, sizeof(struct ibv_qp_attr));
-    init_attr.qp_state = IBV_QPS_INIT;
-    init_attr.pkey_index = 0;
-    init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
-    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
-                                IBV_ACCESS_REMOTE_WRITE | 
-                                IBV_ACCESS_REMOTE_READ | 
-                                IBV_ACCESS_REMOTE_ATOMIC;
-    int attr_mask = IBV_QP_STATE | 
-                    IBV_QP_PKEY_INDEX | 
-                    IBV_QP_PORT | 
-                    IBV_QP_ACCESS_FLAGS;
-    if (ibv_modify_qp(qp->_qp, &init_attr, attr_mask) != 0) {
-        NICC_WARN_C("failed to modify QP to INIT: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
+    RDMA_SoC_QP *qp = is_prior ? this->qp_for_prior : this->qp_for_next;
+    QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
+    NICC_CHECK_POINTER(qp);
+    NICC_CHECK_POINTER(this->_mr);
+    NICC_CHECK_POINTER(local_qp_info);
+    if (is_prior && (this->_state & kChannel_State_Prior_Connected)) {
+        NICC_WARN_C("prior QP is already connected");
+        return NICC_ERROR_DUPLICATED;
+    } else if (!is_prior && (this->_state & kChannel_State_Next_Connected)) {
+        NICC_WARN_C("next QP is already connected");
+        return NICC_ERROR_DUPLICATED;
     }
 
-    /// RTR state
-    struct ibv_qp_attr rtr_attr;
-    memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
-    rtr_attr.qp_state = IBV_QPS_RTR;
-    switch(RDMA_SoC_QP::kMTU){
-        case 1024:
-            rtr_attr.path_mtu = IBV_MTU_1024;
-            break;
-        case 2048:
-            rtr_attr.path_mtu = IBV_MTU_2048;
-            break;
-        case 4096:
-            rtr_attr.path_mtu = IBV_MTU_4096;
-            break;
-        default:
-            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", RDMA_SoC_QP::kMTU);
-            return NICC_ERROR_HARDWARE_FAILURE;
-    }
-    rtr_attr.dest_qp_num = remote_qp_info.qp_num;
-    rtr_attr.rq_psn = 0;
-    rtr_attr.max_dest_rd_atomic = 1;
-    rtr_attr.min_rnr_timer = 12;
-
-    rtr_attr.ah_attr.sl = 0;
-    rtr_attr.ah_attr.src_path_bits = 0;
-    rtr_attr.ah_attr.port_num = 1;
-    rtr_attr.ah_attr.dlid = remote_qp_info.lid;
-    memcpy(&rtr_attr.ah_attr.grh.dgid, remote_qp_info.gid, 16);
-    rtr_attr.ah_attr.is_global = 1;
-    rtr_attr.ah_attr.grh.sgid_index = kDefaultGIDIndex;
-    rtr_attr.ah_attr.grh.hop_limit = 2;
-    rtr_attr.ah_attr.grh.traffic_class = 0;
-    if (ibv_modify_qp(qp->_qp, &rtr_attr,
-                      IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
-                      IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
-                      IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {
-        NICC_WARN_C("failed to modify QP to RTR: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-
-    /// create address handles
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_ah(&qp_info, &remote_qp_info, qp)))){
-        NICC_WARN_C("failed to create address handles: retval(%u)", retval);
-        return retval;
-    }
-
-    /// RTS state
-    rtr_attr.qp_state = IBV_QPS_RTS;
-    rtr_attr.sq_psn = 0;
-    rtr_attr.timeout = 14;
-    rtr_attr.retry_cnt = 7;
-    rtr_attr.rnr_retry = 7;
-    rtr_attr.max_rd_atomic = 1;
-    if (ibv_modify_qp(qp->_qp, &rtr_attr,
-                      IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
-                      IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC)) {
-        NICC_WARN_C("failed to modify QP to RTS: retval(%u)", retval);
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-    qp->_remote_qp_id = remote_qp_info.qp_num;
-    return retval;
-}
-
-nicc_retval_t Channel_SoC::__connect_qp(const QPInfo *qp_info, bool is_remote) {
-    nicc_retval_t retval = NICC_SUCCESS;
-    class RDMA_SoC_QP *qp;
-    NICC_CHECK_POINTER(qp_info);
-
-    if (is_remote) {
-        qp = this->qp_for_prior;
+    if (neighbour_component_block != nullptr) {
+        NICC_CHECK_POINTER(neighbour_component_block);
+        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_component_block(qp, neighbour_component_block, local_qp_info)))){
+            NICC_WARN_C("failed to connect QP to component block: retval(%u)", retval);
+            return retval;
+        }
     } else {
-        qp = this->qp_for_next;
+        NICC_CHECK_POINTER(qp_info);
+        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_host(qp, qp_info, local_qp_info)))){
+            NICC_WARN_C("failed to connect QP to host: retval(%u)", retval);
+            return retval;
+        }
+        /// fill the RECV queue
+        if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(qp)))){
+            NICC_WARN_C("failed to fill RECV queue for QP: retval(%u)", retval);
+            return retval;
+        }
     }
-
-    
-
     return retval;
 }
-
-
-
 
 nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     nicc_retval_t retval = NICC_SUCCESS;
@@ -160,8 +84,8 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     }
     this->_resolve.port_lid = port_attr.lid;
 
-    if (ibv_query_gid(_resolve.ib_ctx, _resolve.dev_port_id, kDefaultGIDIndex, &_resolve.gid)) {
-        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%u), retval(%u)", _resolve.dev_port_id, kDefaultGIDIndex, retval);
+    if (ibv_query_gid(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &this->_resolve.gid)) {
+        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
@@ -252,7 +176,7 @@ void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
 }
 
-nicc_retval_t Channel_SoC::__create_ah(QPInfo *local_qp_info, QPInfo *remote_qp_info, RDMA_SoC_QP *qp) {
+nicc_retval_t Channel_SoC::__create_ah(const QPInfo *local_qp_info, const QPInfo *remote_qp_info, RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(local_qp_info);
     NICC_CHECK_POINTER(remote_qp_info);
@@ -391,32 +315,99 @@ nicc_retval_t Channel_SoC::__init_sends(RDMA_SoC_QP *qp) {
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__connect_channels() {
+nicc_retval_t Channel_SoC::__connect_qp_to_component_block(RDMA_SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info) {
+    // nicc_retval_t retval = NICC_SUCCESS;
+    /* ...... */
+    return NICC_ERROR_NOT_IMPLEMENTED;
+}
+
+nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
-
-    /// Connect prior QP and next QP for exchanging QP info 
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->qp_for_prior, true, false)))){
-        NICC_WARN_C("failed to connect prior QP and next QP: retval(%u)", retval);
-        return retval;
-    }
-    /// sleep for 10 seconds
-    if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp(this->qp_for_next, false, true)))){
-        NICC_WARN_C("failed to connect next QP and prior QP: retval(%u)", retval);
-        return retval;
-    }
-
-    /// Fill the RECV queue
-    if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(this->qp_for_prior)))){
-        NICC_WARN_C("failed to fill RECV queue for prior component block");
-        return retval;
-    }
-    if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(this->qp_for_next)))){
-        NICC_WARN_C("failed to fill RECV queue for next component block");
-        return retval;
-    }
     
+    /// Transition QP to INIT state
+    struct ibv_qp_attr init_attr;
+    memset(static_cast<void *>(&init_attr), 0, sizeof(struct ibv_qp_attr));
+    init_attr.qp_state = IBV_QPS_INIT;
+    init_attr.pkey_index = 0;
+    init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
+    init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
+                                IBV_ACCESS_REMOTE_WRITE | 
+                                IBV_ACCESS_REMOTE_READ | 
+                                IBV_ACCESS_REMOTE_ATOMIC;
+    int attr_mask = IBV_QP_STATE | 
+                    IBV_QP_PKEY_INDEX | 
+                    IBV_QP_PORT | 
+                    IBV_QP_ACCESS_FLAGS;
+    if (ibv_modify_qp(qp->_qp, &init_attr, attr_mask) != 0) {
+        NICC_WARN_C("failed to modify QP to INIT: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    /// RTR state
+    struct ibv_qp_attr rtr_attr;
+    memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
+    rtr_attr.qp_state = IBV_QPS_RTR;
+    switch(RDMA_SoC_QP::kMTU){
+        case 1024:
+            rtr_attr.path_mtu = IBV_MTU_1024;
+            break;
+        case 2048:
+            rtr_attr.path_mtu = IBV_MTU_2048;
+            break;
+        case 4096:
+            rtr_attr.path_mtu = IBV_MTU_4096;
+            break;
+        default:
+            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", RDMA_SoC_QP::kMTU);
+            return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rtr_attr.dest_qp_num = remote_qp_info->qp_num;
+    rtr_attr.rq_psn = 0;
+    rtr_attr.max_dest_rd_atomic = 1;
+    rtr_attr.min_rnr_timer = 12;
+
+    rtr_attr.ah_attr.sl = 0;
+    rtr_attr.ah_attr.src_path_bits = 0;
+    rtr_attr.ah_attr.port_num = 1;
+    rtr_attr.ah_attr.dlid = remote_qp_info->lid;
+    memcpy(&rtr_attr.ah_attr.grh.dgid, remote_qp_info->gid, 16);
+    rtr_attr.ah_attr.is_global = 1;
+    rtr_attr.ah_attr.grh.sgid_index = kDefaultGIDIndex;
+    rtr_attr.ah_attr.grh.hop_limit = 2;
+    rtr_attr.ah_attr.grh.traffic_class = 0;
+    if (ibv_modify_qp(qp->_qp, &rtr_attr,
+                      IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
+                      IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
+                      IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {
+        NICC_WARN_C("failed to modify QP to RTR: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    /// create address handles
+    if(unlikely(NICC_SUCCESS != (retval = this->__create_ah(local_qp_info, remote_qp_info, qp)))){
+        NICC_WARN_C("failed to create address handles: retval(%u)", retval);
+        return retval;
+    }
+
+    /// RTS state
+    rtr_attr.qp_state = IBV_QPS_RTS;
+    rtr_attr.sq_psn = 0;
+    rtr_attr.timeout = 14;
+    rtr_attr.retry_cnt = 7;
+    rtr_attr.rnr_retry = 7;
+    rtr_attr.max_rd_atomic = 1;
+    if (ibv_modify_qp(qp->_qp, &rtr_attr,
+                      IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
+                      IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC)) {
+        NICC_WARN_C("failed to modify QP to RTS: retval(%u)", retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    qp->_remote_qp_id = remote_qp_info->qp_num;
+
     return retval;
 }
+
+
 
 nicc_retval_t Channel_SoC::__fill_recv_queue(RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;

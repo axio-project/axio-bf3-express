@@ -59,21 +59,68 @@ exit:
     return retval;
 }
 
-nicc_retval_t ComponentBlock_SoC::connect_to_neighbor_component(const QPInfo *next_qp_info, 
-                                                                const QPInfo *remote_qp_info){
+nicc_retval_t ComponentBlock_SoC::connect_to_neighbour( const ComponentBlock *prior_component_block, 
+                                                        const ComponentBlock *next_component_block,
+                                                        bool is_connected_to_remote,
+                                                        const QPInfo *remote_qp_info,
+                                                        bool is_connected_to_local,
+                                                        const QPInfo *local_qp_info){
     nicc_retval_t retval = NICC_SUCCESS;
-    NICC_CHECK_POINTER(next_qp_info);
-    NICC_CHECK_POINTER(remote_qp_info);
     NICC_CHECK_POINTER(this->_function_state->channel);
-    return this->_function_state->channel->connect_qp(next_qp_info, remote_qp_info);
+
+    if (is_connected_to_remote){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to remote component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (is_connected_to_local){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, nullptr, local_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to local component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (prior_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, prior_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to prior component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (next_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, next_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to next component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    return retval;
 }
 
-QPInfo *ComponentBlock_SoC::get_qp_for_prior_info(){
-    return this->_function_state->channel->qp_for_prior_info;
+nicc_retval_t ComponentBlock_SoC::run_block(){
+    nicc_retval_t retval = NICC_SUCCESS;
+    // create wrapper process for the function
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__create_wrapper_process(this->_function_state)
+    ))) {
+        NICC_WARN_C("failed to create wrapper process for the function: nicc_retval(%u)", retval);
+        goto exit;
+    }
+    /// wait thread join. 
+    this->_function_state->wrapper_thread->join();
+
+exit:
+    return retval;
 }
 
-QPInfo *ComponentBlock_SoC::get_qp_for_next_info(){
-    return this->_function_state->channel->qp_for_next_info;
+QPInfo *ComponentBlock_SoC::get_qp_info(bool is_prior){
+    return is_prior ? this->_function_state->channel->qp_for_prior_info : this->_function_state->channel->qp_for_next_info;
 }
 
 nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state) {
@@ -87,14 +134,6 @@ nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_
         NICC_WARN_C("failed to allocate and init SoC channel: nicc_retval(%u)", retval);
         goto exit;
     }   
-
-    // create wrapper process for the function
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__create_wrapper_process(func_state)
-    ))) {
-        NICC_WARN_C("failed to create wrapper process for the function: nicc_retval(%u)", retval);
-        goto exit;
-    }
 
 exit:
 
@@ -118,8 +157,6 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
     size_t core = bind_to_core(*func_state->wrapper_thread, /*SoC only has numa 0*/0, /*thread id, \todo: enable multiple threads*/0);
     NICC_LOG("Successfully created SoC wrapper thread: core(%lu)", core);
 
-    /// wait thread join. \todo move this to __pipeline_run()
-    func_state->wrapper_thread->join();
     return retval;
 }
 

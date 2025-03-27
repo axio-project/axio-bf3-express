@@ -77,6 +77,9 @@ int main(){
     /**
      * \brief  STEP 3: create app contexts, including corresponding 
      *          functions and handlers
+     * \note   Currently, datapath pipeline is a "chain", instead of a "DAG". We require the users to specify there components in a linear order.
+     * \todo   support DAG
+     * \todo   parse the component order from the config file
      */
     nicc::AppContext app_cxt;
 
@@ -92,7 +95,10 @@ int main(){
     dpa_app_event_handler.binary.dpa.kernel = l2_swap_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
-        .base_desp = { .quota = 1 },
+        .base_desp = { 
+            .quota = 1,
+            .block_name = "dpa" /* \todo: use the component name from the config file */
+        },
         .device_name = "mlx5_0"
     };
     nicc::AppFunction dpa_app_func = nicc::AppFunction(
@@ -118,15 +124,18 @@ int main(){
     nicc::AppHandler soc_app_init_handler;
     soc_app_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
 
-    nicc::ComponentDesp_SoC_t *soc_block_desp = new nicc::ComponentDesp_SoC_t;
-    NICC_CHECK_POINTER(soc_block_desp);
-    soc_block_desp->base_desp.quota = 1;
-    soc_block_desp->device_name = "mlx5_2";
-    soc_block_desp->phy_port = 0;
+    nicc::ComponentDesp_SoC_t soc_block_desp = {
+        .base_desp = { 
+            .quota = 1,
+            .block_name = "soc" /* \todo: use the component name from the config file */
+        },
+        .device_name = "mlx5_2",
+        .phy_port = 0
+    };
 
     nicc::AppFunction soc_app_func = nicc::AppFunction(
         /* handlers_ */ { &soc_app_init_handler },
-        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_block_desp),
+        /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
         /* cid */ nicc::kComponent_SoC
     );
     app_cxt.functions.push_back(&soc_app_func);

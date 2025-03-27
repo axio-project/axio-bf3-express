@@ -20,7 +20,7 @@ struct HostConfig {
     std::string ipv4;           ///< IPv4 address
     uint16_t mgnt_port;         ///< Management port
     uint16_t data_port;         ///< Data port
-    std::vector<component_typeid_t> connect_to; ///< Components to connect to
+    std::vector<std::string> connect_to; ///< Components to connect to
 };
 
 /**
@@ -32,7 +32,6 @@ struct DAGComponent {
     std::map<std::string, std::string> data_path;  // store data_path
     std::map<std::string, std::vector<std::string>> ctrl_path; // store ctrl_path
     std::vector<std::map<std::string, std::string>> ctrl_entries; // store ctrl_path entries
-    component_typeid_t next_component; // store next component
 };
 
 /**
@@ -79,7 +78,7 @@ public:
                 config.mgnt_port = host["mgnt_port"].get<uint16_t>();
                 config.data_port = host["data_port"].get<uint16_t>();
                 for (const auto& component : host["connect_to"]) {
-                    config.connect_to.push_back(component_name_to_id(component));
+                    config.connect_to.push_back(component);
                 }
                 this->_remote_hosts.push_back(config);
             }
@@ -93,7 +92,7 @@ public:
                 config.mgnt_port = host["mgnt_port"].get<uint16_t>();
                 config.data_port = host["data_port"].get<uint16_t>();
                 for (const auto& component : host["connect_to"]) {
-                    config.connect_to.push_back(component_name_to_id(component));
+                    config.connect_to.push_back(component);
                 }
                 this->_local_hosts.push_back(config);
             }
@@ -141,12 +140,6 @@ public:
                                         {"match", entry["match"].get<std::string>()},
                                         {"action", entry["action"].get<std::string>()}
                                     });
-                                    /// update next components
-                                    /// get the component name from the action
-                                    std::string component_name = extract_string_in_parentheses(entry["action"].get<std::string>());
-                                    if (!component_name.empty()) {
-                                        component.next_component = component_name_to_id(component_name);
-                                    }
                                 }
                             } else {
                                 for (const auto &v : value) {
@@ -293,18 +286,18 @@ public:
         }
         return nullptr;
     }
-    /**
-     * \brief find neighbor component block by component id
-     */
-    component_typeid_t find_neighbor_component(const component_typeid_t &component_id) const {
-        const DAGComponent* component = this->get_component_config(component_id);
-        if (component == nullptr) {
-            NICC_ERROR("[Application DAG]: Failed to find component: %d", component_id);
-            return kComponent_Unknown;
-        }
-        // search neighbor component in ctrl_path
-        return component->next_component;  
-    }
+    // /**
+    //  * \brief find neighbor component block by component id
+    //  */
+    // component_typeid_t find_neighbor_component(const component_typeid_t &component_id) const {
+    //     const DAGComponent* component = this->get_component_config(component_id);
+    //     if (component == nullptr) {
+    //         NICC_ERROR("[Application DAG]: Failed to find component: %d", component_id);
+    //         return kComponent_Unknown;
+    //     }
+    //     // search neighbor component in ctrl_path
+    //     return component->next_component;  
+    // }
 
     /**
      * \brief extract string between parentheses
