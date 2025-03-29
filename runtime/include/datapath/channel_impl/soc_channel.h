@@ -49,11 +49,6 @@ class Channel_SoC : public Channel {
 
     static constexpr size_t kInvalidQpId = SIZE_MAX;
 
-    /// Default values for address of the remote endpoint (used as fallback)
-    static constexpr uint16_t kDefaultUdpPort = 10010;
-    static constexpr uint16_t kDefaultMngtPort = 20086;
-    const char* kPriorBlockIpStr = "10.0.4.101";  // \todo: set it via config file
-    const char* kNextBlockIpStr = "10.0.4.102";  // \todo: set it via config file
     
 /**
  * ----------------------Public methods----------------------

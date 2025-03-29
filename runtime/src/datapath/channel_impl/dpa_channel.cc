@@ -15,7 +15,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     NICC_CHECK_POINTER(event_handler);
     NICC_CHECK_POINTER(ibv_ctx);
     
-    // allocate SQ/CQ
+    // allocate SQ's CQ
     if(unlikely(NICC_SUCCESS !=(
         retval = this->__allocate_sq_cq(pd, uar, flexio_process, ibv_ctx)
     ))){
@@ -25,7 +25,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
         goto exit;
     }
 
-    // allocate RQ/CQ
+    // allocate RQ's CQ
     if(unlikely(NICC_SUCCESS !=(
         retval = this->__allocate_rq_cq(pd, uar, flexio_process, event_handler, ibv_ctx)
     ))){
@@ -55,7 +55,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     if(unlikely(FLEXIO_STATUS_SUCCESS != (
         ret = flexio_copy_from_host(
             flexio_process, this->_dev_queues,
-            sizeof(struct dpa_data_queues), &this->d_dev_queues
+            sizeof(struct dpa_data_queues), &this->dev_metadata
         )
     ))){
         NICC_WARN_C(
@@ -114,9 +114,9 @@ nicc_retval_t Channel_DPA::deallocate_channel(struct flexio_process *flexio_proc
     }
 
     // free on-device queue metadata
-    if(likely(this->d_dev_queues != static_cast<flexio_uintptr_t>(0x00))){
+    if(likely(this->dev_metadata != static_cast<flexio_uintptr_t>(0x00))){
         if(unlikely(FLEXIO_STATUS_SUCCESS != (
-            ret = flexio_buf_dev_free(flexio_process, this->d_dev_queues)
+            ret = flexio_buf_dev_free(flexio_process, this->dev_metadata)
         ))){
             NICC_WARN_C(
                 "failed to free on-device queue metadata: "
@@ -409,10 +409,75 @@ exit:
     return retval;
 }
 
+nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
+                                            struct mlx5dv_devx_uar *uar,
+                                            struct flexio_process *flexio_process){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+    struct flexio_qp_attr flexio_qp_fattr;
+    memset(&flexio_qp_fattr, 0, sizeof(struct flexio_qp_attr));
+
+    // allocate doorbell record
+    if(unlikely(NICC_SUCCESS !=
+        (retval = this->__allocate_dbr(flexio_process, &this->_qp_transf.qp_dbr_daddr))
+    )){
+        NICC_WARN_C("failed to allocate doorbell record for QP: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
+        return retval;
+    }
+    // allocate QP data memories
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__allocate_qp_data_memory(
+            flexio_process,
+            &this->_qp_transf,
+            DPA_LOG_SQ_RING_DEPTH,
+            DPA_LOG_RQ_RING_DEPTH,
+            sizeof(struct mlx5_wqe_data_seg)
+        )
+    ))){
+        NICC_WARN_C("failed to allocate QP data memory: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    // create QP
+    flexio_qp_fattr.tranport_type               = FLEXIO_QPC_ST_RC;
+    flexio_qp_fattr.log_qp_sq_depth             = DPA_LOG_SQ_RING_DEPTH;
+    flexio_qp_fattr.log_qp_rq_depth             = DPA_LOG_RQ_RING_DEPTH;
+    flexio_qp_fattr.qp_wq_buff_qmem.daddr       = this->dev_qp;
+    flexio_qp_fattr.qp_wq_dbr_qmem.memtype      = FLEXIO_MEMTYPE_DPA;
+    flexio_qp_fattr.qp_wq_dbr_qmem.daddr        = this->_qp_transf.qp_dbr_daddr;
+    flexio_qp_fattr.uar_id                      = flexio_uar_get_id(uar);
+    flexio_qp_fattr.rq_cqn                      = this->_rq_cq_transf.cq_num;
+    flexio_qp_fattr.sq_cqn                      = this->_sq_cq_transf.cq_num;
+    flexio_qp_fattr.rq_type                     = FLEXIO_QP_QPC_RQ_TYPE_REGULAR;
+    flexio_qp_fattr.sq_type                     = FLEXIO_QP_QPC_SQ_TYPE_REGULAR;
+    flexio_qp_fattr.pd                          = pd;
+    flexio_qp_fattr.qp_access_mask              = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE;
+    flexio_qp_fattr.ops_flag                    = FLEXIO_QP_WR_RDMA_WRITE | 
+                                                  FLEXIO_QP_WR_RDMA_READ |
+                                                  FLEXIO_QP_WR_ATOMIC_CMP_AND_SWAP;
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_qp_create(flexio_process, nullptr, &flexio_qp_fattr, &this->_flexio_qp_ptr)
+    ))){
+        NICC_WARN_C("failed to create flexio QP on flexio driver: flexio_process(%p), flexio_retval(%u)", flexio_process, ret);
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    this->_qp_transf.qp_num = flexio_qp_get_qp_num(this->_flexio_qp_ptr);
+    this->_qp_transf.log_qp_sq_depth = DPA_LOG_SQ_RING_DEPTH;
+    this->_qp_transf.log_qp_rq_depth = DPA_LOG_RQ_RING_DEPTH;
+
+    
+exit:
+    // TODO: if unsuccessful, free allocated memories
+
+    return retval;
+}
+
 nicc_retval_t Channel_DPA::__allocate_wq_memory(struct flexio_process *process, 
                                                 int log_depth, 
                                                 uint64_t wqe_size, 
-                                                struct dpa_wq *wq_transf){
+                                                struct dpa_eth_wq *wq_transf){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
 
@@ -593,11 +658,8 @@ nicc_retval_t Channel_DPA::__allocate_dbr(struct flexio_process *process,
         ret = flexio_copy_from_host(process, dbr, sizeof(dbr), dbr_daddr)
     ))){
         NICC_WARN_C("failed to copy DBR to device memory: flexio_process(%p), flexio_retval(%u)", process, ret);
-        retval = NICC_ERROR_HARDWARE_FAILURE;
-        goto exit;
+        return NICC_ERROR_HARDWARE_FAILURE;
     }
-
-exit:
     return retval;
 }
 
@@ -629,14 +691,49 @@ nicc_retval_t Channel_DPA::__create_dpa_mkey(struct flexio_process *process,
             "failed to create mkey for memory region: flexio_process(%p), daddr(%lx)",
             process, daddr
         );
-        retval = NICC_ERROR_HARDWARE_FAILURE;
-        goto exit;
+        return NICC_ERROR_HARDWARE_FAILURE;
     }
 
-exit:
     return retval;
 }
 
+nicc_retval_t Channel_DPA::__allocate_qp_data_memory(struct flexio_process *process,
+                                                     struct dpa_qp *qp_transf,
+                                                     int log_sq_depth,
+                                                     int log_rq_depth,
+                                                     uint64_t wqe_size){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+    flexio_uintptr_t buff_daddr;
+	size_t buff_bsize = 0;
+	size_t rq_bsize = 0;
+	size_t sq_bsize = 0;
+
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(qp_transf);
+    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
+
+    rq_bsize = LOG2VALUE(log_rq_depth) * wqe_size;
+    sq_bsize = LOG2VALUE(log_sq_depth) * wqe_size;
+    buff_bsize = rq_bsize + sq_bsize;
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_buf_dev_alloc(process, buff_bsize, &buff_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to allocate buffer for QP: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    /* buffer start from RQ, and after RQ is SQ*/
+    qp_transf->qp_rq_daddr = buff_daddr;
+    qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
+
+    return retval;
+}
+
+/* ----------------------------- deallocate ----------------------------- */
 nicc_retval_t Channel_DPA::__deallocate_sq_cq(struct flexio_process *flexio_process){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
@@ -765,7 +862,7 @@ exit:
 }
 
 
-nicc_retval_t Channel_DPA::__deallocate_wq_memory(struct flexio_process *process, struct dpa_wq *wq_transf){
+nicc_retval_t Channel_DPA::__deallocate_wq_memory(struct flexio_process *process, struct dpa_eth_wq *wq_transf){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
 

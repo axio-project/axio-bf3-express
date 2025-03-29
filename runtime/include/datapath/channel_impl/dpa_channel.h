@@ -47,8 +47,10 @@ class Channel_DPA : public Channel {
  * ----------------------Public parameters----------------------
  */ 
  public:
-    /// \brief on-device metadata
-    flexio_uintptr_t		    d_dev_queues;		// mirror of dev_queues on device
+    /// \brief on-device metadata, used for init or destroy on-device resources,
+    ///        the metadata is the dev addr of _dev_queues content
+    ///        a flexio_process_call will call an init function on the device, to read _dev_queues content
+    flexio_uintptr_t		    dev_metadata;		// mirror of dev_queues on device
 
 /**
  * ----------------------Internel method----------------------
@@ -78,6 +80,9 @@ class Channel_DPA : public Channel {
     nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
                                        struct mlx5dv_devx_uar *uar, 
                                        struct flexio_process *flexio_process);
+    nicc_retval_t __create_rdma_qp(struct ibv_pd *pd, 
+                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_process *flexio_process);
 
     /*!
      *  \brief  allocate memory resource for SQ/RQ
@@ -89,7 +94,7 @@ class Channel_DPA : public Channel {
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __allocate_wq_memory(
-        struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_wq *wq_transf
+        struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_eth_wq *wq_transf
     );
 
     /*!
@@ -99,7 +104,7 @@ class Channel_DPA : public Channel {
      *  \param  sq_transf       created SQ/RQ resource
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __deallocate_wq_memory(struct flexio_process *process, struct dpa_wq *wq_transf);
+    nicc_retval_t __deallocate_wq_memory(struct flexio_process *process, struct dpa_eth_wq *wq_transf);
 
     /*!
      *  \brief  allocate memory resource for SQ/CQ
@@ -172,21 +177,25 @@ class Channel_DPA : public Channel {
  */
  private:
     /// \brief  SQ
-    struct dpa_wq		        _sq_transf;          //! \note   contains some device pointers
     struct dpa_cq		        _sq_cq_transf;       //! \note   contains some device pointers
     struct flexio_mkey          *_sqd_mkey;
     /// \brief  RQ
-    struct dpa_wq		        _rq_transf;          //! \note   contains some device pointers
     struct dpa_cq		        _rq_cq_transf;       //! \note   contains some device pointers
     struct flexio_mkey          *_rqd_mkey;
+    /// \brief  Ethernet
+    struct dpa_eth_wq		    _sq_transf;          //! \note   contains some device pointers
+    struct dpa_eth_wq		    _rq_transf;          //! \note   contains some device pointers
+    /// \brief  RDMA
+    struct dpa_qp               _qp_transf;          //! \note   contains some device pointers
 
     struct dpa_data_queues	    *_dev_queues;
 
     /// \brief flexio driver handlers
     struct flexio_cq            *_flexio_rq_cq_ptr;	// FlexIO RQ CQ
     struct flexio_cq            *_flexio_sq_cq_ptr;	// FlexIO SQ CQ
-    struct flexio_rq            *_flexio_rq_ptr;		// FlexIO RQ
-    struct flexio_sq            *_flexio_sq_ptr;		// FlexIO SQ 
+    struct flexio_rq            *_flexio_rq_ptr;		// FlexIO RQ, used for Ethernet mode
+    struct flexio_sq            *_flexio_sq_ptr;		// FlexIO SQ, used for Ethernet mode
+    struct flexio_qp            *_flexio_qp_ptr;    	// FlexIO QP, used for RDMA mode
 };
 
 }

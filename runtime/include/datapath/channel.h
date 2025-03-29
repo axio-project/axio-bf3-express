@@ -16,10 +16,12 @@ class Channel {
  * ----------------------Parameters in channel level----------------------
  */ 
 public:
+    static constexpr uint16_t kChannel_Prior_Mask = 0x1100;
+    static constexpr uint16_t kChannel_Next_Mask = 0x0011;
     /**
      * \brief  typeid of the established channel
      */
-    enum channel_typeid_t : uint8_t { 
+    enum channel_typeid_t : uint16_t { 
         UNKONW_TYPE = 0, 
         RDMA,
         SHM,
@@ -28,7 +30,7 @@ public:
     /**
      * \brief mode of the established channel
      */
-    enum channel_mode_t : uint8_t {
+    enum channel_mode_t : uint16_t {
         UNKONW_MODE = 0,
         PAKT_UNORDERED,
         PAKT_ORDERED,
@@ -73,8 +75,8 @@ public:
  * ----------------------Internel Parameters----------------------
  */ 
 protected:
-    channel_typeid_t _typeid;
-    channel_mode_t _mode;
+    channel_typeid_t _typeid = kChannel_Type_Unknown;       // high 8 bits: qp type for prior component block, low 8 bits: qp type for next component block
+    channel_mode_t _mode = kChannel_Mode_Unknown;           // high 8 bits: mode for prior component block, low 8 bits: mode for next component block
     channel_state_t _state = kChannel_State_Uninit;
 };
 } 

@@ -24,8 +24,8 @@ struct dpa_cq {
 } __attribute__((__packed__, aligned(8)));
 
 
-// metadata of a dpa wq
-struct dpa_wq {
+// metadata of a dpa wq, used for Ethernet mode
+struct dpa_eth_wq {
     uint32_t wq_num;
     uint32_t wqd_mkey_id;
     flexio_uintptr_t wq_ring_daddr;
@@ -33,13 +33,37 @@ struct dpa_wq {
     flexio_uintptr_t wqd_daddr;
 } __attribute__((__packed__, aligned(8)));
 
+// metadata of a dpa qp, used for RDMA mode
+struct dpa_qp {
+    uint32_t qp_num;
+    uint32_t sqd_mkey_id;
+    uint32_t rqd_mkey_id;
+    uint32_t reserved;
+    uint32_t log_qp_sq_depth;
+    uint32_t log_qp_rq_depth;
+    uint32_t sq_ci_idx;
+    uint32_t rq_ci_idx;
+    uint32_t sq_pi_idx;
+    uint32_t rq_pi_idx;
+
+    uint64_t sqd_lkey;
+    uint64_t rqd_lkey;
+
+    flexio_uintptr_t qp_dbr_daddr;
+    flexio_uintptr_t qp_sq_daddr;
+    flexio_uintptr_t qp_rq_daddr;
+    flexio_uintptr_t sqd_daddr;
+    flexio_uintptr_t rqd_daddr;
+} __attribute__((__packed__, aligned(8)));
 
 /* Transport data from HOST application to DEV application */
 struct dpa_data_queues {
+	uint8_t mode;				// 0: Ethernet mode, 1: RDMA mode	
     struct dpa_cq rq_cq_data;   // device RQ's CQ
-    struct dpa_wq rq_data;	    // device RQ
+    struct dpa_eth_wq rq_data;	    // device RQ, used for Ethernet mode
     struct dpa_cq sq_cq_data;   // device SQ's CQ
-    struct dpa_wq sq_data;	    // device SQ
+    struct dpa_eth_wq sq_data;	    // device SQ, used for Ethernet mode
+	struct dpa_qp qp_data;	    // device QP, used for RDMA mode
 } __attribute__((__packed__, aligned(8)));
 
 /* ----------------------------Structure defination used on device---------------------------- */
