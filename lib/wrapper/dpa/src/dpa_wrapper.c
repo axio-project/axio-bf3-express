@@ -26,6 +26,10 @@ dpa_device_init(uint64_t data_for_prior_component, uint64_t data_for_next_compon
 	
 	struct dpa_data_queues *shared_data_for_prior = (struct dpa_data_queues *)data_for_prior_component;
 	struct dpa_data_queues *shared_data_for_next = (struct dpa_data_queues *)data_for_next_component;
+	flexio_dev_print("Entering DPA device init!\n");
+
+	flexio_dev_print("prior queue type: %u\n", shared_data_for_prior->type);
+	flexio_dev_print("next queue type: %u\n", shared_data_for_next->type);
 
 	dev_ctx.lkey = shared_data_for_prior->sq_data.wqd_mkey_id;
 	init_cq(shared_data_for_prior->rq_cq_data, &dev_ctx.rqcq_ctx);
@@ -37,7 +41,6 @@ dpa_device_init(uint64_t data_for_prior_component, uint64_t data_for_next_compon
 	dev_ctx.dt_ctx.tx_buff_idx = 0;
 
 	dev_ctx.is_initalized = 1;
-	// flexio_dev_print("Entering DPA device init!\n");
 	return 0;
 }
 

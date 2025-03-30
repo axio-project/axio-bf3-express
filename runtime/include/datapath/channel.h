@@ -75,8 +75,10 @@ public:
  * ----------------------Internel Parameters----------------------
  */ 
 protected:
-    channel_typeid_t _typeid = UNKONW_TYPE;       // high 8 bits: qp type for prior component block, low 8 bits: qp type for next component block
-    channel_mode_t _mode = UNKONW_MODE;           // high 8 bits: mode for prior component block, low 8 bits: mode for next component block
+    channel_typeid_t _typeid_of_prior = UNKONW_TYPE;       
+    channel_typeid_t _typeid_of_next = UNKONW_TYPE;
+    channel_mode_t _mode_of_prior = UNKONW_MODE;
+    channel_mode_t _mode_of_next = UNKONW_MODE;
     channel_state_t _state = kChannel_State_Uninit;
 };
 } 

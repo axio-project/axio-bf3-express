@@ -54,10 +54,12 @@ class Channel_SoC : public Channel {
  * ----------------------Public methods----------------------
  */ 
  public:
-    Channel_SoC(channel_typeid_t channel_type, channel_mode_t channel_mode)
+    Channel_SoC(channel_typeid_t channel_type_of_prior, channel_mode_t channel_mode_of_prior, channel_typeid_t channel_type_of_next, channel_mode_t channel_mode_of_next)
         : Channel() {
-        this->_typeid = channel_type;
-        this->_mode = channel_mode;
+        this->_typeid_of_prior = channel_type_of_prior;
+        this->_mode_of_prior = channel_mode_of_prior;
+        this->_typeid_of_next = channel_type_of_next;
+        this->_mode_of_next = channel_mode_of_next;
         this->qp_for_prior_info = (QPInfo*)malloc(sizeof(QPInfo));
         this->qp_for_next_info = (QPInfo*)malloc(sizeof(QPInfo));
     }

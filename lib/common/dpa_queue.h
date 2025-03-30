@@ -58,7 +58,8 @@ struct dpa_qp {
 
 /* Transport data from HOST application to DEV application */
 struct dpa_data_queues {
-	uint8_t mode;				// 0: Ethernet mode, 1: RDMA mode	
+    uint8_t type;               // channel_typeid_t, defined in channel.h
+    uint8_t reserved1[7];       // padding to ensure 8-byte alignment
     struct dpa_cq rq_cq_data;   // device RQ's CQ
     struct dpa_cq sq_cq_data;   // device SQ's CQ
     struct dpa_eth_wq rq_data;	    // device RQ, used for Ethernet mode

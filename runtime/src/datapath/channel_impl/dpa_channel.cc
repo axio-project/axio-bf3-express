@@ -54,7 +54,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
 
     // create Queue Pair for prior
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__create_qp(pd, uar, flexio_process, dev_queues_for_prior, &_flexio_queues_handler_for_prior)
+        retval = this->__create_qp(pd, uar, flexio_process, dev_queues_for_prior, &_flexio_queues_handler_for_prior, this->_typeid_of_prior)
     ))){
         NICC_WARN_C("failed to create prior queue pair: nicc_retval(%u)", retval);
         goto exit;
@@ -62,7 +62,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     
     // create Queue Pair for next
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__create_qp(pd, uar, flexio_process, dev_queues_for_next, &_flexio_queues_handler_for_next)
+        retval = this->__create_qp(pd, uar, flexio_process, dev_queues_for_next, &_flexio_queues_handler_for_next, this->_typeid_of_next)
     ))){
         NICC_WARN_C("failed to create next queue pair: nicc_retval(%u)", retval);
         goto exit;
@@ -71,7 +71,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     /* copy queue metadata to device */
     if(unlikely(FLEXIO_STATUS_SUCCESS != (
         ret = flexio_copy_from_host(
-            flexio_process, &this->dev_metadata_for_prior,
+            flexio_process, dev_queues_for_prior,
             sizeof(struct dpa_data_queues), &this->dev_metadata_for_prior
         )
     ))){
@@ -85,7 +85,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     }
     if(unlikely(FLEXIO_STATUS_SUCCESS != (
         ret = flexio_copy_from_host(
-            flexio_process, &this->dev_metadata_for_next,
+            flexio_process, dev_queues_for_next,
             sizeof(struct dpa_data_queues), &this->dev_metadata_for_next
         )
     ))){
@@ -320,7 +320,8 @@ nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
                                        struct mlx5dv_devx_uar *uar,
                                        struct flexio_process *flexio_process,
                                        struct dpa_data_queues *dev_queues,
-                                       struct flexio_queues_handler *flexio_queues_handler){
+                                       struct flexio_queues_handler *flexio_queues_handler,
+                                       channel_typeid_t type){
     nicc_retval_t retval = NICC_SUCCESS;
 
     NICC_CHECK_POINTER(pd);
@@ -329,11 +330,13 @@ nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
     NICC_CHECK_POINTER(dev_queues);
     NICC_CHECK_POINTER(flexio_queues_handler);
 
-    switch(this->_typeid){
+    switch(type){
         case Channel::channel_typeid_t::RDMA:
+            dev_queues->type = Channel::channel_typeid_t::RDMA;
             retval = this->__create_rdma_qp(pd, uar, flexio_process, dev_queues, flexio_queues_handler);
             break;
         case Channel::channel_typeid_t::ETHERNET:
+            dev_queues->type = Channel::channel_typeid_t::ETHERNET;
             retval = this->__create_ethernet_qp(pd, uar, flexio_process, dev_queues, flexio_queues_handler);
             break;
         default:

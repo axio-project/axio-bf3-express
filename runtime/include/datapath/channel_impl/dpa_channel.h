@@ -13,9 +13,11 @@
 namespace nicc {
 class Channel_DPA : public Channel {
  public:
-    Channel_DPA(channel_typeid_t channel_type, channel_mode_t channel_mode) : Channel() {
-        this->_typeid = channel_type;
-        this->_mode = channel_mode;
+    Channel_DPA(channel_typeid_t channel_type_of_prior, channel_mode_t channel_mode_of_prior, channel_typeid_t channel_type_of_next, channel_mode_t channel_mode_of_next) : Channel() {
+        this->_typeid_of_prior = channel_type_of_prior;
+        this->_mode_of_prior = channel_mode_of_prior;
+        this->_typeid_of_next = channel_type_of_next;
+        this->_mode_of_next = channel_mode_of_next;
         this->dev_queues_for_prior = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
         memset(this->dev_queues_for_prior, 0, sizeof(struct dpa_data_queues));
         this->dev_queues_for_next = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
@@ -103,7 +105,8 @@ class Channel_DPA : public Channel {
                               struct mlx5dv_devx_uar *uar, 
                               struct flexio_process *flexio_process,
                               struct dpa_data_queues *dev_queues,
-                              struct flexio_queues_handler *flexio_queues_handler);
+                              struct flexio_queues_handler *flexio_queues_handler,
+                              channel_typeid_t type);
     nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
                                        struct mlx5dv_devx_uar *uar, 
                                        struct flexio_process *flexio_process,
