@@ -19,20 +19,21 @@
  * @return: This function always returns 0
  */
 __dpa_rpc__ uint64_t
-dpa_device_init(uint64_t data)
+dpa_device_init(uint64_t data_for_prior_component, uint64_t data_for_next_component)
 {
 	struct flexio_dev_thread_ctx *dtctx;
 	flexio_dev_get_thread_ctx(&dtctx);
 	
-	struct dpa_data_queues *shared_data = (struct dpa_data_queues *)data;
+	struct dpa_data_queues *shared_data_for_prior = (struct dpa_data_queues *)data_for_prior_component;
+	struct dpa_data_queues *shared_data_for_next = (struct dpa_data_queues *)data_for_next_component;
 
-	dev_ctx.lkey = shared_data->sq_data.wqd_mkey_id;
-	init_cq(shared_data->rq_cq_data, &dev_ctx.rqcq_ctx);
-	init_rq(shared_data->rq_data, &dev_ctx.rq_ctx);
-	init_cq(shared_data->sq_cq_data, &dev_ctx.sqcq_ctx);
-	init_sq(shared_data->sq_data, &dev_ctx.sq_ctx);
+	dev_ctx.lkey = shared_data_for_prior->sq_data.wqd_mkey_id;
+	init_cq(shared_data_for_prior->rq_cq_data, &dev_ctx.rqcq_ctx);
+	init_rq(shared_data_for_prior->rq_data, &dev_ctx.rq_ctx);
+	init_cq(shared_data_for_prior->sq_cq_data, &dev_ctx.sqcq_ctx);
+	init_sq(shared_data_for_prior->sq_data, &dev_ctx.sq_ctx);
 
-	dev_ctx.dt_ctx.sq_tx_buff = (void *)shared_data->sq_data.wqd_daddr;
+	dev_ctx.dt_ctx.sq_tx_buff = (void *)shared_data_for_prior->sq_data.wqd_daddr;
 	dev_ctx.dt_ctx.tx_buff_idx = 0;
 
 	dev_ctx.is_initalized = 1;

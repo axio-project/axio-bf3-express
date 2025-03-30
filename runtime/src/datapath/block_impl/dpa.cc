@@ -288,7 +288,8 @@ nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppFunction *app_func
             func_state->flexio_process,
             *(reinterpret_cast<flexio_func_t*>(app_handler->binary.dpa.host_stub)),
             &rpc_ret_val,
-            func_state->channel->dev_metadata
+            func_state->channel->dev_metadata_for_prior,
+            func_state->channel->dev_metadata_for_next
         )
     ))){
         NICC_WARN_C(
@@ -383,7 +384,7 @@ nicc_retval_t ComponentBlock_DPA::__add_control_plane_rule(struct mlx5dv_dr_doma
 
     // Create action to forward traffic to the DPA RQ
     rx_rule->dr_action = mlx5dv_dr_action_create_dest_devx_tir(
-        flexio_rq_get_tir(this->_function_state->channel->get_flexio_rq_ptr())
+        flexio_rq_get_tir(this->_function_state->channel->get_flexio_rq_ptr(true))
     );
     if(unlikely(rx_rule->dr_action == nullptr)){
         NICC_WARN_C("failed to create rx rule action");
