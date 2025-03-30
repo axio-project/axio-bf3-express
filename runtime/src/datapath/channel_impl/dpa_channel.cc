@@ -39,7 +39,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
         retval = this->__allocate_rq_cq(pd, uar, flexio_process, event_handler, ibv_ctx, dev_queues_for_prior, &_flexio_queues_handler_for_prior)
     ))){
         NICC_WARN_C(
-            "failed to allocate and init RQ and corresponding CQ/DBR: nicc_retval(%u)", retval
+            "failed to allocate and init RQ and corresponding CQ/DBR for prior: nicc_retval(%u)", retval
         );
         goto exit;
     }
@@ -99,8 +99,9 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     }
 
  exit:
-
-    // TODO: destory if failed
+    if(retval != NICC_SUCCESS){
+        // TODO: destory if failed
+    }
 
     return retval;
 }
@@ -834,8 +835,7 @@ nicc_retval_t Channel_DPA::__deallocate_sq_cq(struct flexio_process *flexio_proc
                 "failed to destory flexio SQ's CQ on flexio driver: flexio_process(%p), flexio_retval(%u)",
                 flexio_process, ret
             );
-            retval = NICC_ERROR_HARDWARE_FAILURE;
-            goto exit;
+            return NICC_ERROR_HARDWARE_FAILURE;
         }
         flexio_queues_handler->flexio_sq_cq_ptr = nullptr;
     }
@@ -848,10 +848,8 @@ nicc_retval_t Channel_DPA::__deallocate_sq_cq(struct flexio_process *flexio_proc
             "failed to deallocate SQ's CQ and doorbell on DPA heap memory: flexio_process(%p), retval(%u)",
             flexio_process, retval
         );
-        goto exit;
+        return NICC_ERROR_HARDWARE_FAILURE;
     }
-
-exit:
     return retval;
 }
 
