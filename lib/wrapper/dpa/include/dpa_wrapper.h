@@ -39,7 +39,7 @@ init_cq(const struct dpa_cq app_cq, struct cq_ctx_t *ctx)
  * @ctx [out]: RQ context
  */
 static void
-init_rq(const struct dpa_wq app_rq, struct rq_ctx_t *ctx)
+init_rq(const struct dpa_eth_wq app_rq, struct rq_ctx_t *ctx)
 {
 	ctx->rq_number = app_rq.wq_num;
 	ctx->rq_ring = (struct flexio_dev_wqe_rcv_data_seg *)app_rq.wq_ring_daddr;
@@ -53,7 +53,7 @@ init_rq(const struct dpa_wq app_rq, struct rq_ctx_t *ctx)
  * @ctx [out]: SQ context
  */
 static void
-init_sq(const struct dpa_wq app_sq, struct sq_ctx_t *ctx)
+init_sq(const struct dpa_eth_wq app_sq, struct sq_ctx_t *ctx)
 {
 	ctx->sq_number = app_sq.wq_num;
 	ctx->sq_ring = (union flexio_dev_sqe_seg *)app_sq.wq_ring_daddr;

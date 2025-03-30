@@ -247,11 +247,15 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
-    this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(
-        retval = _function_state->channel->allocate_channel(func_state->pd, func_state->uar, func_state->flexio_process, func_state->event_handler, func_state->ibv_ctx)
+        retval = this->_function_state->channel->allocate_channel(func_state->pd, 
+                                                                  func_state->uar, 
+                                                                  func_state->flexio_process, 
+                                                                  func_state->event_handler, 
+                                                                  func_state->ibv_ctx)
     ))){
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
@@ -284,7 +288,8 @@ nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppFunction *app_func
             func_state->flexio_process,
             *(reinterpret_cast<flexio_func_t*>(app_handler->binary.dpa.host_stub)),
             &rpc_ret_val,
-            func_state->channel->d_dev_queues
+            func_state->channel->dev_metadata_for_prior,
+            func_state->channel->dev_metadata_for_next
         )
     ))){
         NICC_WARN_C(
@@ -325,7 +330,7 @@ nicc_retval_t ComponentBlock_DPA::__deallocate_wrapper_resources(ComponentFuncSt
 
     // deallocate channel
     if(unlikely(NICC_SUCCESS !=(
-        retval = _function_state->channel->deallocate_channel(func_state->flexio_process)
+        retval = this->_function_state->channel->deallocate_channel(func_state->flexio_process)
     ))){
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
@@ -379,7 +384,7 @@ nicc_retval_t ComponentBlock_DPA::__add_control_plane_rule(struct mlx5dv_dr_doma
 
     // Create action to forward traffic to the DPA RQ
     rx_rule->dr_action = mlx5dv_dr_action_create_dest_devx_tir(
-        flexio_rq_get_tir(this->_function_state->channel->get_flexio_rq_ptr())
+        flexio_rq_get_tir(this->_function_state->channel->get_flexio_rq_ptr(true))
     );
     if(unlikely(rx_rule->dr_action == nullptr)){
         NICC_WARN_C("failed to create rx rule action");

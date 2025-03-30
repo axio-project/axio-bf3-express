@@ -126,7 +126,7 @@ QPInfo *ComponentBlock_SoC::get_qp_info(bool is_prior){
 nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;
 
-    this->_function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
     // allocate channel
     if(unlikely(NICC_SUCCESS != (
         retval = this->_function_state->channel->allocate_channel(this->_desp->device_name, this->_desp->phy_port)

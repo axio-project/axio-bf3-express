@@ -13,12 +13,28 @@
 namespace nicc {
 class Channel_DPA : public Channel {
  public:
-    Channel_DPA(channel_typeid_t channel_type, channel_mode_t channel_mode) : Channel() {
-        this->_typeid = channel_type;
-        this->_mode = channel_mode;
+    Channel_DPA(channel_typeid_t channel_type_of_prior, channel_mode_t channel_mode_of_prior, channel_typeid_t channel_type_of_next, channel_mode_t channel_mode_of_next) : Channel() {
+        this->_typeid_of_prior = channel_type_of_prior;
+        this->_mode_of_prior = channel_mode_of_prior;
+        this->_typeid_of_next = channel_type_of_next;
+        this->_mode_of_next = channel_mode_of_next;
+        this->dev_queues_for_prior = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
+        memset(this->dev_queues_for_prior, 0, sizeof(struct dpa_data_queues));
+        this->dev_queues_for_next = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
+        memset(this->dev_queues_for_next, 0, sizeof(struct dpa_data_queues));
     }
     ~Channel_DPA() {};
     
+    struct flexio_queues_handler {
+        /// \brief flexio driver handlers
+        uint8_t mode;
+        struct flexio_cq            *flexio_rq_cq_ptr;	// FlexIO RQ CQ
+        struct flexio_cq            *flexio_sq_cq_ptr;	// FlexIO SQ CQ
+        struct flexio_rq            *flexio_rq_ptr;		// FlexIO RQ, used for Ethernet mode
+        struct flexio_sq            *flexio_sq_ptr;		// FlexIO SQ, used for Ethernet mode
+        struct flexio_qp            *flexio_qp_ptr;    	// FlexIO QP, used for RDMA mode
+    };
+
     /**
      * \brief   allocate resources for dpa channel, including CQ, SQ, RQ
      * \return  NICC_SUCCESS on success and NICC_ERROR otherwise
@@ -39,16 +55,23 @@ class Channel_DPA : public Channel {
  * ----------------------Util Methods----------------------
  */ 
  public:
-    struct flexio_rq *get_flexio_rq_ptr() {
-        return this->_flexio_rq_ptr;
+    struct flexio_rq *get_flexio_rq_ptr(bool is_prior) {
+        return is_prior ? this->_flexio_queues_handler_for_prior.flexio_rq_ptr : 
+                          this->_flexio_queues_handler_for_next.flexio_rq_ptr;
     }
 
 /**
  * ----------------------Public parameters----------------------
  */ 
  public:
-    /// \brief on-device metadata
-    flexio_uintptr_t		    d_dev_queues;		// mirror of dev_queues on device
+    struct dpa_data_queues      *dev_queues_for_prior;
+    struct dpa_data_queues      *dev_queues_for_next;
+    /// \brief on-device metadata, used for init or destroy on-device resources,
+    ///        the metadata is the dev addr of dev_queues_for_prior/next content
+    ///        a flexio_process_call will call an init function on the device, 
+    ///        to read dev_queues_for_prior/next content
+    flexio_uintptr_t		    dev_metadata_for_prior;		// mirror of dev_queues_for_prior on device
+    flexio_uintptr_t		    dev_metadata_for_next;		// mirror of dev_queues_for_next on device
 
 /**
  * ----------------------Internel method----------------------
@@ -62,22 +85,42 @@ class Channel_DPA : public Channel {
     nicc_retval_t __allocate_sq_cq( struct ibv_pd *pd, 
                                     struct mlx5dv_devx_uar *uar, 
                                     struct flexio_process *flexio_process,
-                                    struct ibv_context *ibv_ctx);
+                                    struct ibv_context *ibv_ctx,
+                                    struct dpa_data_queues *dev_queues,
+                                    struct flexio_queues_handler *flexio_queues_handler);
     nicc_retval_t __allocate_rq_cq( struct ibv_pd *pd, 
                                     struct mlx5dv_devx_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
-                                    struct ibv_context *ibv_ctx);
+                                    struct ibv_context *ibv_ctx,
+                                    struct dpa_data_queues *dev_queues,
+                                    struct flexio_queues_handler *flexio_queues_handler);
+    nicc_retval_t __deallocate_sq_cq(struct flexio_process *flexio_process,
+                                     struct dpa_data_queues *dev_queues,
+                                     struct flexio_queues_handler *flexio_queues_handler);
+    nicc_retval_t __deallocate_rq_cq(struct flexio_process *flexio_process,
+                                     struct dpa_data_queues *dev_queues,
+                                     struct flexio_queues_handler *flexio_queues_handler);
     nicc_retval_t __create_qp(struct ibv_pd *pd, 
                               struct mlx5dv_devx_uar *uar, 
-                              struct flexio_process *flexio_process);
-    nicc_retval_t __deallocate_sq_cq(struct flexio_process *flexio_process);
-    nicc_retval_t __deallocate_rq_cq(struct flexio_process *flexio_process);
-    nicc_retval_t __destroy_qp(struct flexio_process *flexio_process);
-
+                              struct flexio_process *flexio_process,
+                              struct dpa_data_queues *dev_queues,
+                              struct flexio_queues_handler *flexio_queues_handler,
+                              channel_typeid_t type);
     nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
                                        struct mlx5dv_devx_uar *uar, 
-                                       struct flexio_process *flexio_process);
+                                       struct flexio_process *flexio_process,
+                                       struct dpa_data_queues *dev_queues,
+                                       struct flexio_queues_handler *flexio_queues_handler);
+    nicc_retval_t __create_rdma_qp(struct ibv_pd *pd, 
+                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_process *flexio_process,
+                                    struct dpa_data_queues *dev_queues,
+                                    struct flexio_queues_handler *flexio_queues_handler);
+    nicc_retval_t __destroy_qp(struct flexio_process *flexio_process,
+                              struct dpa_data_queues *dev_queues,
+                              struct flexio_queues_handler *flexio_queues_handler);
+
 
     /*!
      *  \brief  allocate memory resource for SQ/RQ
@@ -89,7 +132,7 @@ class Channel_DPA : public Channel {
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t __allocate_wq_memory(
-        struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_wq *wq_transf
+        struct flexio_process *process, int log_depth, uint64_t wqe_size, struct dpa_eth_wq *wq_transf
     );
 
     /*!
@@ -99,7 +142,19 @@ class Channel_DPA : public Channel {
      *  \param  sq_transf       created SQ/RQ resource
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __deallocate_wq_memory(struct flexio_process *process, struct dpa_wq *wq_transf);
+    nicc_retval_t __deallocate_wq_memory(struct flexio_process *process, struct dpa_eth_wq *wq_transf);
+
+    /**
+     *  \brief  allocate memory resource for RDMA QP
+     *  \param  process         flexIO process
+     *  \param  qp_transf       created RDMA QP resource
+     *  \param  log_sq_depth    log2 of the SQ depth
+     *  \param  log_rq_depth    log2 of the RQ depth
+     *  \param  wqe_size        size of wqe on the ring
+     *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __allocate_qp_data_memory(struct flexio_process *process, struct dpa_qp *qp_transf, 
+                                            int log_sq_depth, int log_rq_depth, uint64_t wqe_size);
 
     /*!
      *  \brief  allocate memory resource for SQ/CQ
@@ -172,21 +227,12 @@ class Channel_DPA : public Channel {
  */
  private:
     /// \brief  SQ
-    struct dpa_wq		        _sq_transf;          //! \note   contains some device pointers
-    struct dpa_cq		        _sq_cq_transf;       //! \note   contains some device pointers
     struct flexio_mkey          *_sqd_mkey;
     /// \brief  RQ
-    struct dpa_wq		        _rq_transf;          //! \note   contains some device pointers
-    struct dpa_cq		        _rq_cq_transf;       //! \note   contains some device pointers
     struct flexio_mkey          *_rqd_mkey;
 
-    struct dpa_data_queues	    *_dev_queues;
-
-    /// \brief flexio driver handlers
-    struct flexio_cq            *_flexio_rq_cq_ptr;	// FlexIO RQ CQ
-    struct flexio_cq            *_flexio_sq_cq_ptr;	// FlexIO SQ CQ
-    struct flexio_rq            *_flexio_rq_ptr;		// FlexIO RQ
-    struct flexio_sq            *_flexio_sq_ptr;		// FlexIO SQ 
+    struct flexio_queues_handler	_flexio_queues_handler_for_prior;
+    struct flexio_queues_handler	_flexio_queues_handler_for_next;
 };
 
 }

@@ -68,6 +68,7 @@ nicc_retval_t Channel_SoC::connect_qp(bool is_prior, const ComponentBlock *neigh
             return retval;
         }
     }
+    this->_state |= (is_prior ? kChannel_State_Prior_Connected : kChannel_State_Next_Connected);
     return retval;
 }
 
