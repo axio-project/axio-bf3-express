@@ -18,10 +18,14 @@ class Channel_DPA : public Channel {
         this->_mode_of_prior = channel_mode_of_prior;
         this->_typeid_of_next = channel_type_of_next;
         this->_mode_of_next = channel_mode_of_next;
+
         this->dev_queues_for_prior = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
         memset(this->dev_queues_for_prior, 0, sizeof(struct dpa_data_queues));
         this->dev_queues_for_next = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
         memset(this->dev_queues_for_next, 0, sizeof(struct dpa_data_queues));
+
+        this->qp_for_prior_info = (QPInfo*)malloc(sizeof(QPInfo));
+        this->qp_for_next_info = (QPInfo*)malloc(sizeof(QPInfo));
     }
     ~Channel_DPA() {};
     
@@ -43,7 +47,9 @@ class Channel_DPA : public Channel {
                                     struct mlx5dv_devx_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
-                                    struct ibv_context *ibv_ctx);
+                                    struct ibv_context *ibv_ctx,
+                                    const char *dev_name,
+                                    uint8_t phy_port);
 
     /**
      * \brief   deallocate resources for dpa channel, including CQ, SQ, RQ
@@ -72,7 +78,9 @@ class Channel_DPA : public Channel {
     ///        to read dev_queues_for_prior/next content
     flexio_uintptr_t		    dev_metadata_for_prior;		// mirror of dev_queues_for_prior on device
     flexio_uintptr_t		    dev_metadata_for_next;		// mirror of dev_queues_for_next on device
-
+    /// \brief QP info for prior and next component block, used for connect QP to component block (currently only used for RDMA mode)
+    QPInfo *qp_for_prior_info;
+    QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel method----------------------
  */ 
@@ -222,10 +230,24 @@ class Channel_DPA : public Channel {
         struct flexio_process *process, struct ibv_pd *pd, flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
     );
 
+    /**
+     *  \brief  set QP info for prior and next
+     *  \param  ibv_ctx     ibv context
+     *  \return NICC_SUCCESS on success
+     */
+    void __set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *dev_queues);
+
 /**
  * ----------------------Internel parameters----------------------
  */
  private:
+    /// Info resolved from \p phy_port, must be filled by constructor.
+    class IBResolve : public VerbsResolve {
+    public:
+      uint16_t port_lid = 0;  ///< Port LID. 0 is invalid.
+      union ibv_gid gid;      ///< GID, used only for RoCE
+    } _resolve;
+
     /// \brief  SQ
     struct flexio_mkey          *_sqd_mkey;
     /// \brief  RQ

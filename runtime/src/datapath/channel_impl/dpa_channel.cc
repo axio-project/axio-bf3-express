@@ -6,7 +6,9 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
                                             struct mlx5dv_devx_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct flexio_event_handler	*event_handler,
-                                            struct ibv_context *ibv_ctx) {
+                                            struct ibv_context *ibv_ctx,
+                                            const char *dev_name,
+                                            uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status ret;
     NICC_CHECK_POINTER(pd);
@@ -14,6 +16,9 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     NICC_CHECK_POINTER(flexio_process);
     NICC_CHECK_POINTER(event_handler);
     NICC_CHECK_POINTER(ibv_ctx);
+
+    // query mlx5 port attributes
+    common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
 
     /* allocate dev_queues for prior and next */
     // allocate SQ's CQ
@@ -66,6 +71,14 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     ))){
         NICC_WARN_C("failed to create next queue pair: nicc_retval(%u)", retval);
         goto exit;
+    }
+
+    // Set QP info for prior and next
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        this->__set_local_qp_info(this->qp_for_prior_info, dev_queues_for_prior);
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        this->__set_local_qp_info(this->qp_for_next_info, dev_queues_for_next);
     }
 
     /* copy queue metadata to device */
@@ -819,6 +832,20 @@ nicc_retval_t Channel_DPA::__allocate_qp_data_memory(struct flexio_process *proc
     qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
 
     return retval;
+}
+
+void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *dev_queues){
+    NICC_ASSERT(qp_info->is_initialized == false);
+    NICC_CHECK_POINTER(qp_info);
+    NICC_CHECK_POINTER(dev_queues);
+    qp_info->qp_num = dev_queues->qp_data.qp_num;
+    qp_info->lid = this->_resolve.port_lid;
+    for (size_t i = 0; i < 16; i++) {
+        qp_info->gid[i] = this->_resolve.gid.raw[i];
+    }
+    qp_info->mtu = LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE);
+    memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
+    qp_info->is_initialized = true;
 }
 
 /* ----------------------------- deallocate ----------------------------- */

@@ -21,6 +21,7 @@ class QPInfo {
     uint32_t mtu;                     // 最大传输单元 (MTU)
     char hostname[MAX_HOSTNAME_LEN];  // 主机名
     char nic_name[MAX_NIC_NAME_LEN];  // 网络接口名 (如 rdma0)
+    bool is_initialized;              // 是否初始化
 
     // 构造函数
     QPInfo(uint32_t qp_num = 0, uint16_t lid = 0,

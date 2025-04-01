@@ -115,6 +115,15 @@ class ComponentBlock_SoC : public ComponentBlock {
                                         const QPInfo *local_qp_info) override;
 
     /**
+     *  \brief  add control plane rule to redirect all traffic to the component block
+     *  \param  domain  [in] the domain of the component block
+     *  \return NICC_SUCCESS for successful addition
+     */
+    nicc_retval_t add_control_plane_rule(struct mlx5dv_dr_domain *domain) override {
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
      *  \brief  run the component block
      *  \return NICC_SUCCESS for successful run
      */

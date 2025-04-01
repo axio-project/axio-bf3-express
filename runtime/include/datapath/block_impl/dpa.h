@@ -3,8 +3,6 @@
 #include <iostream>
 
 #include <libflexio/flexio.h>
-#include <chrono>
-#include <thread>
 
 #include "mlx5/mlx5dv.h"
 #include "mlx5/mlx5_api.h"
@@ -131,12 +129,17 @@ class ComponentBlock_DPA : public ComponentBlock {
     }
 
     /**
+     *  \brief  add control plane rule to redirect all traffic to the component block
+     *  \param  domain  [in] the domain of the component block
+     *  \return NICC_SUCCESS for successful addition
+     */
+    nicc_retval_t add_control_plane_rule(struct mlx5dv_dr_domain *domain) override;
+
+    /**
      *  \brief  run the component block
      *  \return NICC_SUCCESS for successful run
      */
-    nicc_retval_t run_block() override {
-        return NICC_ERROR_NOT_IMPLEMENTED;
-    }
+    nicc_retval_t run_block() override;
 
     /**
      *  \brief  get the qp info of the current component

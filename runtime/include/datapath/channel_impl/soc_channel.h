@@ -10,11 +10,8 @@
 #include "log.h"
 #include "datapath/channel.h"
 #include "common/soc_queue.h"
-#include "utils/verbs_common.h"
 #include "common/math_utils.h"
 #include "utils/huge_alloc.h"
-#include "utils/qpinfo.hh"
-#include "utils/mgnt_connection.h"
 #include "common/buffer.h"
 
 namespace nicc {

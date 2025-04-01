@@ -13,7 +13,7 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
     nicc_retval_t retval = NICC_SUCCESS;
     
     this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
-    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, _resolve);
+    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, this->_resolve);
 
     if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
         NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
@@ -166,6 +166,7 @@ nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
 }
 
 void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
+    NICC_ASSERT(qp_info->is_initialized == false);
     NICC_CHECK_POINTER(qp_info);
     NICC_CHECK_POINTER(qp);
     qp_info->qp_num = qp->_qp_id;
@@ -175,6 +176,7 @@ void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
     }
     qp_info->mtu = RDMA_SoC_QP::kMTU;
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
+    qp_info->is_initialized = true;
 }
 
 nicc_retval_t Channel_SoC::__create_ah(const QPInfo *local_qp_info, const QPInfo *remote_qp_info, RDMA_SoC_QP *qp) {

@@ -6,6 +6,8 @@
 #pragma once
 #include "common.h"
 #include "datapath/component_block.h"
+#include "utils/verbs_common.h"
+#include "utils/qpinfo.hh"
 
 namespace nicc {
 /**

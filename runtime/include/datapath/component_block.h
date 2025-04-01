@@ -53,20 +53,20 @@ class ComponentBlock {
     }
 
     /**
+     *  \brief  add control plane rule to redirect all traffic to the component block
+     *  \param  domain  [in] the domain of the component block
+     *  \return NICC_SUCCESS for successful addition
+     */
+    virtual nicc_retval_t add_control_plane_rule(struct mlx5dv_dr_domain *domain){
+        return NICC_ERROR_NOT_IMPLEMENTED;
+    }
+
+    /**
      *  \brief  run the component block
      *  \return NICC_SUCCESS for successful run
      */
     virtual nicc_retval_t run_block(){
         return NICC_ERROR_NOT_IMPLEMENTED;
-    }
-
-    /**
-     *  \brief  get the qp info of the current component
-     *  \param  is_prior  [in] whether the qp is for the prior component
-     *  \return the qp info of the current component
-     */
-    virtual QPInfo *get_qp_info(bool is_prior){
-        return nullptr;
     }
 
     /* ========= wrapper functions for flow management ========= */
@@ -91,6 +91,17 @@ class ComponentBlock {
  public:
     std::string get_block_name(){
         return std::string(this->block_name);
+    }
+    component_typeid_t get_component_id(){
+        return this->component_id;
+    }
+    /**
+     *  \brief  get the qp info of the current component
+     *  \param  is_prior  [in] whether the qp is for the prior component
+     *  \return the qp info of the current component
+     */
+    virtual QPInfo *get_qp_info(bool is_prior){
+        return nullptr;
     }
 
 /**
