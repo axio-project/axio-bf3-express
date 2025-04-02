@@ -242,6 +242,9 @@ nicc_retval_t Channel_DPA::connect_qp(bool is_prior,
     nicc_retval_t retval = NICC_SUCCESS;
     dpa_data_queues *dev_queues = is_prior ? this->dev_queues_for_prior : 
                                       this->dev_queues_for_next;
+    struct flexio_queues_handler *flexio_queues_handler = is_prior ? 
+                                                        &_flexio_queues_handler_for_prior : 
+                                                        &_flexio_queues_handler_for_next;
     QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
     NICC_CHECK_POINTER(dev_queues);
     NICC_CHECK_POINTER(local_qp_info);
@@ -261,10 +264,13 @@ nicc_retval_t Channel_DPA::connect_qp(bool is_prior,
         }
     } else {
         NICC_CHECK_POINTER(qp_info);
-        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_host(dev_queues, qp_info, local_qp_info)))){
-            NICC_WARN_C("failed to connect QP to host: retval(%u)", retval);
+        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_host(dev_queues, 
+                                                                         flexio_queues_handler,
+                                                                         qp_info, local_qp_info)))){
+            NICC_WARN_C("failed to connect QP to host: retval(%u), is_prior(%d)", retval, is_prior);
             return retval;
         }
+        NICC_DEBUG_C("QP connected to host: qp_num(%u), is_prior(%d)", qp_info->qp_num, is_prior);
         /// fill the RECV queue
         // if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(dev_queues)))){
         //     NICC_WARN_C("failed to fill RECV queue for QP: retval(%u)", retval);
@@ -1013,18 +1019,32 @@ nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_
 }
 
 nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues, 
+                                                struct flexio_queues_handler *flexio_queues_handler,
                                                 const QPInfo *qp_info, 
                                                 const QPInfo *local_qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
     struct flexio_qp_attr_opt_param_mask qp_fattr_opt_param_mask;
     struct flexio_qp_attr qp_fattr;
     memset(&qp_fattr, 0, sizeof(struct flexio_qp_attr));
     memset(&qp_fattr_opt_param_mask, 0, sizeof(struct flexio_qp_attr_opt_param_mask));
 
-	qp_fattr.remote_qp_num     = qp_info->qp_num;
-    for (size_t i = 0; i < 6; i++) {
-        qp_fattr.dest_mac[i] = qp_info->mac_addr[i];
+    NICC_CHECK_POINTER(qp_info);
+    if(unlikely(qp_info->is_initialized == false)){
+        NICC_WARN_C("QP info is not initialized: qp_num(%u)", qp_info->qp_num);
+        return NICC_ERROR_NOT_FOUND;
     }
+
+	qp_fattr.remote_qp_num     = qp_info->qp_num;
+    NICC_DEBUG_C("Copying MAC address from %02x:%02x:%02x:%02x:%02x:%02x", 
+                 qp_info->mac_addr[0], qp_info->mac_addr[1], qp_info->mac_addr[2],
+                 qp_info->mac_addr[3], qp_info->mac_addr[4], qp_info->mac_addr[5]);
+    
+    // Create a local array for MAC address
+    uint8_t mac_addr_copy[6];
+    memcpy(mac_addr_copy, qp_info->mac_addr, 6);
+    qp_fattr.dest_mac = mac_addr_copy;
+
     union ibv_gid rgid_or_rip;
     memset(&rgid_or_rip, 0, sizeof(union ibv_gid));
     memcpy(&rgid_or_rip, qp_info->gid, sizeof(union ibv_gid));
@@ -1053,8 +1073,23 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
 	qp_fattr.grh               = 0x1;
     qp_fattr.qp_access_mask    = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE;
 	qp_fattr.next_state = FLEXIO_QP_STATE_INIT;
-    
-    
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_qp_modify(flexio_queues_handler->flexio_qp_ptr, &qp_fattr, &qp_fattr_opt_param_mask)))){
+        NICC_WARN_C("failed to modify QP to INIT state: flexio_retval(%u)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    qp_fattr.next_state = FLEXIO_QP_STATE_RTR;
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_qp_modify(flexio_queues_handler->flexio_qp_ptr, &qp_fattr, &qp_fattr_opt_param_mask)))){
+        NICC_WARN_C("failed to modify QP to RTR state: flexio_retval(%u)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    qp_fattr.next_state = FLEXIO_QP_STATE_RTS;
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_qp_modify(flexio_queues_handler->flexio_qp_ptr, &qp_fattr, &qp_fattr_opt_param_mask)))){
+        NICC_WARN_C("failed to modify QP to RTS state: flexio_retval(%u)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
 
     return retval;
 }

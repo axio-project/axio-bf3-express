@@ -275,6 +275,7 @@ class Channel_DPA : public Channel {
      *  \return NICC_SUCCESS on success
      */
     nicc_retval_t __connect_qp_to_host( dpa_data_queues *dev_queues, 
+                                        struct flexio_queues_handler *flexio_queues_handler,
                                         const QPInfo *qp_info, 
                                         const QPInfo *local_qp_info);
 /**
