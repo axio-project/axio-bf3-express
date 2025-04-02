@@ -2,6 +2,16 @@
 
 namespace nicc {
 
+// GIDs are currently used only for RoCE. This default value works for most
+// clusters, but we need a more robust GID selection method. Some observations:
+//  * On physical clusters, gid depends on the Ethernet is three layer or two layer; i.e., if two layer, choose the one gid without ip address.
+//  * On VM clusters (AWS/KVM), gid_index = 0 does not work, gid_index = 1 works
+//  * Mellanox's `show_gids` script lists all GIDs on all NICs
+static constexpr size_t kDefaultGIDIndex = 1;   
+
+/**
+ * ===========================Public methods===========================
+ */
 nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd, 
                                             struct mlx5dv_devx_uar *uar, 
                                             struct flexio_process *flexio_process,
@@ -226,6 +236,150 @@ exit:
     return retval;
 }
 
+nicc_retval_t Channel_DPA::connect_qp(bool is_prior, 
+                                      const ComponentBlock *neighbour_component_block, 
+                                      const QPInfo *qp_info) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    dpa_data_queues *dev_queues = is_prior ? this->dev_queues_for_prior : 
+                                      this->dev_queues_for_next;
+    QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
+    NICC_CHECK_POINTER(dev_queues);
+    NICC_CHECK_POINTER(local_qp_info);
+    if (is_prior && (this->_state & kChannel_State_Prior_Connected)) {
+        NICC_WARN_C("prior QP is already connected");
+        return NICC_ERROR_DUPLICATED;
+    } else if (!is_prior && (this->_state & kChannel_State_Next_Connected)) {
+        NICC_WARN_C("next QP is already connected");
+        return NICC_ERROR_DUPLICATED;
+    }
+
+    if (neighbour_component_block != nullptr) {
+        NICC_CHECK_POINTER(neighbour_component_block);
+        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_component_block(dev_queues, neighbour_component_block, local_qp_info)))){
+            NICC_WARN_C("failed to connect QP to component block: retval(%u)", retval);
+            return retval;
+        }
+    } else {
+        NICC_CHECK_POINTER(qp_info);
+        if(unlikely(NICC_SUCCESS != (retval = this->__connect_qp_to_host(dev_queues, qp_info, local_qp_info)))){
+            NICC_WARN_C("failed to connect QP to host: retval(%u)", retval);
+            return retval;
+        }
+        /// fill the RECV queue
+        // if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(dev_queues)))){
+        //     NICC_WARN_C("failed to fill RECV queue for QP: retval(%u)", retval);
+        //     return retval;
+        // }
+    }
+    this->_state |= (is_prior ? kChannel_State_Prior_Connected : kChannel_State_Next_Connected);
+    return retval;
+}
+
+/**
+ * ===========================Internel methods===========================
+ */
+nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
+    nicc_retval_t retval = NICC_SUCCESS;
+    struct ibv_port_attr port_attr;
+
+    NICC_CHECK_POINTER(this->_resolve.ib_ctx);
+
+    // query port
+    if (ibv_query_port(this->_resolve.ib_ctx, this->_resolve.dev_port_id, &port_attr)) {
+        NICC_WARN_C("failed to query port: dev_port_id(%u), retval(%u)", this->_resolve.dev_port_id, retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    this->_resolve.port_lid = port_attr.lid;
+
+    // Query GID information using ibv_query_gid_ex
+    struct ibv_gid_entry gid_entry;
+    if (ibv_query_gid_ex(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
+        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", 
+                   this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Validate GID
+    if (gid_entry.gid_type != IBV_GID_TYPE_ROCE_V2) {
+        NICC_WARN_C("invalid gid type: expected RoCE v2, got %d", gid_entry.gid_type);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Copy GID information
+    memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
+    this->_resolve.gid_index = gid_entry.gid_index;
+
+    // Get interface name from index
+    char ifname[IF_NAMESIZE];
+    if (if_indextoname(gid_entry.ndev_ifindex, ifname) == nullptr) {
+        NICC_WARN_C("failed to get interface name for index %u", gid_entry.ndev_ifindex);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Read MAC address from sysfs
+    char sys_path[256];
+    snprintf(sys_path, sizeof(sys_path), "/sys/class/net/%s/address", ifname);
+    FILE *maddr_file = fopen(sys_path, "r");
+    if (maddr_file == nullptr) {
+        NICC_WARN_C("failed to open MAC address file: %s", sys_path);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    auto ret = fscanf(maddr_file, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx%*c",
+                     &this->_resolve.mac_addr[0],
+                     &this->_resolve.mac_addr[1],
+                     &this->_resolve.mac_addr[2],
+                     &this->_resolve.mac_addr[3],
+                     &this->_resolve.mac_addr[4],
+                     &this->_resolve.mac_addr[5]);
+    fclose(maddr_file);
+
+    if (ret != 6) {
+        NICC_WARN_C("failed to read MAC address from file: %s", sys_path);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Get IPv4 address using ioctl
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        NICC_WARN_C("failed to create socket for ioctl");
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+
+    if (ioctl(sockfd, SIOCGIFADDR, &ifr) < 0) {
+        NICC_WARN_C("failed to get IPv4 address for interface %s", ifname);
+        close(sockfd);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    struct sockaddr_in *addr = (struct sockaddr_in *)&ifr.ifr_addr;
+    this->_resolve.ipv4_addr.ip = ntohl(addr->sin_addr.s_addr);
+
+    close(sockfd);
+
+    // Log the resolved information
+    // NICC_DEBUG("MAC address: %02x:%02x:%02x:%02x:%02x:%02x", 
+    //           this->_resolve.mac_addr[0], this->_resolve.mac_addr[1], this->_resolve.mac_addr[2], 
+    //           this->_resolve.mac_addr[3], this->_resolve.mac_addr[4], this->_resolve.mac_addr[5]);
+    // NICC_DEBUG("GID index: %u", this->_resolve.gid_index);
+    // NICC_DEBUG("GID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", 
+    //           this->_resolve.gid.raw[0], this->_resolve.gid.raw[1], this->_resolve.gid.raw[2], this->_resolve.gid.raw[3], 
+    //           this->_resolve.gid.raw[4], this->_resolve.gid.raw[5], this->_resolve.gid.raw[6], this->_resolve.gid.raw[7], 
+    //           this->_resolve.gid.raw[8], this->_resolve.gid.raw[9], this->_resolve.gid.raw[10], this->_resolve.gid.raw[11], 
+    //           this->_resolve.gid.raw[12], this->_resolve.gid.raw[13], this->_resolve.gid.raw[14], this->_resolve.gid.raw[15]);
+    // NICC_DEBUG("IPv4 address: %u.%u.%u.%u", 
+    //           (this->_resolve.ipv4_addr.ip >> 24) & 0xFF,
+    //           (this->_resolve.ipv4_addr.ip >> 16) & 0xFF,
+    //           (this->_resolve.ipv4_addr.ip >> 8) & 0xFF,
+    //           this->_resolve.ipv4_addr.ip & 0xFF);
+
+    return retval;
+}
 
 nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd, 
                                             struct mlx5dv_devx_uar *uar, 
@@ -843,10 +997,70 @@ void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *d
     for (size_t i = 0; i < 16; i++) {
         qp_info->gid[i] = this->_resolve.gid.raw[i];
     }
+    qp_info->gid_table_index = this->_resolve.gid_index;
     qp_info->mtu = LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE);
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
+    memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
 }
+
+nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_queues, 
+                                                           const ComponentBlock *neighbour_component_block, 
+                                                           const QPInfo *local_qp_info) {
+    // nicc_retval_t retval = NICC_SUCCESS;
+    /* ...... */
+    return NICC_ERROR_NOT_IMPLEMENTED;
+}
+
+nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues, 
+                                                const QPInfo *qp_info, 
+                                                const QPInfo *local_qp_info) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    struct flexio_qp_attr_opt_param_mask qp_fattr_opt_param_mask;
+    struct flexio_qp_attr qp_fattr;
+    memset(&qp_fattr, 0, sizeof(struct flexio_qp_attr));
+    memset(&qp_fattr_opt_param_mask, 0, sizeof(struct flexio_qp_attr_opt_param_mask));
+
+	qp_fattr.remote_qp_num     = qp_info->qp_num;
+    for (size_t i = 0; i < 6; i++) {
+        qp_fattr.dest_mac[i] = qp_info->mac_addr[i];
+    }
+    union ibv_gid rgid_or_rip;
+    memset(&rgid_or_rip, 0, sizeof(union ibv_gid));
+    memcpy(&rgid_or_rip, qp_info->gid, sizeof(union ibv_gid));
+    qp_fattr.rgid_or_rip       = rgid_or_rip;
+	qp_fattr.gid_table_index   = qp_info->gid_table_index;
+	qp_fattr.rlid              = qp_info->lid;
+	qp_fattr.fl                = 0;
+	qp_fattr.min_rnr_nak_timer = 1;
+    switch(LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE)){
+        case 1024:
+            qp_fattr.path_mtu          = FLEXIO_QP_QPC_MTU_BYTES_1K;
+            break;
+        case 2048:
+            qp_fattr.path_mtu          = FLEXIO_QP_QPC_MTU_BYTES_2K;
+            break;
+        case 4096:
+            qp_fattr.path_mtu          = FLEXIO_QP_QPC_MTU_BYTES_4K;
+            break;
+        default:
+            NICC_WARN_C("unsupported MTU size: %lu, only support 1024, 2048, 4096", LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE));
+            break;
+    }
+	qp_fattr.retry_count       = 0;
+	qp_fattr.vhca_port_num     = 0x1;
+	qp_fattr.udp_sport         = 0xc000;
+	qp_fattr.grh               = 0x1;
+    qp_fattr.qp_access_mask    = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE;
+	qp_fattr.next_state = FLEXIO_QP_STATE_INIT;
+    
+    
+
+    return retval;
+}
+
+
+
 
 /* ----------------------------- deallocate ----------------------------- */
 nicc_retval_t Channel_DPA::__deallocate_sq_cq(struct flexio_process *flexio_process, struct dpa_data_queues *dev_queues, struct flexio_queues_handler *flexio_queues_handler){

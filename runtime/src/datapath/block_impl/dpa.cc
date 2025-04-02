@@ -2,6 +2,9 @@
 
 namespace nicc {
 
+/**
+ * ===========================Public methods===========================
+ */
 
 nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
@@ -116,7 +119,52 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     return retval;
 }
 
-nicc_retval_t ComponentBlock_DPA::add_control_plane_rule(struct mlx5dv_dr_domain *domain) {
+nicc_retval_t ComponentBlock_DPA::connect_to_neighbour(const ComponentBlock *prior_component_block, 
+                                                       const ComponentBlock *next_component_block, 
+                                                       bool is_connected_to_remote, 
+                                                       const QPInfo *remote_qp_info, 
+                                                       bool is_connected_to_local, 
+                                                       const QPInfo *local_qp_info) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(this->_function_state->channel);
+
+    if (is_connected_to_remote){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to remote component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (is_connected_to_local){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, nullptr, local_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to local component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (prior_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, prior_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to prior component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (next_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, next_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to next component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    
+    return retval;
+}
+
+    nicc_retval_t ComponentBlock_DPA::add_control_plane_rule(struct mlx5dv_dr_domain *domain) {
     nicc_retval_t retval = NICC_SUCCESS;
     /// Currently, only Ethernet Channel needs to add control plane rule to redirect all traffic to the DPA block
     if (this->_function_state->channel->dev_queues_for_prior->type == Channel::ETHERNET) {
@@ -137,6 +185,9 @@ nicc_retval_t ComponentBlock_DPA::run_block() {
     return retval;
 }
 
+/**
+ * ===========================Internel methods===========================
+ */
 
 nicc_retval_t ComponentBlock_DPA::__setup_ibv_device(ComponentFuncState_DPA_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;

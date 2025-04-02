@@ -113,7 +113,7 @@ nicc_retval_t ComponentBlock_SoC::run_block(){
         goto exit;
     }
     /// wait thread join. 
-    this->_function_state->wrapper_thread->join();
+    // this->_function_state->wrapper_thread->join();
 
 exit:
     return retval;

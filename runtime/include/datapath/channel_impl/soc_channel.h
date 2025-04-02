@@ -1,9 +1,6 @@
 #pragma once
 
 #include <infiniband/verbs.h>
-#include <net/ethernet.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
 #include <unordered_map>
 
 #include "common.h"
@@ -113,7 +110,9 @@ class Channel_SoC : public Channel {
      * @param qp_info [in] QP info of the remote/local host
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t connect_qp(bool is_prior, const ComponentBlock *neighbour_component_block, const QPInfo *qp_info);
+    nicc_retval_t connect_qp(bool is_prior, 
+                             const ComponentBlock *neighbour_component_block, 
+                             const QPInfo *qp_info);
 
 /**
  * ----------------------Public parameters----------------------
@@ -214,9 +213,11 @@ class Channel_SoC : public Channel {
     /// Info resolved from \p phy_port, must be filled by constructor.
     class IBResolve : public VerbsResolve {
     public:
-      ipaddr_t ipv4_addr_;   // The port's IPv4 address in host-byte order
-      uint16_t port_lid = 0;  ///< Port LID. 0 is invalid.
-      union ibv_gid gid;      ///< GID, used only for RoCE
+      ipaddr_t ipv4_addr;          ///< The port's IPv4 address in host-byte order
+      uint16_t port_lid = 0;        ///< Port LID. 0 is invalid.
+      union ibv_gid gid;            ///< GID, used only for RoCE
+      uint8_t gid_index = 0;        ///< GID index, used only for RoCE
+      uint8_t mac_addr[6] = {0};    ///< MAC address of the device port
     } _resolve;
 
     /// Protection domain

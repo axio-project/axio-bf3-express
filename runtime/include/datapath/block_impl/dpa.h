@@ -124,9 +124,7 @@ class ComponentBlock_DPA : public ComponentBlock {
                                         bool is_connected_to_remote,
                                         const QPInfo *remote_qp_info,
                                         bool is_connected_to_local,
-                                        const QPInfo *local_qp_info) override {
-        return NICC_ERROR_NOT_IMPLEMENTED;
-    }
+                                        const QPInfo *local_qp_info) override;
 
     /**
      *  \brief  add control plane rule to redirect all traffic to the component block

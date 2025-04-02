@@ -1,6 +1,9 @@
 #pragma once
 
 #include <libflexio/flexio.h>
+#include <net/ethernet.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 
 #include "mlx5/mlx5dv.h"
 #include "mlx5/mlx5_api.h"
@@ -57,6 +60,17 @@ class Channel_DPA : public Channel {
      */
     nicc_retval_t deallocate_channel(struct flexio_process *flexio_process);
 
+    /**
+     * @brief Connect QP to a component block or remote/local host
+     * @param is_prior [in] whether the connection is for qp_for_prior or qp_for_next
+     * @param neighbour_component_block [in] the neighbour component block
+     * @param qp_info [in] QP info of the remote/local host
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t connect_qp(bool is_prior, 
+                             const ComponentBlock *neighbour_component_block, 
+                             const QPInfo *qp_info);
+
 /**
  * ----------------------Util Methods----------------------
  */ 
@@ -85,7 +99,13 @@ class Channel_DPA : public Channel {
  * ----------------------Internel method----------------------
  */ 
  private:
-/*!
+    /**
+     * @brief Resolve InfiniBand-specific fields in \p resolve
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __roce_resolve_phy_port();
+
+    /*!
      *  \brief  (de)allocate SQ/RQ and corresponding CQ for DPA process
      *  \note   these functions are called within __allocate_device_resources
      *  \return NICC_SUCCESS for successful (de)allocation
@@ -237,6 +257,26 @@ class Channel_DPA : public Channel {
      */
     void __set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *dev_queues);
 
+    /**
+     *  \brief  connect QP to component block
+     *  \param  dev_queues      device queues
+     *  \param  neighbour_component_block  neighbour component block
+     *  \param  local_qp_info  local QP info
+     *  \return NICC_SUCCESS on success
+     */
+    nicc_retval_t __connect_qp_to_component_block(dpa_data_queues *dev_queues, 
+                                                  const ComponentBlock *neighbour_component_block, 
+                                                  const QPInfo *local_qp_info);
+
+    /**
+     *  \brief  connect QP to host
+     *  \param  dev_queues      device queues
+     *  \param  qp_info  QP info
+     *  \return NICC_SUCCESS on success
+     */
+    nicc_retval_t __connect_qp_to_host( dpa_data_queues *dev_queues, 
+                                        const QPInfo *qp_info, 
+                                        const QPInfo *local_qp_info);
 /**
  * ----------------------Internel parameters----------------------
  */
@@ -244,8 +284,11 @@ class Channel_DPA : public Channel {
     /// Info resolved from \p phy_port, must be filled by constructor.
     class IBResolve : public VerbsResolve {
     public:
-      uint16_t port_lid = 0;  ///< Port LID. 0 is invalid.
-      union ibv_gid gid;      ///< GID, used only for RoCE
+      ipaddr_t ipv4_addr;           ///< The port's IPv4 address in host-byte order
+      uint16_t port_lid = 0;        ///< Port LID. 0 is invalid.
+      union ibv_gid gid;            ///< GID, used only for RoCE
+      uint8_t gid_index = 0;        ///< GID index, used only for RoCE
+      uint8_t mac_addr[6] = {0};    ///< MAC address of the device port
     } _resolve;
 
     /// \brief  SQ

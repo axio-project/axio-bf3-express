@@ -18,7 +18,9 @@ class QPInfo {
     uint32_t qp_num;                  // QP编号
     uint16_t lid;                     // 本地标识符 (LID)
     uint8_t gid[16];                  // 全球标识符 (GID)
+    uint8_t gid_table_index;          // GID表索引
     uint32_t mtu;                     // 最大传输单元 (MTU)
+    uint8_t mac_addr[6];              // 物理地址 (MAC)
     char hostname[MAX_HOSTNAME_LEN];  // 主机名
     char nic_name[MAX_NIC_NAME_LEN];  // 网络接口名 (如 rdma0)
     bool is_initialized;              // 是否初始化

@@ -6,7 +6,11 @@
 
 #include <dirent.h>
 #include <infiniband/verbs.h>
+#include <net/if.h> // for if_indextoname function
+#include <cstdio>   // for file operations
+#include <cstring>  // for memcpy and memset
 #include <string>
+#include <cassert>  // for assert
 #include "log.h"
 
 namespace nicc {
