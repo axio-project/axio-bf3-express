@@ -13,11 +13,22 @@
 namespace nicc {
 
 /// Return the TSC
+#if defined(__aarch64__) || defined(__arm__)
 static inline size_t rdtsc() {
   size_t timer_value;
   asm volatile("mrs %0, cntvct_el0" : "=r" (timer_value));
   return timer_value;
 }
+#elif defined(__x86_64__) || defined(__i386__)
+static inline size_t rdtsc() {
+  uint64_t rax;
+  uint64_t rdx;
+  asm volatile("rdtsc" : "=a"(rax), "=d"(rdx));
+  return static_cast<size_t>((rdx << 32) | rax);
+}
+#else
+#error "Unsupported CPU architecture for rdtsc()"
+#endif
 
 /// An alias for rdtsc() to distinguish calls on the critical path
 static const auto &dpath_rdtsc = rdtsc;
@@ -56,14 +67,37 @@ class ChronoTimer {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
 };
 
+#if defined(__aarch64__) || defined(__arm__)
 static double measure_rdtsc_freq() {
   uint32_t timer_freq;
   asm volatile("mrs %0, cntfrq_el0" : "=r" (timer_freq));
   double freq_ghz = timer_freq / 1e9;
   rt_assert(freq_ghz >= 0.2 && freq_ghz <= 3.0, "Invalid RDTSC frequency");
+  return freq_ghz;
+}
+#elif defined(__x86_64__) || defined(__i386__)
+
+static double measure_rdtsc_freq() {
+  ChronoTimer chrono_timer;
+  const uint64_t rdtsc_start = rdtsc();
+
+  // Do not change this loop! The hardcoded value below depends on this loop
+  // and prevents it from being optimized out.
+  uint64_t sum = 5;
+  for (uint64_t i = 0; i < 1000000; i++) {
+    sum += i + (sum + i) * (i % sum);
+  }
+  rt_assert(sum == 13580802877818827968ull, "Error in RDTSC freq measurement");
+
+  const uint64_t rdtsc_cycles = rdtsc() - rdtsc_start;
+  const double freq_ghz = rdtsc_cycles * 1.0 / chrono_timer.get_ns();
+  rt_assert(freq_ghz >= 0.5 && freq_ghz <= 5.0, "Invalid RDTSC frequency");
 
   return freq_ghz;
 }
+#else
+#error "Unsupported CPU architecture for measure_rdtsc_freq()"
+#endif
 
 /// Convert cycles measured by rdtsc with frequence \p freq_ghz to seconds
 static double to_sec(size_t cycles, double freq_ghz) {
