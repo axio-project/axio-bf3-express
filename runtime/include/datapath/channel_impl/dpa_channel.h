@@ -299,6 +299,10 @@ class Channel_DPA : public Channel {
 
     struct flexio_queues_handler	_flexio_queues_handler_for_prior;
     struct flexio_queues_handler	_flexio_queues_handler_for_next;
+
+    /// Temp parameter for connect QP to host
+    uint8_t _remote_mac_addr[6];
+    union ibv_gid _remote_gid = {0};
 };
 
 }

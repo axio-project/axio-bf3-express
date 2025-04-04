@@ -58,8 +58,8 @@ typedef struct ComponentFuncState_DPA {
     ComponentFuncBaseState_t base_state;
 
     // IB Verbs resources
-    struct ibv_pd			    *pd;			    // Protection domain
-    struct mlx5dv_devx_uar      *uar;			    // user access region
+    struct ibv_pd			    *pd;			    // Protection domain for flexio process
+    struct mlx5dv_devx_uar      *uar;			    // user access region for flexio process
 
     // Hanlder and PU
     struct flexio_process       *flexio_process;	// FlexIO process
@@ -114,17 +114,17 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \param  prior_component_block [in] the previous component block
      *  \param  next_component_block  [in] the next component block
      *  \param  is_connected_to_remote [in] whether the current component is connected to the remote component
-     *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \param  remote_host_qp_info    [in] the qp info of the remote component
      *  \param  is_connected_to_local [in] whether the current component is connected to the local component
-     *  \param  local_qp_info     [in] the qp info of the local component
+     *  \param  local_host_qp_info     [in] the qp info of the local component
      *  \return NICC_SUCCESS for successful connection
      */
     nicc_retval_t connect_to_neighbour( const ComponentBlock *prior_component_block, 
                                         const ComponentBlock *next_component_block,
                                         bool is_connected_to_remote,
-                                        const QPInfo *remote_qp_info,
+                                        const QPInfo *remote_host_qp_info,
                                         bool is_connected_to_local,
-                                        const QPInfo *local_qp_info) override;
+                                        const QPInfo *local_host_qp_info) override;
 
     /**
      *  \brief  add control plane rule to redirect all traffic to the component block

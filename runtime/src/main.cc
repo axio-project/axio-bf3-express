@@ -34,7 +34,7 @@ int main(){
      */
     nicc::device_state_t dev_state = { .device_name = "mlx5_0"};
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
-    nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
+    // nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
     nicc::ComponentDesp_DPA_t *dpa_desp = new nicc::ComponentDesp_DPA_t;
     NICC_CHECK_POINTER(dpa_desp);

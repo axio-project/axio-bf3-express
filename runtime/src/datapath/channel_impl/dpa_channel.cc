@@ -28,7 +28,9 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     NICC_CHECK_POINTER(ibv_ctx);
 
     // query mlx5 port attributes
-    common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
+    // common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
+    common_resolve_phy_port(dev_name, phy_port, 1024, this->_resolve);
+    this->__roce_resolve_phy_port();
 
     /* allocate dev_queues for prior and next */
     // allocate SQ's CQ
@@ -1005,9 +1007,13 @@ void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *d
     }
     qp_info->gid_table_index = this->_resolve.gid_index;
     qp_info->mtu = LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE);
+    strncpy(qp_info->hostname, "DPA", MAX_HOSTNAME_LEN - 1);
+    qp_info->hostname[MAX_HOSTNAME_LEN - 1] = '\0';  // Ensure null termination
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
     memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
+    std::cout << "Local QP Info:" << std::endl;
+    qp_info->print();
 }
 
 nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_queues, 
@@ -1034,21 +1040,16 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
         NICC_WARN_C("QP info is not initialized: qp_num(%u)", qp_info->qp_num);
         return NICC_ERROR_NOT_FOUND;
     }
-
+    /// Print local and remote QPinfo
+    std::cout << "Local QP Info:" << std::endl;
+    local_qp_info->print();
+    std::cout << "Remote QP Info:" << std::endl;
+    qp_info->print();
+    memcpy(this->_remote_mac_addr, qp_info->mac_addr, 6);
+    memcpy(&this->_remote_gid, qp_info->gid, sizeof(union ibv_gid));
 	qp_fattr.remote_qp_num     = qp_info->qp_num;
-    NICC_DEBUG_C("Copying MAC address from %02x:%02x:%02x:%02x:%02x:%02x", 
-                 qp_info->mac_addr[0], qp_info->mac_addr[1], qp_info->mac_addr[2],
-                 qp_info->mac_addr[3], qp_info->mac_addr[4], qp_info->mac_addr[5]);
-    
-    // Create a local array for MAC address
-    uint8_t mac_addr_copy[6];
-    memcpy(mac_addr_copy, qp_info->mac_addr, 6);
-    qp_fattr.dest_mac = mac_addr_copy;
-
-    union ibv_gid rgid_or_rip;
-    memset(&rgid_or_rip, 0, sizeof(union ibv_gid));
-    memcpy(&rgid_or_rip, qp_info->gid, sizeof(union ibv_gid));
-    qp_fattr.rgid_or_rip       = rgid_or_rip;
+    qp_fattr.dest_mac = this->_remote_mac_addr;
+    qp_fattr.rgid_or_rip       = this->_remote_gid;
 	qp_fattr.gid_table_index   = qp_info->gid_table_index;
 	qp_fattr.rlid              = qp_info->lid;
 	qp_fattr.fl                = 0;

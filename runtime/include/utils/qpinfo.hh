@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iomanip>
 
 const size_t MAX_HOSTNAME_LEN = 64;
 const size_t MAX_NIC_NAME_LEN = 64;
@@ -77,22 +78,22 @@ class QPInfo {
 
     // Print information
     void print() const {
-        std::cout << "QP Number: " << qp_num << "\n";
-        std::cout << "LID: " << lid << "\n";
-        std::cout << "MTU: " << mtu << "\n";
-        std::cout << "GID Table Index: " << static_cast<int>(gid_table_index) << "\n";
+        std::cout << "QP Number: " << std::dec << qp_num << "\n";
+        std::cout << "LID: " << std::dec << lid << "\n";
+        std::cout << "MTU: " << std::dec << mtu << "\n";
+        std::cout << "GID Table Index: " << std::dec << static_cast<int>(gid_table_index) << "\n";
         std::cout << "GID: ";
         for (int i = 0; i < 16; ++i) {
-            std::cout << std::hex << static_cast<int>(gid[i]);
+            std::cout << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(gid[i]);
             if (i < 15) std::cout << ":";
         }
-        std::cout << "\n";
+        std::cout << std::dec << "\n";
         std::cout << "MAC Address: ";
         for (int i = 0; i < 6; ++i) {
-            std::cout << std::hex << static_cast<int>(mac_addr[i]);
+            std::cout << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(mac_addr[i]);
             if (i < 5) std::cout << ":";
         }
-        std::cout << "\n";
+        std::cout << std::dec << "\n";
         std::cout << "Hostname: " << hostname << "\n";
         std::cout << "NIC Name: " << nic_name << "\n";
         std::cout << "Initialized: " << (is_initialized ? "Yes" : "No") << "\n";

@@ -38,17 +38,17 @@ class ComponentBlock {
      *  \param  prior_component_block [in] the previous component block
      *  \param  next_component_block  [in] the next component block
      *  \param  is_connected_to_remote [in] whether the current component is connected to the remote component
-     *  \param  remote_qp_info    [in] the qp info of the remote component
+     *  \param  remote_host_qp_info    [in] the qp info of the remote component
      *  \param  is_connected_to_local [in] whether the current component is connected to the local component
-     *  \param  local_qp_info     [in] the qp info of the local component
+     *  \param  local_host_qp_info     [in] the qp info of the local component
      *  \return NICC_SUCCESS for successful connection
      */
     virtual nicc_retval_t connect_to_neighbour( const ComponentBlock *prior_component_block, 
                                                 const ComponentBlock *next_component_block,
                                                 bool is_connected_to_remote,
-                                                const QPInfo *remote_qp_info,
+                                                const QPInfo *remote_host_qp_info,
                                                 bool is_connected_to_local,
-                                                const QPInfo *local_qp_info){
+                                                const QPInfo *local_host_qp_info){
         return NICC_ERROR_NOT_IMPLEMENTED;
     }
 

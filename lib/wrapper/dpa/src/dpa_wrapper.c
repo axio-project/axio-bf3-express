@@ -32,10 +32,10 @@ dpa_device_init(uint64_t data_for_prior_component, uint64_t data_for_next_compon
 	flexio_dev_print("next queue type: %u\n", shared_data_for_next->type);
 
 	dev_ctx.lkey = shared_data_for_prior->sq_data.wqd_mkey_id;
-	init_cq(shared_data_for_prior->rq_cq_data, &dev_ctx.rqcq_ctx);
-	init_rq(shared_data_for_prior->rq_data, &dev_ctx.rq_ctx);
-	init_cq(shared_data_for_prior->sq_cq_data, &dev_ctx.sqcq_ctx);
-	init_sq(shared_data_for_prior->sq_data, &dev_ctx.sq_ctx);
+	// init_cq(shared_data_for_prior->rq_cq_data, &dev_ctx.rqcq_ctx);
+	// init_rq(shared_data_for_prior->rq_data, &dev_ctx.rq_ctx);
+	// init_cq(shared_data_for_prior->sq_cq_data, &dev_ctx.sqcq_ctx);
+	// init_sq(shared_data_for_prior->sq_data, &dev_ctx.sq_ctx);
 
 	dev_ctx.dt_ctx.sq_tx_buff = (void *)shared_data_for_prior->sq_data.wqd_daddr;
 	dev_ctx.dt_ctx.tx_buff_idx = 0;
@@ -61,13 +61,13 @@ __dpa_global__ dpa_event_handler(uint64_t __unused arg0)
 
 
 	while (flexio_dev_cqe_get_owner(dev_ctx.rqcq_ctx.cqe) != dev_ctx.rqcq_ctx.cq_hw_owner_bit) {
-		__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
+		// __dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 		flexio_dev_print("Received packet!\n");
 		process_packet(dtctx);
 		flexio_dev_print("Processed packet!\n");
-		step_cq(&dev_ctx.rqcq_ctx, DPA_RQ_IDX_MASK);
+		// step_cq(&dev_ctx.rqcq_ctx, DPA_RQ_IDX_MASK);
 	}
-	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dev_ctx.rqcq_ctx.cq_idx, dev_ctx.rqcq_ctx.cq_number);
 	flexio_dev_thread_reschedule();
 }

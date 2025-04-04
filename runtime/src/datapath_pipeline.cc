@@ -244,17 +244,17 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
     std::vector<std::string> local_connect_to = this->_app_dag->get_host_config("local")->connect_to;
 
     // Obtain the remote host and local host's QPInfo
-    QPInfo remote_qp_info, local_qp_info;
+    QPInfo remote_host_qp_info, local_host_qp_info;
     bool is_connected_to_remote = false, is_connected_to_local = false;
     TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
     TCPClient mgnt_client;
-    memset(&remote_qp_info, 0, sizeof(QPInfo));
-    memset(&local_qp_info, 0, sizeof(QPInfo));
+    memset(&remote_host_qp_info, 0, sizeof(QPInfo));
+    memset(&local_host_qp_info, 0, sizeof(QPInfo));
     mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), this->_app_dag->get_host_config("local")->mgnt_port);
-    local_qp_info.deserialize(mgnt_client.receiveMsg());
+    local_host_qp_info.deserialize(mgnt_client.receiveMsg());
 
     mgnt_server.acceptConnection();
-    remote_qp_info.deserialize(mgnt_server.receiveMsg());
+    remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
 
     /* iteratively component blocks in the app DAG */
     typename std::vector<ComponentBlock*>::iterator cb_iter;
@@ -276,9 +276,9 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
                                     /* prior block */ prior_component_block,
                                     /* next block*/ nullptr,
                                     is_connected_to_remote,
-                                    /* remote qp info */ &remote_qp_info,
+                                    /* remote qp info */ &remote_host_qp_info,
                                     is_connected_to_local,
-                                    /* local qp info */ &local_qp_info)))){
+                                    /* local qp info */ &local_host_qp_info)))){
             NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
             return retval;
         }

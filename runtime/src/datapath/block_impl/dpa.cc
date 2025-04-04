@@ -122,15 +122,15 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
 nicc_retval_t ComponentBlock_DPA::connect_to_neighbour(const ComponentBlock *prior_component_block, 
                                                        const ComponentBlock *next_component_block, 
                                                        bool is_connected_to_remote, 
-                                                       const QPInfo *remote_qp_info, 
+                                                       const QPInfo *remote_host_qp_info, 
                                                        bool is_connected_to_local, 
-                                                       const QPInfo *local_qp_info) {
+                                                       const QPInfo *local_host_qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(this->_function_state->channel);
 
     if (is_connected_to_remote){
         if(unlikely(NICC_SUCCESS != (
-            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_qp_info)
+            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_host_qp_info)
         ))) {
             NICC_WARN_C("failed to connect to remote component: nicc_retval(%u)", retval);
             return retval;
@@ -138,7 +138,7 @@ nicc_retval_t ComponentBlock_DPA::connect_to_neighbour(const ComponentBlock *pri
     }
     if (is_connected_to_local){
         if(unlikely(NICC_SUCCESS != (
-            retval = this->_function_state->channel->connect_qp(false, nullptr, local_qp_info)
+            retval = this->_function_state->channel->connect_qp(false, nullptr, local_host_qp_info)
         ))) {
             NICC_WARN_C("failed to connect to local component: nicc_retval(%u)", retval);
             return retval;
@@ -251,7 +251,8 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
             &func_state->flexio_process
         ))
     )){
-        NICC_WARN_C("failed to create event handler on flexio driver on DPA block: flexio_retval(%d)", res);
+        NICC_WARN_C("failed to create event handler on flexio driver on DPA block: flexio_retval(%d), device: %s", 
+                    res, func_state->ibv_ctx->device->name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -259,7 +260,7 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     // obtain uar from the created process
     func_state->flexio_uar = flexio_process_get_uar(func_state->flexio_process);
     if(unlikely(func_state->flexio_uar == nullptr)){
-        NICC_WARN_C("no uar extracted");
+        NICC_WARN_C("no uar extracted from flexio process, device: %s", func_state->ibv_ctx->device->name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -320,7 +321,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
                                                                   func_state->flexio_process, 
                                                                   func_state->event_handler, 
                                                                   func_state->ibv_ctx,
-                                                                  "mlx5_2", /* RDMA device name */
+                                                                  func_state->ibv_ctx->device->name, /* RDMA device name */
                                                                   0 /* RDMA port */) 
     ))){
         NICC_WARN_C(
