@@ -100,7 +100,30 @@ endif
 
 # >>>>>>>>>>>>>> DOCA >>>>>>>>>>>>>>
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
-	doca_modules = ['doca-libs']
+  if doca_version == '2.5'
+    doca_modules = ['doca-grpc-libs', 'doca-libs']
+  else # 2.8
+    doca_modules = [
+      'doca-aes-gcm',
+      'doca-apsh',
+      'doca-comch',
+      'doca-comm-channel',
+      'doca-common',
+      'doca-compress',
+      'doca-devemu',
+      'doca-dma',
+	  'doca-dpa',
+      'doca-dpdk-bridge',
+      'doca-erasure-coding',
+      'doca-eth',
+      'doca-flow',
+      'doca-pcc',
+      'doca-rdma',
+      'doca-sha',
+      'doca-telemetry-exporter',
+      'doca-urom'
+    ]
+  endif
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
   if doca_version == '2.5'
     doca_modules = ['doca-grpc-libs', 'doca-libs']
@@ -114,6 +137,7 @@ elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64
       'doca-compress',
       'doca-devemu',
       'doca-dma',
+	  'doca-dpa',
       'doca-dpdk-bridge',
       'doca-erasure-coding',
       'doca-eth',
@@ -141,6 +165,7 @@ foreach doca_module : doca_modules
 		message('>>>>>> Found ' + doca_module + ', version is ' + doca_module_version.stdout().split()[0])
 	endif
 endforeach
+
 if founded_doca_modules.length() == doca_modules.length()
 	has_doca = true
 	add_global_arguments('-DNICC_DOCA_ENABLED', language: ['c', 'cpp'])
