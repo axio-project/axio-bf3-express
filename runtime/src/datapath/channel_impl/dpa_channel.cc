@@ -28,8 +28,7 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     NICC_CHECK_POINTER(ibv_ctx);
 
     // query mlx5 port attributes
-    // common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
-    common_resolve_phy_port(dev_name, phy_port, 1024, this->_resolve);
+    common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
     this->__roce_resolve_phy_port();
 
     /* allocate dev_queues for prior and next */
