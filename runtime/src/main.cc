@@ -25,6 +25,8 @@ extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/sr
 #ifdef __cplusplus
     }
 #endif
+const std::string device_name = "mlx5_0";
+const char *device_name_cstr = device_name.c_str();
 
 int main(){
     /**
@@ -32,25 +34,25 @@ int main(){
      * \todo;  these descriptors should be parsed by the resource pool, which
      *         queries the device and creates the descriptors
      */
-    nicc::device_state_t dev_state = { .device_name = "mlx5_0"};
+    nicc::device_state_t dev_state = { .device_name = device_name_cstr};
     dev_state.ibv_ctx = nicc::utils_ibv_open_device(dev_state.device_name);
     // nicc::nicc_retval_t retval = nicc::utils_create_flow_engine_domains(dev_state);
 
-    nicc::ComponentDesp_DPA_t *dpa_desp = new nicc::ComponentDesp_DPA_t;
-    NICC_CHECK_POINTER(dpa_desp);
-    dpa_desp->base_desp.quota = 128;
-    dpa_desp->device_name = "mlx5_0";
-    dpa_desp->core_id = 0;
+    nicc::ComponentDesp_DPA_t *dpa_init_desp = new nicc::ComponentDesp_DPA_t;
+    NICC_CHECK_POINTER(dpa_init_desp);
+    dpa_init_desp->base_desp.quota = 128;
+    dpa_init_desp->device_name = device_name_cstr;
+    dpa_init_desp->core_id = 0;
 
-    nicc::ComponentDesp_FlowEngine_t *flow_engine_desp = new nicc::ComponentDesp_FlowEngine_t;
-    NICC_CHECK_POINTER(flow_engine_desp);
-    flow_engine_desp->base_desp.quota = 2000;   // assume 2000 flow entries totally  
+    nicc::ComponentDesp_FlowEngine_t *flow_engine_init_desp = new nicc::ComponentDesp_FlowEngine_t;
+    NICC_CHECK_POINTER(flow_engine_init_desp);
+    flow_engine_init_desp->base_desp.quota = 2000;   // assume 2000 flow entries totally  
 
-    nicc::ComponentDesp_SoC_t *soc_desp = new nicc::ComponentDesp_SoC_t;
-    NICC_CHECK_POINTER(soc_desp);  
-    soc_desp->base_desp.quota = 16; 
-    soc_desp->device_name = "mlx5_2";
-    soc_desp->phy_port = 0;
+    nicc::ComponentDesp_SoC_t *soc_init_desp = new nicc::ComponentDesp_SoC_t;
+    NICC_CHECK_POINTER(soc_init_desp);  
+    soc_init_desp->base_desp.quota = 16; 
+    soc_init_desp->device_name = device_name_cstr;
+    soc_init_desp->phy_port = 0;
     /*----------------------------------------------------------------*/
     /**
      * \brief  STEP 1: parse config file
@@ -68,9 +70,9 @@ int main(){
     nicc::ResourcePool rpool(
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_desp) },
-            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_desp) },
-            { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_desp) }
+            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_init_desp) },
+            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_init_desp) },
+            { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_init_desp) }
         }
     );
     /*----------------------------------------------------------------*/
@@ -99,7 +101,7 @@ int main(){
             .quota = 1,
             .block_name = "dpa" /* \todo: use the component name from the config file */
         },
-        .device_name = "mlx5_0"
+        .device_name = device_name_cstr
     };
     nicc::AppFunction dpa_app_func = nicc::AppFunction(
         /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },
@@ -129,7 +131,7 @@ int main(){
             .quota = 1,
             .block_name = "soc" /* \todo: use the component name from the config file */
         },
-        .device_name = "mlx5_2",
+        .device_name = device_name_cstr,
         .phy_port = 0
     };
 
