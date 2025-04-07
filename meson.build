@@ -214,6 +214,7 @@ endif
 # endif
 c_args += [ '-I'+root_dir+'/third_parties/rdma-core/providers' ]
 ld_args += [ '-L'+root_dir+'/third_parties/rdma-core/build/lib', '-libverbs', '-lmlx5' ]
+ld_args += [ '-Wl,-rpath,' + root_dir + '/third_parties/rdma-core/build/lib' ]
 
 # >>>>>>>>>>>>>> Other Dependencies Found through Compiler >>>>>>>>>>>>>>
 dep = []
