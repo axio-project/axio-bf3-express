@@ -316,13 +316,13 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(
-        retval = this->_function_state->channel->allocate_channel(func_state->pd, 
-                                                                  func_state->uar, 
+        retval = this->_function_state->channel->allocate_channel(func_state->pd,       /* used in ethernet channel */
+                                                                  func_state->uar,      /* used in ethernet channel */
                                                                   func_state->flexio_process, 
                                                                   func_state->event_handler, 
                                                                   func_state->ibv_ctx,
-                                                                  func_state->ibv_ctx->device->name, /* RDMA device name */
-                                                                  0 /* RDMA port */) 
+                                                                  "mlx5_2", /* RDMA device name, mlx5_0 does not support RoCEv2 */
+                                                                  0         /* RDMA port */) 
     ))){
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
