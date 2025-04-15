@@ -52,6 +52,7 @@ struct dma_resources {
 	struct doca_mmap *remote_mmap;	    /* DOCA mmap for remote buffer */
 	struct doca_mmap *local_mmap;	    /* DOCA mmap for local buffer */
 	struct doca_buf_inventory *buf_inv; /* DOCA buffer inventory */
+	struct doca_dev *dma_dev;	    /* Dma device */
 	char *local_mem_buf;		    /* Local memory buf for DMA operation */
 	size_t num_remaining_tasks;	    /* Number of remaining tasks to process */
 };
@@ -131,20 +132,57 @@ static doca_error_t setup_buf_inventory(struct dma_resources *resources, int max
 	return result;
 }
 
+/*
+ * Function to check DMA device capabilities
+ *
+ * @devinfo [in]: DMA device info
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t dma_device_caps_is_supported(struct doca_devinfo *devinfo)
+{
+	doca_error_t result;
+
+	uint8_t supported = 0;
+	result = doca_devemu_pci_cap_is_mmap_add_dev_supported((const struct doca_devinfo *)devinfo, &supported);
+	if (result != DOCA_SUCCESS || supported == 0)
+		return DOCA_ERROR_NOT_SUPPORTED;
+
+	return doca_dma_cap_task_memcpy_is_supported((const struct doca_devinfo *)devinfo);
+}
+
 /**
  * Setup DOCA DMA context
  *
  * @resources [in]: struct dma_resources
- * @max_bufs [in]: The max number of buffers
+ * @devemu_name [in]: The DMA device name
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t setup_dma_ctx(struct dma_resources *resources)
+static doca_error_t setup_dma_ctx(struct dma_resources *resources, const char *devemu_name)
 {
 	doca_error_t result;
 	union doca_data ctx_user_data = {0};
 	struct doca_ctx *ctx;
 
-	result = doca_dma_create(resources->devemu_res.dev, &resources->dma_ctx);
+	/* If device name wasn't provided, use the device emulation's device */
+	if (*devemu_name == 0) {
+		result = doca_dev_open(doca_dev_as_devinfo(resources->devemu_res.dev), &(resources->dma_dev));
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to open DOCA device: %s", doca_error_get_descr(result));
+			return result;
+		}
+	} else {
+		/* Open DOCA device */
+		result = open_doca_device_with_ibdev_name((const uint8_t *)(devemu_name),
+							  strlen(devemu_name),
+							  dma_device_caps_is_supported,
+							  &(resources->dma_dev));
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to open DOCA device: %s", doca_error_get_descr(result));
+			return result;
+		}
+	}
+
+	result = doca_dma_create(resources->dma_dev, &resources->dma_ctx);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create DMA context: %s", doca_error_get_descr(result));
 		return result;
@@ -206,7 +244,7 @@ static doca_error_t setup_remote_mmap(struct dma_resources *resources, char *buf
 		return result;
 	}
 
-	result = doca_mmap_add_dev(resources->remote_mmap, resources->devemu_res.dev);
+	result = doca_mmap_add_dev(resources->remote_mmap, resources->dma_dev);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add device: %s", doca_error_get_descr(result));
 		return result;
@@ -249,7 +287,8 @@ static doca_error_t setup_local_mmap(struct dma_resources *resources, char *buf,
 		DOCA_LOG_ERR("Unable to create destination mmap: %s", doca_error_get_descr(result));
 		return result;
 	}
-	result = doca_mmap_add_dev(resources->local_mmap, resources->devemu_res.dev);
+
+	result = doca_mmap_add_dev(resources->local_mmap, resources->dma_dev);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to add device to destination mmap: %s", doca_error_get_descr(result));
 		return result;
@@ -478,19 +517,28 @@ static void dma_resources_cleanup(struct dma_resources *resources)
 		resources->dma_ctx = NULL;
 	}
 
+	if (resources->dma_dev != NULL) {
+		res = doca_dev_close(resources->dma_dev);
+		if (res != DOCA_SUCCESS)
+			DOCA_LOG_ERR("Failed to destroy dma device: %s", doca_error_get_descr(res));
+		resources->dma_dev = NULL;
+	}
+
 	devemu_resources_cleanup(&resources->devemu_res, false);
 }
 
 /*
  * Run DOCA Device Emulation DMA DPU sample
  *
- * @pci_address [in]: Device PCI address
+ * @pci_address [in]: DMA device PCI address
+ * @devemu_name [in]: Device emulation manager name
  * @emulated_dev_vuid [in]: VUID of the emulated device
  * @host_dma_mem_iova [in]: Host DMA memory IOVA
  * @write_data [in]: Data write to host memory
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 doca_error_t devemu_pci_device_dma_dpu(const char *pci_address,
+				       const char *devemu_name,
 				       const char *emulated_dev_vuid,
 				       uint64_t host_dma_mem_iova,
 				       const char *write_data)
@@ -505,7 +553,7 @@ doca_error_t devemu_pci_device_dma_dpu(const char *pci_address,
 		return result;
 	}
 
-	result = setup_dma_ctx(&resources);
+	result = setup_dma_ctx(&resources, devemu_name);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to setup dma ctx: %s", doca_error_get_descr(result));
 		dma_resources_cleanup(&resources);

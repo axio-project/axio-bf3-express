@@ -57,12 +57,14 @@
 #define NUM_RDMA_TASKS (1)	   /* Number of RDMA tasks*/
 #define SLEEP_IN_NANOS (10 * 1000) /* Sample the task every 10 microseconds  */
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define SERVER_ADDR_LEN (MAX(MAX(DOCA_DEVINFO_IPV4_ADDR_SIZE, DOCA_DEVINFO_IPV6_ADDR_SIZE), DOCA_GID_BYTE_LENGTH))
+/* Server address length, long enough for converting from ascii to hex and including the ':' symbols */
+#define SERVER_ADDR_LEN (128)
 #define SERVER_ADDR_TYPE_LEN (6)
 #define NUM_NEGOTIATION_RDMA_TASKS (1)
 #define SERVER_NAME "Server"
 #define CLIENT_NAME "Client"
 #define DEFAULT_RDMA_CM_PORT (13579)
+#define MAX_NUM_CONNECTIONS (8)
 
 /* Function to check if a given device is capable of executing some task */
 typedef doca_error_t (*task_check)(const struct doca_devinfo *);
@@ -83,8 +85,12 @@ struct rdma_config {
 	char remote_resource_desc_path[MAX_ARG_SIZE];	/* Path to read/save the remote mmap connection information */
 	bool is_gid_index_set;				/* Is the set_index parameter passed */
 	uint32_t gid_index;				/* GID index for DOCA RDMA */
+	uint32_t num_connections; /* The maximum number of allowed connections, only useful for server for multiple
+				    connection samples */
+	enum doca_rdma_transport_type transport_type; /* RC or DC, RC is the default, only useful for single connection
+							 out-of-band RDMA for now */
 
-	/* The following cmdline args are only related to rdma_cm */
+	/* The following fields are only related to rdma_cm */
 	bool use_rdma_cm;		       /* Whether test rdma-only or rdma-cm,
 						* Useful for both client and server
 						**/
@@ -128,12 +134,14 @@ struct rdma_resources {
 	size_t num_remaining_tasks;		      /* Number of remaining tasks to submit */
 
 	/* The following cmdline args are only related to rdma_cm */
-	struct doca_rdma_addr *cm_addr;		       /* Server address to connect by a client */
-	struct doca_rdma_connection *connection;       /* The RDMA_CM connection instance */
-	bool connection_established;		       /* Indicate whether connection is established */
-	struct doca_mmap *mmap_descriptor_mmap;	       /* Used to send local mmap descriptor to remote peer */
-	struct doca_mmap *remote_mmap_descriptor_mmap; /* Used to receive remote peer mmap descriptor */
-	struct doca_mmap *sync_event_descriptor_mmap;  /* Used to send and receive sync_event descriptor */
+	struct doca_rdma_addr *cm_addr;				       /* Server address to connect by a client */
+	struct doca_rdma_connection *connections[MAX_NUM_CONNECTIONS]; /* The RDMA_CM connection instance */
+	bool connection_established[MAX_NUM_CONNECTIONS]; /* Indication whether the corresponding connection have been
+							     estableshed */
+	uint32_t num_connection_established;		  /* Indicate how many connections has been established */
+	struct doca_mmap *mmap_descriptor_mmap;		  /* Used to send local mmap descriptor to remote peer */
+	struct doca_mmap *remote_mmap_descriptor_mmap;	  /* Used to receive remote peer mmap descriptor */
+	struct doca_mmap *sync_event_descriptor_mmap;	  /* Used to send and receive sync_event descriptor */
 	bool recv_sync_event_desc; /* If true, indicate a remote sync event should be received or otherwise a remote
 				      mmap */
 	const char *self_name;	   /* Client or Server */
@@ -199,6 +207,13 @@ doca_error_t register_rdma_read_string_param(void);
 doca_error_t register_rdma_write_string_param(void);
 
 /*
+ * Register ARGP max_num_connections parameter
+ *
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+doca_error_t register_rdma_num_connections_param(void);
+
+/*
  * Write the string on a file
  *
  * @file_path [in]: The path of the file
@@ -217,6 +232,14 @@ doca_error_t write_file(const char *file_path, const char *string, size_t string
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 doca_error_t read_file(const char *file_path, char **string, size_t *string_len);
+
+/*
+ * Delete file if exists
+ *
+ * @file_path [in]: The path of the file we want to delete
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+doca_error_t delete_file(const char *file_path);
 
 /*
  * Using RDMA-CM to start a connection between RDMA server and client
@@ -238,6 +261,7 @@ doca_error_t rdma_cm_disconnect(struct rdma_resources *resources);
  * Send a message to the peer using the RDMA send task, used in negotiation for peers
  *
  * @rdma [in]: The doca_rdma instance
+ * @rdma_connection [in]: The doca_rdma connection
  * @mmap [in]: The doca_mmap instance of the message to be send
  * @buf_inv [in]: The doca_buf_inventory instance for the doca_buf allocation
  * @msg [in]: The message address
@@ -246,6 +270,7 @@ doca_error_t rdma_cm_disconnect(struct rdma_resources *resources);
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 doca_error_t send_msg(struct doca_rdma *rdma,
+		      struct doca_rdma_connection *rdma_connection,
 		      struct doca_mmap *mmap,
 		      struct doca_buf_inventory *buf_inv,
 		      void *msg,

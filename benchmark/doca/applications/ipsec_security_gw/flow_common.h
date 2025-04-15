@@ -69,8 +69,9 @@ extern "C" {
 
 /* IPsec Security Gateway mapping between dpdk and doca flow port */
 struct ipsec_security_gw_ports_map {
-	struct doca_flow_port *port; /* doca flow port pointer */
-	int port_id;		     /* dpdk port ID */
+	struct doca_flow_port *port;		/* doca flow port pointer */
+	int port_id;				/* dpdk port ID */
+	struct doca_flow_header_eth eth_header; /* doca flow eth header */
 };
 
 /* user context struct that will be used in entries process callback */
@@ -98,11 +99,10 @@ union security_gateway_pkt_meta {
 	struct {
 		uint32_t encrypt : 1;		  /* packet is on encrypt path */
 		uint32_t decrypt : 1;		  /* packet is on decrypt path */
-		uint32_t icv_size : 2;		  /* icv size, match on decap pipe */
 		uint32_t inner_ipv6 : 1;	  /* indicate if inner type is ipv6 for tunnel mode */
 		uint32_t decrypt_syndrome : 2;	  /* decrypt syndrome, set in debug mode when fwd to app */
 		uint32_t antireplay_syndrome : 2; /* anti-replay syndrome, set in debug mode when fwd to app*/
-		uint32_t rsvd0 : 3;		  /* must be set to 0 */
+		uint32_t rsvd0 : 5;		  /* must be set to 0 */
 		uint32_t rule_id : 20;		  /* indicate the rule ID */
 	};
 } __attribute__((__packed__));
@@ -169,7 +169,10 @@ doca_error_t create_switch_egress_root_pipes(struct ipsec_security_gw_ports_map 
  * @rss_pipe [out]: pointer to created pipe
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, struct doca_flow_pipe **rss_pipe);
+doca_error_t create_rss_pipe(struct ipsec_security_gw_config *app_cfg,
+			     struct doca_flow_port *port,
+			     uint16_t nb_queues,
+			     struct doca_flow_pipe **rss_pipe);
 
 /*
  * Create the DOCA Flow forward struct based on the running mode

@@ -33,27 +33,20 @@ extern "C" {
 #endif
 
 /**
- * @brief Target RDMA #1 user data
+ * @brief Number of expected receive completions
  */
-#define TARGET_RDMA1_USER_DATA (111)
-
-/**
- * @brief Target RDMA #2 user data
- */
-#define TARGET_RDMA2_USER_DATA (222)
+#define EXPECTED_NUM_RECEIVES (4)
 
 /**
  * @brief DPA thread #1 device argument struct
  */
 struct dpa_thread1_arg {
+	doca_dpa_dev_t dpa_ctx_handle;
 	uint64_t notification_comp_handle;
 	uint64_t dpa_comp_handle;
-	uint64_t target_rdma1_handle;
-	uint64_t local_buf1_addr;
-	uint32_t dpa_mmap1_handle;
-	uint64_t target_rdma2_handle;
-	uint64_t local_buf2_addr;
-	uint32_t dpa_mmap2_handle;
+	uint64_t target_rdma_handle;
+	uint64_t local_buf_addr;
+	uint32_t dpa_mmap_handle;
 	size_t length;
 } __attribute__((__packed__, aligned(8)));
 

@@ -38,6 +38,7 @@ DOCA_LOG_REGISTER(RDMA_READ_REQUESTER::SAMPLE);
 /*
  * Write the connection details for the responder to read,
  * and read the connection details and the remote mmap details of the responder
+ * In DC transport mode it is only needed to read the remote connection details
  *
  * @cfg [in]: Configuration parameters
  * @resources [in/out]: RDMA resources
@@ -47,16 +48,19 @@ static doca_error_t write_read_connection(struct rdma_config *cfg, struct rdma_r
 {
 	doca_error_t result = DOCA_SUCCESS;
 
-	/* Write the RDMA connection details */
-	result = write_file(cfg->local_connection_desc_path,
-			    (char *)resources->rdma_conn_descriptor,
-			    resources->rdma_conn_descriptor_size);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to write the RDMA connection details: %s", doca_error_get_descr(result));
-		return result;
+	if (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_RC) {
+		/* Write the RDMA connection details */
+		result = write_file(cfg->local_connection_desc_path,
+				    (char *)resources->rdma_conn_descriptor,
+				    resources->rdma_conn_descriptor_size);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to write the RDMA connection details: %s", doca_error_get_descr(result));
+			return result;
+		}
+
+		DOCA_LOG_INFO("You can now copy %s to the responder", cfg->local_connection_desc_path);
 	}
 
-	DOCA_LOG_INFO("You can now copy %s to the responder", cfg->local_connection_desc_path);
 	DOCA_LOG_INFO(
 		"Please copy %s and %s from the responder and then press enter after pressing enter in the responder side",
 		cfg->remote_connection_desc_path,
@@ -201,7 +205,8 @@ static doca_error_t rdma_read_requester_export_and_connect(struct rdma_resources
 	/* Export RDMA connection details */
 	result = doca_rdma_export(resources->rdma,
 				  &(resources->rdma_conn_descriptor),
-				  &(resources->rdma_conn_descriptor_size));
+				  &(resources->rdma_conn_descriptor_size),
+				  &(resources->connections[0]));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to export RDMA: %s", doca_error_get_descr(result));
 		return result;
@@ -218,7 +223,8 @@ static doca_error_t rdma_read_requester_export_and_connect(struct rdma_resources
 	/* Connect RDMA */
 	result = doca_rdma_connect(resources->rdma,
 				   resources->remote_rdma_conn_descriptor,
-				   resources->remote_rdma_conn_descriptor_size);
+				   resources->remote_rdma_conn_descriptor_size,
+				   resources->connections[0]);
 	if (result != DOCA_SUCCESS)
 		DOCA_LOG_ERR("Failed to connect the sender's RDMA to the responder's RDMA: %s",
 			     doca_error_get_descr(result));
@@ -286,6 +292,7 @@ static doca_error_t rdma_read_prepare_and_submit_task(struct rdma_resources *res
 	task_user_data.ptr = &(resources->first_encountered_error);
 	/* Allocate and construct RDMA read task */
 	result = doca_rdma_task_read_allocate_init(resources->rdma,
+						   resources->connections[0],
 						   resources->src_buf,
 						   resources->dst_buf,
 						   task_user_data,
@@ -295,7 +302,7 @@ static doca_error_t rdma_read_prepare_and_submit_task(struct rdma_resources *res
 		goto destroy_dst_buf;
 	}
 
-	/* Submit RDMA write task */
+	/* Submit RDMA read task */
 	DOCA_LOG_INFO("Submitting RDMA read task");
 	resources->num_remaining_tasks++;
 	result = doca_task_submit(doca_rdma_task_read_as_task(rdma_read_task));
@@ -350,10 +357,11 @@ static void rdma_read_requester_state_change_callback(const union doca_data user
 		DOCA_LOG_INFO("RDMA context is running");
 
 		result = rdma_read_requester_export_and_connect(resources);
-		if (result != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Rdma_read_requester_export_and_connect() failed: %s",
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("rdma_read_requester_export_and_connect() failed: %s",
 				     doca_error_get_descr(result));
-		else
+			break;
+		} else
 			DOCA_LOG_INFO("RDMA context finished initialization");
 
 		if (cfg->use_rdma_cm == true)
@@ -361,7 +369,7 @@ static void rdma_read_requester_state_change_callback(const union doca_data user
 
 		result = rdma_read_prepare_and_submit_task(resources);
 		if (result != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Rdma_read_prepare_and_submit_task() failed: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("rdma_read_prepare_and_submit_task() failed: %s", doca_error_get_descr(result));
 		break;
 	case DOCA_CTX_STATE_STOPPING:
 		/**

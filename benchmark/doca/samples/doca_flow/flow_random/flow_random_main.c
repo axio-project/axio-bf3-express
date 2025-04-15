@@ -33,8 +33,11 @@
 
 DOCA_LOG_REGISTER(FLOW_RANDOM::MAIN);
 
+/* Must be power of 2 */
+#define NB_RSS_QUEUES (1 << 3)
+
 /* Sample's Logic */
-doca_error_t flow_random(int nb_queues);
+doca_error_t flow_random(int nb_steering_queues, int nb_rss_queues);
 
 /*
  * Sample main function
@@ -48,9 +51,9 @@ int main(int argc, char **argv)
 	doca_error_t result;
 	struct doca_log_backend *sdk_log;
 	int exit_status = EXIT_FAILURE;
+	int core_count;
 	struct application_dpdk_config dpdk_config = {
 		.port_config.nb_ports = 2,
-		.port_config.nb_queues = 8,
 		.port_config.nb_hairpin_q = 1,
 	};
 
@@ -81,6 +84,9 @@ int main(int argc, char **argv)
 		goto argp_cleanup;
 	}
 
+	core_count = rte_lcore_count();
+	dpdk_config.port_config.nb_queues = core_count;
+
 	/* update queues and ports */
 	result = dpdk_queues_and_ports_init(&dpdk_config);
 	if (result != DOCA_SUCCESS) {
@@ -88,8 +94,8 @@ int main(int argc, char **argv)
 		goto dpdk_cleanup;
 	}
 
-	/* run sample */
-	result = flow_random(dpdk_config.port_config.nb_queues);
+	/* run sample. */
+	result = flow_random(core_count, NB_RSS_QUEUES);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("flow_random() encountered an error: %s", doca_error_get_descr(result));
 		goto dpdk_ports_queues_cleanup;

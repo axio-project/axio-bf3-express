@@ -329,6 +329,7 @@ doca_error_t flow_ecmp(int nb_queues, int nb_ports, struct flow_switch_ctx *ctx)
 	struct doca_flow_port *ports[MAX_TOTAL_PORTS];
 	struct doca_flow_pipe *hash_pipe;
 	struct doca_dev *dev_arr[MAX_TOTAL_PORTS];
+	uint32_t actions_mem_size[MAX_TOTAL_PORTS];
 	uint8_t nb_ecmp_ports = nb_ports - 1;
 	uint8_t nb_entries = nb_ecmp_ports + 2;
 	struct doca_flow_pipe_entry *entries[MAX_ECMP_PORTS];
@@ -353,7 +354,8 @@ doca_error_t flow_ecmp(int nb_queues, int nb_ports, struct flow_switch_ctx *ctx)
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
 	dev_arr[0] = ctx->doca_dev[0];
-	result = init_doca_flow_ports(nb_ports, ports, false, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, nb_entries));
+	result = init_doca_flow_ports(nb_ports, ports, false, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

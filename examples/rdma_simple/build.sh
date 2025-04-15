@@ -43,6 +43,7 @@ HOST_OPTIONS="${HOST_CC_FLAGS}"
 # Compile the DPA (kernel) device source code using the DPACC
 ${DPACC} ${SOURCE_FILE} -c \
         -hostcc=gcc \
+        -mcpu=nv-dpa-bf3 \
         -hostcc-options="${HOST_OPTIONS}" \
         --devicecc-options=${DEVICE_OPTIONS} \
         -flto

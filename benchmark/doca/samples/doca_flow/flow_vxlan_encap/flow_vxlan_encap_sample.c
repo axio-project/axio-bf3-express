@@ -28,10 +28,59 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "flow_common.h"
 
 DOCA_LOG_REGISTER(FLOW_VXLAN_ENCAP);
+
+/*
+ * Create DOCA Flow pipe with match on header types to filter out non IPV4 packets.
+ *
+ * @port [in]: port of the pipe
+ * @port_id [in]: port ID of the pipe
+ * @pipe [out]: created pipe pointer
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
+ */
+static doca_error_t create_classifier_pipe(struct doca_flow_port *port,
+					   struct doca_flow_pipe *match_pipe,
+					   struct doca_flow_pipe **pipe)
+{
+	struct doca_flow_match match;
+	struct doca_flow_fwd fwd;
+	struct doca_flow_pipe_cfg *pipe_cfg;
+	doca_error_t result;
+
+	memset(&match, 0, sizeof(match));
+	memset(&fwd, 0, sizeof(fwd));
+
+	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
+
+	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	result = set_flow_pipe_cfg(pipe_cfg, "CLASSIFIER_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
+	fwd.type = DOCA_FLOW_FWD_PIPE;
+	fwd.next_pipe = match_pipe;
+
+	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
+destroy_pipe_cfg:
+	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	return result;
+}
 
 /*
  * Create DOCA Flow pipe with 5 tuple match and set pkt meta value
@@ -74,7 +123,7 @@ static doca_error_t create_match_pipe(struct doca_flow_port *port, int port_id, 
 		return result;
 	}
 
-	result = set_flow_pipe_cfg(pipe_cfg, "MATCH_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	result = set_flow_pipe_cfg(pipe_cfg, "MATCH_PIPE", DOCA_FLOW_PIPE_BASIC, false);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
@@ -148,11 +197,11 @@ static doca_error_t create_vxlan_encap_pipe(struct doca_flow_port *port,
 	switch (vxlan_type) {
 	case DOCA_FLOW_TUN_EXT_VXLAN_GBP:
 		actions.encap_cfg.encap.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GBP;
-		actions.encap_cfg.encap.tun.vxlan_group_policy_id = 0xffff;
+		actions.encap_cfg.encap.tun.vxlan_gbp_group_policy_id = 0xffff;
 		break;
 	case DOCA_FLOW_TUN_EXT_VXLAN_GPE:
 		actions.encap_cfg.encap.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GPE;
-		actions.encap_cfg.encap.tun.vxlan_next_protocol = 0xff;
+		actions.encap_cfg.encap.tun.vxlan_gpe_next_protocol = 0xff;
 		actions.encap_cfg.encap.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_GPE_DEFAULT_PORT);
 		break;
 	case DOCA_FLOW_TUN_EXT_VXLAN_STANDARD:
@@ -200,6 +249,23 @@ destroy_pipe_cfg:
 }
 
 /*
+ * Add DOCA Flow pipe entry to classifier pipe with all specific values.
+ *
+ * @pipe [in]: pipe of the entry
+ * @status [in]: user context for adding entry
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
+ */
+static doca_error_t add_classifier_pipe_entry(struct doca_flow_pipe *pipe, struct entries_status *status)
+{
+	struct doca_flow_match match;
+	struct doca_flow_pipe_entry *entry;
+
+	memset(&match, 0, sizeof(match));
+
+	return doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, NULL, 0, status, &entry);
+}
+
+/*
  * Add DOCA Flow pipe entry with example 5 tuple match
  *
  * @pipe [in]: pipe of the entry
@@ -226,7 +292,7 @@ static doca_error_t add_match_pipe_entry(struct doca_flow_pipe *pipe, struct ent
 	match.outer.transport.dst_port = dst_port;
 	match.outer.transport.src_port = src_port;
 
-	actions.meta.pkt_meta = 1;
+	actions.meta.pkt_meta = DOCA_HTOBE32(1);
 	actions.outer.transport.src_port = rte_cpu_to_be_16(1235);
 	actions.action_idx = 0;
 
@@ -258,14 +324,14 @@ static doca_error_t add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe,
 	doca_be32_t encap_src_ip_addr = BE_IPV4_ADDR(11, 21, 31, 41);
 	doca_be16_t encap_flags_fragment_offset = RTE_BE16(DOCA_FLOW_IP4_FLAG_DONT_FRAGMENT);
 	uint8_t encap_ttl = 17;
-	doca_be32_t encap_vxlan_tun_id = BUILD_VNI(0xadadad);
+	doca_be32_t encap_vxlan_tun_id = DOCA_HTOBE32(0xadadad);
 	uint8_t src_mac[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 	uint8_t dst_mac[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
 
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 
-	match.meta.pkt_meta = 1;
+	match.meta.pkt_meta = DOCA_HTOBE32(1);
 
 	SET_MAC_ADDR(actions.encap_cfg.encap.outer.eth.src_mac,
 		     src_mac[0],
@@ -292,10 +358,10 @@ static doca_error_t add_vxlan_encap_pipe_entry(struct doca_flow_pipe *pipe,
 
 	switch (vxlan_type) {
 	case DOCA_FLOW_TUN_EXT_VXLAN_GBP:
-		actions.encap_cfg.encap.tun.vxlan_group_policy_id = RTE_BE16(0x1234);
+		actions.encap_cfg.encap.tun.vxlan_gbp_group_policy_id = RTE_BE16(0x1234);
 		break;
 	case DOCA_FLOW_TUN_EXT_VXLAN_GPE:
-		actions.encap_cfg.encap.tun.vxlan_next_protocol = DOCA_FLOW_VXLAN_GPE_TYPE_ETH;
+		actions.encap_cfg.encap.tun.vxlan_gpe_next_protocol = DOCA_FLOW_VXLAN_GPE_TYPE_ETH;
 		break;
 	case DOCA_FLOW_TUN_EXT_VXLAN_STANDARD:
 		break;
@@ -325,9 +391,11 @@ doca_error_t flow_vxlan_encap(int nb_queues, enum doca_flow_tun_ext_vxlan_type v
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe;
+	struct doca_flow_pipe *classifier_pipe;
 	struct entries_status status_ingress;
-	int num_of_entries_ingress = 1;
+	int num_of_entries_ingress = 2;
 	struct entries_status status_egress;
 	int num_of_entries_egress = 1;
 	doca_error_t result;
@@ -340,7 +408,8 @@ doca_error_t flow_vxlan_encap(int nb_queues, enum doca_flow_tun_ext_vxlan_type v
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries_ingress + num_of_entries_egress));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -353,13 +422,29 @@ doca_error_t flow_vxlan_encap(int nb_queues, enum doca_flow_tun_ext_vxlan_type v
 
 		result = create_match_pipe(ports[port_id], port_id, &pipe);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to create match pipe: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Failed to create classifier pipe: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
 			doca_flow_destroy();
 			return result;
 		}
 
 		result = add_match_pipe_entry(pipe, &status_ingress);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to add entry to classifier pipe: %s", doca_error_get_descr(result));
+			stop_doca_flow_ports(nb_ports, ports);
+			doca_flow_destroy();
+			return result;
+		}
+
+		result = create_classifier_pipe(ports[port_id], pipe, &classifier_pipe);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to create match pipe: %s", doca_error_get_descr(result));
+			stop_doca_flow_ports(nb_ports, ports);
+			doca_flow_destroy();
+			return result;
+		}
+
+		result = add_classifier_pipe_entry(classifier_pipe, &status_ingress);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry to match pipe: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);

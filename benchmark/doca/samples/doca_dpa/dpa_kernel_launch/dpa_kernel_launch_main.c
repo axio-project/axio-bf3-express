@@ -45,21 +45,19 @@ doca_error_t kernel_launch(struct dpa_resources *resources);
  */
 int main(int argc, char **argv)
 {
-	struct dpa_config cfg = {{0}};
+	struct dpa_config cfg;
 	struct dpa_resources resources = {0};
 	doca_error_t result;
 	struct doca_log_backend *sdk_log;
 	int exit_status = EXIT_FAILURE;
 
-	/* Set default value for device name */
-	strcpy(cfg.device_name, DEVICE_DEFAULT_NAME);
+	strcpy(cfg.pf_device_name, DEVICE_DEFAULT_NAME);
+	strcpy(cfg.rdma_device_name, DEVICE_DEFAULT_NAME);
 
-	/* Register a logger backend */
 	result = doca_log_backend_create_standard();
 	if (result != DOCA_SUCCESS)
 		goto sample_exit;
 
-	/* Register a logger backend for internal SDK errors and warnings */
 	result = doca_log_backend_create_with_file_sdk(stderr, &sdk_log);
 	if (result != DOCA_SUCCESS)
 		goto sample_exit;
@@ -75,7 +73,6 @@ int main(int argc, char **argv)
 		goto sample_exit;
 	}
 
-	/* Register DPA params */
 	result = register_dpa_params();
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register sample parameters: %s", doca_error_get_descr(result));
@@ -88,14 +85,12 @@ int main(int argc, char **argv)
 		goto argp_cleanup;
 	}
 
-	/* Allocating resources */
 	result = allocate_dpa_resources(&cfg, &resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to Allocate DPA Resources: %s", doca_error_get_descr(result));
 		goto argp_cleanup;
 	}
 
-	/* Running sample */
 	result = kernel_launch(&resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("kernel_launch() encountered an error: %s", doca_error_get_descr(result));
@@ -105,7 +100,6 @@ int main(int argc, char **argv)
 	exit_status = EXIT_SUCCESS;
 
 dpa_cleanup:
-	/* Destroying DPA resources */
 	result = destroy_dpa_resources(&resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to destroy DOCA DPA resources: %s", doca_error_get_descr(result));

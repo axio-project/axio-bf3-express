@@ -31,6 +31,7 @@
 #include <rte_random.h>
 
 #include <doca_flow.h>
+#include <doca_flow_definitions.h>
 #include <doca_log.h>
 
 #include "flow_common.h"
@@ -59,10 +60,8 @@ static void check_for_valid_entry_aging(struct doca_flow_pipe_entry *entry,
 					enum doca_flow_entry_op op,
 					void *user_ctx)
 {
-	(void)entry;
-	(void)op;
-	(void)pipe_queue;
 	struct aging_user_data *entry_status = (struct aging_user_data *)user_ctx;
+	doca_error_t result;
 
 	if (entry_status == NULL)
 		return;
@@ -70,10 +69,17 @@ static void check_for_valid_entry_aging(struct doca_flow_pipe_entry *entry,
 	if (status != DOCA_FLOW_ENTRY_STATUS_SUCCESS)
 		entry_status->status->failure = true; /* set failure to true if processing failed */
 	if (op == DOCA_FLOW_ENTRY_OP_AGED) {
-		doca_flow_pipe_remove_entry(pipe_queue, DOCA_FLOW_NO_WAIT, entry);
-		DOCA_LOG_INFO("Entry number %d from port %d aged out and removed",
-			      entry_status->entry_num,
-			      entry_status->port_id);
+		result = doca_flow_pipe_remove_entry(pipe_queue, DOCA_FLOW_NO_WAIT, entry);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to remove entry number %d from port %d: %s",
+				     entry_status->entry_num,
+				     entry_status->port_id,
+				     doca_error_get_descr(result));
+		} else {
+			DOCA_LOG_INFO("Entry number %d from port %d aged out and removed",
+				      entry_status->entry_num,
+				      entry_status->port_id);
+		}
 	} else
 		entry_status->status->nb_processed++;
 }
@@ -83,10 +89,14 @@ static void check_for_valid_entry_aging(struct doca_flow_pipe_entry *entry,
  *
  * @port [in]: port of the pipe
  * @port_id [in]: port ID of the pipe
+ * @n_entries [in]: pipe size
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t create_aging_pipe(struct doca_flow_port *port, int port_id, struct doca_flow_pipe **pipe)
+static doca_error_t create_aging_pipe(struct doca_flow_port *port,
+				      int port_id,
+				      uint32_t n_entries,
+				      struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_monitor monitor;
@@ -144,6 +154,12 @@ static doca_error_t create_aging_pipe(struct doca_flow_port *port, int port_id, 
 		goto destroy_pipe_cfg;
 	}
 
+	result = doca_flow_pipe_cfg_set_nr_entries(pipe_cfg, n_entries);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg nr entries: %s", doca_error_get_descr(result));
+		goto destroy_pipe_cfg;
+	}
+
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = port_id ^ 1;
 
@@ -183,16 +199,16 @@ static doca_error_t add_aging_pipe_entries(struct doca_flow_pipe *pipe,
 	doca_error_t result;
 
 	for (i = 0; i < num_of_aging_entries; i++) {
-		src_ip_addr = BE_IPV4_ADDR(i, 2, 3, 4);
+		src_ip_addr = BE_IPV4_ADDR(1, 2, 3, 4);
 
 		memset(&match, 0, sizeof(match));
 		memset(&actions, 0, sizeof(actions));
 		memset(&monitor, 0, sizeof(monitor));
 
-		/* flows will be aged out in 5 - 60s */
-		monitor.aging_sec = (uint32_t)rte_rand() % 55 + 5;
+		/* flows will be aged out in 5s */
+		monitor.aging_sec = 5;
 
-		match.outer.ip4.dst_ip = dst_ip_addr;
+		match.outer.ip4.dst_ip = dst_ip_addr + i;
 		match.outer.ip4.src_ip = src_ip_addr;
 		match.outer.tcp.l4_port.dst_port = dst_port;
 		match.outer.tcp.l4_port.src_port = src_port;
@@ -234,37 +250,22 @@ static doca_error_t add_aging_pipe_entries(struct doca_flow_pipe *pipe,
  * Handle all aged flow in a port
  *
  * @port [in]: port to remove the aged flow from
- * @status [in]: user context for adding entry
  * @total_counter [in/out]: counter for all aged flows in both ports
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t handle_aged_flow(struct doca_flow_port *port, struct entries_status *status, int *total_counter)
+static doca_error_t handle_aged_flow(struct doca_flow_port *port, int *total_counter)
 {
-	uint64_t quota_time = 20; /* max handling aging time in ms */
+	uint64_t quota_time = 2000; /* max handling aging time in ms */
 	int num_of_aged_entries = 0;
-	doca_error_t result;
 
-	status->nb_processed = 0;
 	num_of_aged_entries = doca_flow_aging_handle(port, 0, quota_time, 0);
 	/* call handle aging until full cycle complete */
 	while (num_of_aged_entries != -1) {
-		*total_counter += num_of_aged_entries;
-		DOCA_LOG_INFO("Num of aged entries: %d, total: %d", num_of_aged_entries, *total_counter);
-
-		result = doca_flow_entries_process(port,
-						   0,
-						   DEFAULT_TIMEOUT_US,
-						   num_of_aged_entries - status->nb_processed);
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
-			return result;
-		}
-		if (status->failure) {
-			DOCA_LOG_ERR("Failed to process entries, status is not success");
-			return DOCA_ERROR_BAD_STATE;
+		if (num_of_aged_entries > 0) {
+			*total_counter += num_of_aged_entries;
+			DOCA_LOG_INFO("Num of aged entries: %d, total: %d", num_of_aged_entries, *total_counter);
 		}
 
-		status->nb_processed = 0;
 		num_of_aged_entries = doca_flow_aging_handle(port, 0, quota_time, 0);
 	}
 	return DOCA_SUCCESS;
@@ -284,21 +285,23 @@ doca_error_t flow_aging(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct entries_status status[nb_ports];
 	struct aging_user_data *user_data[nb_ports];
-	int num_of_aging_entries = 10;
+	int num_of_aging_entries = 10000;
 	int aged_entry_counter = 0;
 	doca_error_t result, doca_error = DOCA_SUCCESS;
 	int port_id;
 
-	resource.nr_counters = 80;
+	resource.nr_counters = 80 + num_of_aging_entries * nb_ports;
 
 	result = init_doca_flow_cb(nb_queues,
 				   "vnf,hws",
 				   &resource,
 				   nr_shared_resources,
 				   check_for_valid_entry_aging,
+				   NULL,
 				   NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
@@ -306,7 +309,8 @@ doca_error_t flow_aging(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_aging_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -318,7 +322,7 @@ doca_error_t flow_aging(int nb_queues)
 	for (port_id = 0; port_id < nb_ports; port_id++) {
 		memset(&status[port_id], 0, sizeof(status[port_id]));
 
-		result = create_aging_pipe(ports[port_id], port_id, &pipe);
+		result = create_aging_pipe(ports[port_id], port_id, num_of_aging_entries, &pipe);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create pipe: %s", doca_error_get_descr(result));
 			goto entries_cleanup;
@@ -344,13 +348,35 @@ doca_error_t flow_aging(int nb_queues)
 		}
 	}
 
+	DOCA_LOG_INFO("Wait few seconds for all entries to age out");
+	memset(status, 0, sizeof(status));
 	/* handle aging in loop until all entries aged out */
 	while (aged_entry_counter < num_of_aging_entries * nb_ports) {
+		sleep(1);
 		for (port_id = 0; port_id < nb_ports; port_id++) {
-			sleep(5);
-			result = handle_aged_flow(ports[port_id], &status[port_id], &aged_entry_counter);
-			if (result != DOCA_SUCCESS)
-				break;
+			result = handle_aged_flow(ports[port_id], &aged_entry_counter);
+			if (result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to handle aged flow: %s", doca_error_get_descr(result));
+				goto entries_cleanup;
+			}
+		}
+	}
+
+	/* most of entries are processed automatically before removing new entries, poll results of remaining entries */
+	for (port_id = 0; port_id < nb_ports; port_id++) {
+		while (status[port_id].nb_processed < num_of_aging_entries) {
+			result = doca_flow_entries_process(ports[port_id],
+							   0,
+							   DEFAULT_TIMEOUT_US,
+							   num_of_aging_entries - status[port_id].nb_processed);
+			if (result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
+				goto entries_cleanup;
+			}
+			if (status[port_id].failure) {
+				DOCA_LOG_ERR("Failed to process entries, status is not success");
+				goto entries_cleanup;
+			}
 		}
 	}
 

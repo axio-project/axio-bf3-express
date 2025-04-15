@@ -41,156 +41,49 @@ doca_dpa_func_t thread2_kernel;
 doca_dpa_func_t rdma_post_receive_rpc;
 
 /**
- * @brief Create and start Initiator DPA RDMA objects
+ * @brief Create, attach and start DPA RDMA object
  *
- * @resources [in]: DPA resources
- * @dpa_rdma1_obj [out]: Created Initiator DPA RDMA #1
- * @dpa_rdma2_obj [out]: Created Initiator DPA RDMA #2
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t initiator_rdma_objs_create(struct dpa_resources *resources,
-					       struct dpa_rdma_obj *dpa_rdma1_obj,
-					       struct dpa_rdma_obj *dpa_rdma2_obj)
-{
-	doca_error_t doca_err = DOCA_SUCCESS, tmp_doca_err = DOCA_SUCCESS;
-
-	DOCA_LOG_INFO("Create Initiator DOCA RDMA #1");
-	dpa_rdma1_obj->doca_device = resources->doca_device;
-	dpa_rdma1_obj->doca_dpa = resources->doca_dpa;
-	dpa_rdma1_obj->permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				     DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	doca_err = dpa_rdma_obj_init(NULL, dpa_rdma1_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto exit;
-	}
-
-	DOCA_LOG_INFO("Start Initiator DOCA RDMA #1");
-	doca_err = dpa_rdma_obj_start(dpa_rdma1_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_start failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma1_obj;
-	}
-
-	DOCA_LOG_INFO("Create Initiator DOCA RDMA #2");
-	dpa_rdma2_obj->doca_device = resources->doca_device;
-	dpa_rdma2_obj->doca_dpa = resources->doca_dpa;
-	dpa_rdma2_obj->permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				     DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	doca_err = dpa_rdma_obj_init(NULL, dpa_rdma2_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma1_obj;
-	}
-
-	DOCA_LOG_INFO("Start Initiator DOCA RDMA #2");
-	doca_err = dpa_rdma_obj_start(dpa_rdma2_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function rdma_obj_start failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma2_obj;
-	}
-
-	return doca_err;
-
-destroy_rdma2_obj:
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma2_obj);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-destroy_rdma1_obj:
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma1_obj);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-exit:
-	return doca_err;
-}
-
-/**
- * @brief Create, attach and start Target DPA RDMA objects
- *
- * This function creates Target DPA RDMA objects, attaches to DPA completion and start them
+ * This function creates DPA RDMA object, attaches to DPA completion and start it
  *
  * @resources [in]: DPA resources
  * @dpa_completion_obj [in]: DPA completion
- * @dpa_rdma1_obj [out]: Created Target DPA RDMA #1
- * @dpa_rdma2_obj [out]: Created Target DPA RDMA #2
+ * @dpa_rdma_obj [out]: Created DPA RDMA
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t target_rdma_objs_create(struct dpa_resources *resources,
-					    struct dpa_completion_obj *dpa_completion_obj,
-					    struct dpa_rdma_obj *dpa_rdma1_obj,
-					    struct dpa_rdma_obj *dpa_rdma2_obj)
+static doca_error_t rdma_obj_create(struct dpa_resources *resources,
+				    struct dpa_completion_obj *dpa_completion_obj,
+				    struct dpa_rdma_obj *dpa_rdma_obj)
 {
 	doca_error_t doca_err = DOCA_SUCCESS, tmp_doca_err = DOCA_SUCCESS;
 
-	DOCA_LOG_INFO("Create Target DOCA RDMA #1");
-	dpa_rdma1_obj->doca_device = resources->doca_device;
-	dpa_rdma1_obj->doca_dpa = resources->doca_dpa;
-	dpa_rdma1_obj->permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				     DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	dpa_rdma1_obj->user_data.u64 = TARGET_RDMA1_USER_DATA;
-	doca_err = dpa_rdma_obj_init(NULL, dpa_rdma1_obj);
+	DOCA_LOG_INFO("Create DOCA RDMA");
+	dpa_rdma_obj->doca_device = resources->rdma_doca_device;
+	dpa_rdma_obj->doca_dpa = resources->rdma_dpa_ctx;
+	dpa_rdma_obj->permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
+				    DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
+	dpa_rdma_obj->buf_list_len = RDMA_DEFAULT_BUF_LIST_LEN;
+	dpa_rdma_obj->gid_index = RDMA_DEVICE_DEFAULT_GID_INDEX;
+	dpa_rdma_obj->recv_queue_size = EXPECTED_NUM_RECEIVES;
+	dpa_rdma_obj->max_connections_count = 2;
+	dpa_rdma_obj->second_connection_needed = true;
+	dpa_rdma_obj->dpa_comp = dpa_completion_obj->dpa_comp;
+	doca_err = dpa_rdma_obj_init(dpa_rdma_obj);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function dpa_rdma_obj_init failed (%s)", doca_error_get_descr(doca_err));
 		goto exit;
 	}
 
-	DOCA_LOG_INFO("Create Target DOCA RDMA #2");
-	dpa_rdma2_obj->doca_device = resources->doca_device;
-	dpa_rdma2_obj->doca_dpa = resources->doca_dpa;
-	dpa_rdma2_obj->permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				     DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	dpa_rdma2_obj->user_data.u64 = TARGET_RDMA2_USER_DATA;
-	doca_err = dpa_rdma_obj_init(NULL, dpa_rdma2_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma1_obj;
-	}
-
-	DOCA_LOG_INFO("Attach DOCA DPA Completion to Target DOCA RDMA #1");
-	doca_err = doca_rdma_dpa_completion_attach(dpa_rdma1_obj->rdma, dpa_completion_obj->dpa_comp);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_dpa_completion_attach failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma2_obj;
-	}
-
-	DOCA_LOG_INFO("Attach DOCA DPA Completion to Target DOCA RDMA #2");
-	doca_err = doca_rdma_dpa_completion_attach(dpa_rdma2_obj->rdma, dpa_completion_obj->dpa_comp);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_dpa_completion_attach failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma2_obj;
-	}
-
-	DOCA_LOG_INFO("Start Target DOCA RDMA #1");
-	doca_err = dpa_rdma_obj_start(dpa_rdma1_obj);
+	DOCA_LOG_INFO("Start DOCA RDMA");
+	doca_err = dpa_rdma_obj_start(dpa_rdma_obj);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function dpa_rdma_obj_start failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma2_obj;
-	}
-
-	DOCA_LOG_INFO("Start Target DOCA RDMA #2");
-	doca_err = dpa_rdma_obj_start(dpa_rdma2_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_start failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_rdma2_obj;
+		goto destroy_rdma_obj;
 	}
 
 	return doca_err;
 
-destroy_rdma2_obj:
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma2_obj);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-destroy_rdma1_obj:
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma1_obj);
+destroy_rdma_obj:
+	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma_obj);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
@@ -201,28 +94,18 @@ exit:
 }
 
 /**
- * @brief Destroy Initiator/Target DPA RDMA objects
+ * @brief Destroy Initiator/Target DPA RDMA object
  *
- * @dpa_rdma1_obj [in]: Previously created Initiator/Target DPA RDMA #1
- * @dpa_rdma2_obj [in]: Previously created Initiator/Target DPA RDMA #2
- * @is_initiator [in]: true if objects are Initiator DPA RDMA objects
+ * @dpa_rdma_obj [in]: Previously created Initiator/Target DPA RDMA
+ * @is_initiator [in]: true if object is Initiator DPA RDMA object
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t rdma_objs_destroy(struct dpa_rdma_obj *dpa_rdma1_obj,
-				      struct dpa_rdma_obj *dpa_rdma2_obj,
-				      uint8_t is_initiator)
+static doca_error_t rdma_obj_destroy(struct dpa_rdma_obj *dpa_rdma_obj, uint8_t is_initiator)
 {
 	doca_error_t doca_err = DOCA_SUCCESS, tmp_doca_err = DOCA_SUCCESS;
 
-	DOCA_LOG_INFO("Destroy %s DOCA RDMA #1", (is_initiator ? "Initiator" : "Target"));
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma1_obj);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-	DOCA_LOG_INFO("Destroy %s DOCA RDMA #2", (is_initiator ? "Initiator" : "Target"));
-	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma2_obj);
+	DOCA_LOG_INFO("Destroy %s DOCA RDMA", (is_initiator ? "Initiator" : "Target"));
+	tmp_doca_err = dpa_rdma_obj_destroy(dpa_rdma_obj);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function dpa_rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
@@ -232,55 +115,53 @@ static doca_error_t rdma_objs_destroy(struct dpa_rdma_obj *dpa_rdma1_obj,
 }
 
 /**
- * @brief RDMA Connect Initiator & Target DPA RDMA objects
+ * @brief RDMA Connect Initiator & Target DPA RDMA connection objects
  *
- * This function connect Initiator DPA RDMA #1 with Target DPA RDMA #1.
- * And Initiator DPA RDMA #2 with Target DPA RDMA #2
+ * This function connect Initiator DPA RDMA connections with Target DPA RDMA connections.
  *
- * @initiator_rdma1_obj [in]: Initiator DPA RDMA #1
- * @initiator_rdma2_obj [in]: Initiator DPA RDMA #2
- * @target_rdma1_obj [in]: Target DPA RDMA #1
- * @target_rdma2_obj [in]: Target DPA RDMA #2
+ * @initiator_rdma_obj [in]: Initiator DPA RDMA
+ * @target_rdma_obj [in]: Target DPA RDMA
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t rdma_objs_connect(struct dpa_rdma_obj *initiator_rdma1_obj,
-				      struct dpa_rdma_obj *initiator_rdma2_obj,
-				      struct dpa_rdma_obj *target_rdma1_obj,
-				      struct dpa_rdma_obj *target_rdma2_obj)
+static doca_error_t rdma_objs_connect(struct dpa_rdma_obj *initiator_rdma_obj, struct dpa_rdma_obj *target_rdma_obj)
 {
 	doca_error_t doca_err = DOCA_SUCCESS;
 
-	DOCA_LOG_INFO("Connect Initiator DOCA RDMA #1 to Target DOCA RDMA #1");
-	doca_err = doca_rdma_connect(initiator_rdma1_obj->rdma,
-				     target_rdma1_obj->connection_details,
-				     target_rdma1_obj->conn_det_len);
+	DOCA_LOG_INFO("Connect Initiator DOCA RDMA connection #1 to Target DOCA RDMA connection #1");
+	doca_err = doca_rdma_connect(initiator_rdma_obj->rdma,
+				     target_rdma_obj->connection_details,
+				     target_rdma_obj->conn_det_len,
+				     initiator_rdma_obj->connection);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_rdma_connect failed (%s)", doca_error_get_descr(doca_err));
 		return doca_err;
 	}
 
-	DOCA_LOG_INFO("Connect Target DOCA RDMA #1 to Initiator DOCA RDMA #1");
-	doca_err = doca_rdma_connect(target_rdma1_obj->rdma,
-				     initiator_rdma1_obj->connection_details,
-				     initiator_rdma1_obj->conn_det_len);
+	DOCA_LOG_INFO("Connect Target DOCA RDMA connection #1 to Initiator DOCA RDMA connection #1");
+	doca_err = doca_rdma_connect(target_rdma_obj->rdma,
+				     initiator_rdma_obj->connection_details,
+				     initiator_rdma_obj->conn_det_len,
+				     target_rdma_obj->connection);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_rdma_connect failed (%s)", doca_error_get_descr(doca_err));
 		return doca_err;
 	}
 
-	DOCA_LOG_INFO("Connect Initiator DOCA RDMA #2 to Target DOCA RDMA #2");
-	doca_err = doca_rdma_connect(initiator_rdma2_obj->rdma,
-				     target_rdma2_obj->connection_details,
-				     target_rdma2_obj->conn_det_len);
+	DOCA_LOG_INFO("Connect Initiator DOCA RDMA connection #2 to Target DOCA RDMA connection #2");
+	doca_err = doca_rdma_connect(initiator_rdma_obj->rdma,
+				     target_rdma_obj->connection2_details,
+				     target_rdma_obj->conn2_det_len,
+				     initiator_rdma_obj->connection2);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_rdma_connect failed (%s)", doca_error_get_descr(doca_err));
 		return doca_err;
 	}
 
-	DOCA_LOG_INFO("Connect Target DOCA RDMA #2 to Initiator DOCA RDMA #2");
-	doca_err = doca_rdma_connect(target_rdma2_obj->rdma,
-				     initiator_rdma2_obj->connection_details,
-				     initiator_rdma2_obj->conn_det_len);
+	DOCA_LOG_INFO("Connect Target DOCA RDMA connection #2 to Initiator DOCA RDMA connection #2");
+	doca_err = doca_rdma_connect(target_rdma_obj->rdma,
+				     initiator_rdma_obj->connection2_details,
+				     initiator_rdma_obj->conn2_det_len,
+				     target_rdma_obj->connection2);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_rdma_connect failed (%s)", doca_error_get_descr(doca_err));
 		return doca_err;
@@ -298,13 +179,12 @@ static doca_error_t rdma_objs_connect(struct dpa_rdma_obj *initiator_rdma1_obj,
 doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 {
 	doca_error_t doca_err = DOCA_SUCCESS, tmp_doca_err = DOCA_SUCCESS;
-	struct dpa_rdma_obj initiator_rdma1_obj = {0};
-	struct dpa_rdma_obj initiator_rdma2_obj = {0};
+	struct dpa_completion_obj initiator_dpa_completion_obj = {0};
+	struct dpa_rdma_obj initiator_rdma_obj = {0};
 	doca_dpa_dev_uintptr_t thread_arg_dev_ptr = 0;
 	struct dpa_thread_obj target_thread1_obj = {0};
 	struct dpa_completion_obj target_dpa_completion_obj = {0};
-	struct dpa_rdma_obj target_rdma1_obj = {0};
-	struct dpa_rdma_obj target_rdma2_obj = {0};
+	struct dpa_rdma_obj target_rdma_obj = {0};
 	doca_dpa_dev_uintptr_t thread2_arg_dev_ptr = 0;
 	struct dpa_thread_obj target_thread2_obj = {0};
 	struct dpa_notification_completion_obj target_notification_completion_obj = {0};
@@ -312,32 +192,40 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	doca_dpa_dev_sync_event_t dpa_dev_se_handle = 0;
 	const uint64_t wait_sync_ev_threshold = 9;
 	struct dpa_thread2_arg thread2_arg = {0};
-	doca_dpa_dev_uintptr_t received_buf1_dev_ptr = 0;
-	struct doca_mmap_obj dpa_mmap1_obj = {0};
-	doca_dpa_dev_uintptr_t received_buf2_dev_ptr = 0;
-	struct doca_mmap_obj dpa_mmap2_obj = {0};
+	doca_dpa_dev_uintptr_t received_buf_dev_ptr = 0;
+	struct doca_mmap_obj dpa_mmap_obj = {0};
 	struct dpa_thread1_arg thread1_arg = {0};
 	uint64_t send_val = 1;
 	struct doca_mmap_obj host_mmap_obj = {0};
 	uint64_t retval = 0;
 	uint32_t imm_val = 10;
-	const uint32_t test_iter = 2;
+	const uint32_t test_iter = 4;
 
-	doca_err = initiator_rdma_objs_create(resources, &initiator_rdma1_obj, &initiator_rdma2_obj);
+	DOCA_LOG_INFO("Create Initiator DOCA DPA Completion");
+	initiator_dpa_completion_obj.doca_dpa = resources->rdma_dpa_ctx;
+	initiator_dpa_completion_obj.queue_size = 4;
+	doca_err = dpa_completion_obj_init(&initiator_dpa_completion_obj);
 	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function initiator_rdma_objs_create failed (%s)", doca_error_get_descr(doca_err));
+		DOCA_LOG_ERR("Function dpa_completion_obj_init failed (%s)", doca_error_get_descr(doca_err));
 		goto exit;
 	}
 
+	DOCA_LOG_INFO("Initialize Initiator DOCA RDMA");
+	doca_err = rdma_obj_create(resources, &initiator_dpa_completion_obj, &initiator_rdma_obj);
+	if (doca_err != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Function rdma_obj_create failed (%s)", doca_error_get_descr(doca_err));
+		goto destroy_initiator_rdma_completion_obj;
+	}
+
 	DOCA_LOG_INFO("Allocate Target DPA thread #1 device argument");
-	doca_err = doca_dpa_mem_alloc(resources->doca_dpa, sizeof(struct dpa_thread1_arg), &thread_arg_dev_ptr);
+	doca_err = doca_dpa_mem_alloc(resources->rdma_dpa_ctx, sizeof(struct dpa_thread1_arg), &thread_arg_dev_ptr);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_alloc failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_initiator_rdma_objs;
+		goto destroy_initiator_rdma_obj;
 	}
 
 	DOCA_LOG_INFO("Create Target DOCA DPA Thread #1");
-	target_thread1_obj.doca_dpa = resources->doca_dpa;
+	target_thread1_obj.doca_dpa = resources->rdma_dpa_ctx;
 	target_thread1_obj.func = &thread1_kernel;
 	target_thread1_obj.arg = thread_arg_dev_ptr;
 	doca_err = dpa_thread_obj_init(&target_thread1_obj);
@@ -347,7 +235,7 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	}
 
 	DOCA_LOG_INFO("Create Target DOCA DPA Completion");
-	target_dpa_completion_obj.doca_dpa = resources->doca_dpa;
+	target_dpa_completion_obj.doca_dpa = resources->rdma_dpa_ctx;
 	target_dpa_completion_obj.queue_size = 4;
 	target_dpa_completion_obj.thread = target_thread1_obj.thread;
 	doca_err = dpa_completion_obj_init(&target_dpa_completion_obj);
@@ -356,34 +244,35 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 		goto destroy_target_thread1_obj;
 	}
 
-	doca_err = target_rdma_objs_create(resources, &target_dpa_completion_obj, &target_rdma1_obj, &target_rdma2_obj);
+	DOCA_LOG_INFO("Initialize Target DOCA RDMA");
+	doca_err = rdma_obj_create(resources, &target_dpa_completion_obj, &target_rdma_obj);
 	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function target_rdma_objs_create failed (%s)", doca_error_get_descr(doca_err));
+		DOCA_LOG_ERR("Function rdma_obj_create failed (%s)", doca_error_get_descr(doca_err));
 		goto destroy_target_rdma_completion_obj;
 	}
 
-	doca_err = rdma_objs_connect(&initiator_rdma1_obj, &initiator_rdma2_obj, &target_rdma1_obj, &target_rdma2_obj);
+	doca_err = rdma_objs_connect(&initiator_rdma_obj, &target_rdma_obj);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function rdma_objs_connect failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_target_rdma_objs;
+		goto destroy_target_rdma_obj;
 	}
 
 	DOCA_LOG_INFO("Run Target DOCA DPA Thread #1");
 	doca_err = doca_dpa_thread_run(target_thread1_obj.thread);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_thread_run failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_target_rdma_objs;
+		goto destroy_target_rdma_obj;
 	}
 
 	DOCA_LOG_INFO("Allocate Target DPA thread #2 device argument");
-	doca_err = doca_dpa_mem_alloc(resources->doca_dpa, sizeof(struct dpa_thread2_arg), &thread2_arg_dev_ptr);
+	doca_err = doca_dpa_mem_alloc(resources->rdma_dpa_ctx, sizeof(struct dpa_thread2_arg), &thread2_arg_dev_ptr);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_alloc failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_target_rdma_objs;
+		goto destroy_target_rdma_obj;
 	}
 
 	DOCA_LOG_INFO("Create Target DOCA DPA Thread #2");
-	target_thread2_obj.doca_dpa = resources->doca_dpa;
+	target_thread2_obj.doca_dpa = resources->rdma_dpa_ctx;
 	target_thread2_obj.func = &thread2_kernel;
 	target_thread2_obj.arg = thread2_arg_dev_ptr;
 	doca_err = dpa_thread_obj_init(&target_thread2_obj);
@@ -393,7 +282,7 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	}
 
 	DOCA_LOG_INFO("Create Target DOCA DPA Notification Completion");
-	target_notification_completion_obj.doca_dpa = resources->doca_dpa;
+	target_notification_completion_obj.doca_dpa = resources->rdma_dpa_ctx;
 	target_notification_completion_obj.thread = target_thread2_obj.thread;
 	doca_err = dpa_notification_completion_obj_init(&target_notification_completion_obj);
 	if (doca_err != DOCA_SUCCESS) {
@@ -410,8 +299,8 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	}
 
 	DOCA_LOG_INFO("Create completion DOCA sync event");
-	doca_err = create_doca_dpa_completion_sync_event(resources->doca_dpa,
-							 resources->doca_device,
+	doca_err = create_doca_dpa_completion_sync_event(resources->pf_dpa_ctx,
+							 resources->pf_doca_device,
 							 &comp_event,
 							 &dpa_dev_se_handle);
 	if (doca_err != DOCA_SUCCESS) {
@@ -423,7 +312,7 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	DOCA_LOG_INFO("Update Target DPA thread #2 device argument");
 	thread2_arg.sync_event_handle = dpa_dev_se_handle;
 	thread2_arg.completion_count = wait_sync_ev_threshold + 1;
-	doca_err = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	doca_err = doca_dpa_h2d_memcpy(resources->rdma_dpa_ctx,
 				       thread2_arg_dev_ptr,
 				       &thread2_arg,
 				       sizeof(struct dpa_thread2_arg));
@@ -432,81 +321,53 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 		goto destroy_completion_sync_event;
 	}
 
-	DOCA_LOG_INFO("Create Target DOCA MMAP on DPA for Target DOCA RDMA #1 received buffer");
-	doca_err = doca_dpa_mem_alloc(resources->doca_dpa, sizeof(uint64_t), &received_buf1_dev_ptr);
+	DOCA_LOG_INFO("Create Target DOCA MMAP on DPA for Target DOCA RDMA received buffer");
+	doca_err = doca_dpa_mem_alloc(resources->rdma_dpa_ctx, sizeof(uint64_t), &received_buf_dev_ptr);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_alloc failed (%s)", doca_error_get_descr(doca_err));
 		goto destroy_completion_sync_event;
 	}
 
-	doca_err = doca_dpa_memset(resources->doca_dpa, received_buf1_dev_ptr, 0, sizeof(uint64_t));
+	doca_err = doca_dpa_memset(resources->rdma_dpa_ctx, received_buf_dev_ptr, 0, sizeof(uint64_t));
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_memset failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_received_buf1_dev_ptr;
+		goto destroy_received_buf_dev_ptr;
 	}
 
-	dpa_mmap1_obj.mmap_type = MMAP_TYPE_DPA;
-	dpa_mmap1_obj.doca_dpa = resources->doca_dpa;
-	dpa_mmap1_obj.doca_device = resources->doca_device;
-	dpa_mmap1_obj.permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				    DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	dpa_mmap1_obj.memrange_addr = (void *)received_buf1_dev_ptr;
-	dpa_mmap1_obj.memrange_len = sizeof(uint64_t);
-	doca_err = doca_mmap_obj_init(&dpa_mmap1_obj);
+	dpa_mmap_obj.mmap_type = MMAP_TYPE_DPA;
+	dpa_mmap_obj.doca_dpa = resources->rdma_dpa_ctx;
+	dpa_mmap_obj.doca_device = resources->rdma_doca_device;
+	dpa_mmap_obj.permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
+				   DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
+	dpa_mmap_obj.memrange_addr = (void *)received_buf_dev_ptr;
+	dpa_mmap_obj.memrange_len = sizeof(uint64_t);
+	doca_err = doca_mmap_obj_init(&dpa_mmap_obj);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_mmap_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_received_buf1_dev_ptr;
-	}
-
-	DOCA_LOG_INFO("Create Target DOCA MMAP on DPA for Target DOCA RDMA #2 received buffer");
-	doca_err = doca_dpa_mem_alloc(resources->doca_dpa, sizeof(uint64_t), &received_buf2_dev_ptr);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpa_mem_alloc failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_dpa_mmap1_obj;
-	}
-
-	doca_err = doca_dpa_memset(resources->doca_dpa, received_buf2_dev_ptr, 0, sizeof(uint64_t));
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpa_memset failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_received_buf2_dev_ptr;
-	}
-
-	dpa_mmap2_obj.mmap_type = MMAP_TYPE_DPA;
-	dpa_mmap2_obj.doca_dpa = resources->doca_dpa;
-	dpa_mmap2_obj.doca_device = resources->doca_device;
-	dpa_mmap2_obj.permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
-				    DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
-	dpa_mmap2_obj.memrange_addr = (void *)received_buf2_dev_ptr;
-	dpa_mmap2_obj.memrange_len = sizeof(uint64_t);
-	doca_err = doca_mmap_obj_init(&dpa_mmap2_obj);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_mmap_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_received_buf2_dev_ptr;
+		goto destroy_received_buf_dev_ptr;
 	}
 
 	DOCA_LOG_INFO("Update Target DPA thread #1 device argument");
+	thread1_arg.dpa_ctx_handle = resources->rdma_dpa_ctx_handle;
 	thread1_arg.notification_comp_handle = target_notification_completion_obj.handle;
 	thread1_arg.dpa_comp_handle = target_dpa_completion_obj.handle;
-	thread1_arg.target_rdma1_handle = (doca_dpa_dev_uintptr_t)target_rdma1_obj.dpa_rdma;
-	thread1_arg.local_buf1_addr = received_buf1_dev_ptr;
-	thread1_arg.dpa_mmap1_handle = dpa_mmap1_obj.dpa_mmap_handle;
-	thread1_arg.target_rdma2_handle = (doca_dpa_dev_uintptr_t)target_rdma2_obj.dpa_rdma;
-	thread1_arg.local_buf2_addr = received_buf2_dev_ptr;
-	thread1_arg.dpa_mmap2_handle = dpa_mmap2_obj.dpa_mmap_handle;
-	thread1_arg.length = dpa_mmap1_obj.memrange_len;
-	doca_err = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	thread1_arg.target_rdma_handle = (doca_dpa_dev_uintptr_t)target_rdma_obj.dpa_rdma;
+	thread1_arg.local_buf_addr = received_buf_dev_ptr;
+	thread1_arg.dpa_mmap_handle = dpa_mmap_obj.dpa_mmap_handle;
+	thread1_arg.length = dpa_mmap_obj.memrange_len;
+	doca_err = doca_dpa_h2d_memcpy(resources->rdma_dpa_ctx,
 				       thread_arg_dev_ptr,
 				       &thread1_arg,
 				       sizeof(struct dpa_thread1_arg));
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_h2d_memcpy failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_dpa_mmap2_obj;
+		goto destroy_dpa_mmap_obj;
 	}
 
 	DOCA_LOG_INFO("Create Initiator DOCA MMAP for send buffer on Host");
 	host_mmap_obj.mmap_type = MMAP_TYPE_CPU;
-	host_mmap_obj.doca_dpa = resources->doca_dpa;
-	host_mmap_obj.doca_device = resources->doca_device;
+	host_mmap_obj.doca_dpa = resources->rdma_dpa_ctx;
+	host_mmap_obj.doca_device = resources->rdma_doca_device;
 	host_mmap_obj.permissions = DOCA_ACCESS_FLAG_LOCAL_READ_WRITE | DOCA_ACCESS_FLAG_RDMA_WRITE |
 				    DOCA_ACCESS_FLAG_RDMA_READ | DOCA_ACCESS_FLAG_RDMA_ATOMIC;
 	host_mmap_obj.memrange_addr = (void *)&send_val;
@@ -514,19 +375,17 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 	doca_err = doca_mmap_obj_init(&host_mmap_obj);
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_mmap_obj_init failed (%s)", doca_error_get_descr(doca_err));
-		goto destroy_dpa_mmap2_obj;
+		goto destroy_dpa_mmap_obj;
 	}
 
 	DOCA_LOG_INFO("Trigger an RPC to prepare Target DPA receive memory");
-	doca_err = doca_dpa_rpc(resources->doca_dpa,
+	doca_err = doca_dpa_rpc(resources->rdma_dpa_ctx,
 				&rdma_post_receive_rpc,
 				&retval,
-				(doca_dpa_dev_uintptr_t)target_rdma1_obj.dpa_rdma,
-				received_buf1_dev_ptr,
-				dpa_mmap1_obj.dpa_mmap_handle,
-				(doca_dpa_dev_uintptr_t)target_rdma2_obj.dpa_rdma,
-				received_buf2_dev_ptr,
-				dpa_mmap2_obj.dpa_mmap_handle,
+				resources->rdma_dpa_ctx_handle,
+				(doca_dpa_dev_uintptr_t)target_rdma_obj.dpa_rdma,
+				received_buf_dev_ptr,
+				dpa_mmap_obj.dpa_mmap_handle,
 				sizeof(uint64_t));
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_rpc failed (%s)", doca_error_get_descr(doca_err));
@@ -535,13 +394,17 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 
 	for (uint32_t i = 0; i < test_iter; i++) {
 		DOCA_LOG_INFO(
-			"Trigger an RPC to post send on Initiator DOCA RDMA #1 with buffer %lu and immediate value %u",
+			"Trigger an RPC to post send on Initiator DOCA RDMA connection #%u with buffer %lu and immediate value %u",
+			(i % 2 == 0 ? initiator_rdma_obj.connection_id : initiator_rdma_obj.connection2_id),
 			send_val,
 			imm_val);
-		doca_err = doca_dpa_rpc(resources->doca_dpa,
+		doca_err = doca_dpa_rpc(resources->rdma_dpa_ctx,
 					&rdma_post_send_imm_rpc,
 					&retval,
-					initiator_rdma1_obj.dpa_rdma,
+					resources->rdma_dpa_ctx_handle,
+					initiator_rdma_obj.dpa_rdma,
+					(i % 2 == 0 ? initiator_rdma_obj.connection_id :
+						      initiator_rdma_obj.connection2_id),
 					&send_val,
 					host_mmap_obj.dpa_mmap_handle,
 					host_mmap_obj.memrange_len,
@@ -552,25 +415,6 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources)
 		}
 
 		// update mmap value
-		send_val++;
-
-		DOCA_LOG_INFO(
-			"Trigger an RPC to post send on Initiator DOCA RDMA #2 with buffer %lu and immediate value %u",
-			send_val,
-			imm_val);
-		doca_err = doca_dpa_rpc(resources->doca_dpa,
-					&rdma_post_send_imm_rpc,
-					&retval,
-					initiator_rdma2_obj.dpa_rdma,
-					&send_val,
-					host_mmap_obj.dpa_mmap_handle,
-					host_mmap_obj.memrange_len,
-					imm_val++);
-		if (doca_err != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Function doca_dpa_rpc failed (%s)", doca_error_get_descr(doca_err));
-			goto destroy_host_mmap_obj;
-		}
-
 		send_val++;
 	}
 
@@ -591,29 +435,15 @@ destroy_host_mmap_obj:
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 
-destroy_dpa_mmap2_obj:
-	tmp_doca_err = doca_mmap_obj_destroy(&dpa_mmap2_obj);
+destroy_dpa_mmap_obj:
+	tmp_doca_err = doca_mmap_obj_destroy(&dpa_mmap_obj);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_mmap_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 
-destroy_received_buf2_dev_ptr:
-	tmp_doca_err = doca_dpa_mem_free(resources->doca_dpa, received_buf2_dev_ptr);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpa_mem_free failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-destroy_dpa_mmap1_obj:
-	tmp_doca_err = doca_mmap_obj_destroy(&dpa_mmap1_obj);
-	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_mmap_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
-		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
-	}
-
-destroy_received_buf1_dev_ptr:
-	tmp_doca_err = doca_dpa_mem_free(resources->doca_dpa, received_buf1_dev_ptr);
+destroy_received_buf_dev_ptr:
+	tmp_doca_err = doca_dpa_mem_free(resources->rdma_dpa_ctx, received_buf_dev_ptr);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_free failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
@@ -642,16 +472,16 @@ destroy_target_thread2_obj:
 	}
 
 destroy_target_thread2_arg_dev_ptr:
-	tmp_doca_err = doca_dpa_mem_free(resources->doca_dpa, thread2_arg_dev_ptr);
+	tmp_doca_err = doca_dpa_mem_free(resources->rdma_dpa_ctx, thread2_arg_dev_ptr);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_free failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 
-destroy_target_rdma_objs:
-	tmp_doca_err = rdma_objs_destroy(&target_rdma1_obj, &target_rdma2_obj, 0);
+destroy_target_rdma_obj:
+	tmp_doca_err = rdma_obj_destroy(&target_rdma_obj, 0);
 	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function rdma_objs_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
+		DOCA_LOG_ERR("Function rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 
@@ -670,16 +500,23 @@ destroy_target_thread1_obj:
 	}
 
 destroy_target_thread1_arg_dev_ptr:
-	tmp_doca_err = doca_dpa_mem_free(resources->doca_dpa, thread_arg_dev_ptr);
+	tmp_doca_err = doca_dpa_mem_free(resources->rdma_dpa_ctx, thread_arg_dev_ptr);
 	if (tmp_doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_mem_free failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 
-destroy_initiator_rdma_objs:
-	tmp_doca_err = rdma_objs_destroy(&initiator_rdma1_obj, &initiator_rdma2_obj, 1);
+destroy_initiator_rdma_obj:
+	tmp_doca_err = rdma_obj_destroy(&initiator_rdma_obj, 1);
 	if (tmp_doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function rdma_objs_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
+		DOCA_LOG_ERR("Function rdma_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
+		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
+	}
+
+destroy_initiator_rdma_completion_obj:
+	tmp_doca_err = dpa_completion_obj_destroy(&initiator_dpa_completion_obj);
+	if (tmp_doca_err != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Function dpa_completion_obj_destroy failed: %s", doca_error_get_descr(tmp_doca_err));
 		DOCA_ERROR_PROPAGATE(doca_err, tmp_doca_err);
 	}
 

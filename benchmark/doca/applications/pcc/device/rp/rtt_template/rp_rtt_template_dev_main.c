@@ -32,25 +32,23 @@
 #define DOCA_PCC_DEV_EVNT_ROCE_ACK_MASK (1 << DOCA_PCC_DEV_EVNT_ROCE_ACK)
 #define SAMPLER_THREAD_RANK (0)
 #define COUNTERS_SAMPLE_WINDOW_IN_MICROSEC (10)
-#define NUM_AVAILABLE_PORTS (4)
 
 /**< Counters IDs to configure and read from */
-uint32_t counter_ids[NUM_AVAILABLE_PORTS] = {DOCA_PCC_DEV_NIC_COUNTER_PORT0_TX_BYTES,
-					     DOCA_PCC_DEV_NIC_COUNTER_PORT1_TX_BYTES,
-					     DOCA_PCC_DEV_NIC_COUNTER_PORT2_TX_BYTES,
-					     DOCA_PCC_DEV_NIC_COUNTER_PORT3_TX_BYTES};
+uint32_t counter_ids[DOCA_PCC_DEV_MAX_NUM_PORTS] = {0};
 /**< Table of TX bytes counters to sample to */
-uint32_t current_sampled_tx_bytes[NUM_AVAILABLE_PORTS] = {0};
+uint32_t current_sampled_tx_bytes[DOCA_PCC_DEV_MAX_NUM_PORTS] = {0};
 /**< Table of TX bytes counters that was last sampled */
-uint32_t previous_sampled_tx_bytes[NUM_AVAILABLE_PORTS] = {0};
+uint32_t previous_sampled_tx_bytes[DOCA_PCC_DEV_MAX_NUM_PORTS] = {0};
 /**< Last timestamp of sampled counters */
 uint32_t last_sample_ts;
 /**< Ports active bandwidth. Units of MB/s */
-uint32_t ports_bw[NUM_AVAILABLE_PORTS];
+uint32_t ports_bw[DOCA_PCC_DEV_MAX_NUM_PORTS];
+/**< Number of available and initiated logical ports */
+uint32_t ports_num = 0;
 /**< Percentage of the current active ports utilized bandwidth. Saved in FXP 16 format */
-uint32_t g_utilized_bw[NUM_AVAILABLE_PORTS];
-/**< Flag to indicate that the mailbox operation has completed */
-uint32_t mailbox_done = 0;
+uint32_t g_utilized_bw[DOCA_PCC_DEV_MAX_NUM_PORTS];
+/**< Flag to indicate that the counters have been initiated */
+uint32_t counters_started = 0;
 
 #ifdef DOCA_PCC_SAMPLE_TX_BYTES
 /*
@@ -60,14 +58,15 @@ uint32_t mailbox_done = 0;
  */
 FORCE_INLINE void thread0_calc_ports_utilization(void)
 {
-	uint32_t tx_bytes_delta[NUM_AVAILABLE_PORTS], current_bw[NUM_AVAILABLE_PORTS], ts_delta, current_ts;
+	uint32_t tx_bytes_delta[DOCA_PCC_DEV_MAX_NUM_PORTS], current_bw[DOCA_PCC_DEV_MAX_NUM_PORTS], ts_delta,
+		current_ts;
 
-	if ((doca_pcc_dev_thread_rank() == SAMPLER_THREAD_RANK) && mailbox_done) {
+	if ((doca_pcc_dev_thread_rank() == SAMPLER_THREAD_RANK) && counters_started) {
 		current_ts = doca_pcc_dev_get_timer_lo();
 		ts_delta = diff_with_wrap32(current_ts, last_sample_ts);
 		if (ts_delta >= COUNTERS_SAMPLE_WINDOW_IN_MICROSEC) {
 			doca_pcc_dev_nic_counters_sample();
-			for (int i = 0; i < NUM_AVAILABLE_PORTS; i++) {
+			for (uint32_t i = 0; i < ports_num; i++) {
 				tx_bytes_delta[i] =
 					diff_with_wrap32(current_sampled_tx_bytes[i], previous_sampled_tx_bytes[i]);
 				previous_sampled_tx_bytes[i] = current_sampled_tx_bytes[i];
@@ -84,19 +83,57 @@ FORCE_INLINE void thread0_calc_ports_utilization(void)
 	}
 }
 
+/**
+ * @brief Count the number of available logical ports from queried mask
+ *
+ * @param[in] ports_mask - ports_mask
+ *
+ * @return - number of available logical ports initiated in mask
+ */
+FORCE_INLINE uint32_t count_ports(uint32_t ports_mask)
+{
+	// find maximum port id enabled. Assume enabled ports are continuous
+	return doca_pcc_dev_fls(ports_mask);
+}
+
+/**
+ * @brief Initiate counter IDs global array on port for TX bytes counter type
+ */
+FORCE_INLINE void init_counter_ids(void)
+{
+	for (uint32_t i = 0; i < DOCA_PCC_DEV_MAX_NUM_PORTS; i++)
+		counter_ids[i] = DOCA_PCC_DEV_GET_PORT_COUNTER_ID(i, DOCA_PCC_DEV_NIC_COUNTER_TYPE_TX_BYTES, 0);
+}
+
 /*
  * Initialize TX counters sampling
  */
-void tx_counters_sampling_init(void)
+FORCE_INLINE void tx_counters_sampling_init(uint32_t portid)
 {
+	/* number of ports to initiate counters for */
+	ports_num = count_ports(doca_pcc_dev_get_logical_ports());
 	/* Configure counters to read */
-	doca_pcc_dev_nic_counters_config(counter_ids, NUM_AVAILABLE_PORTS, current_sampled_tx_bytes);
+	doca_pcc_dev_nic_counters_config(counter_ids, ports_num, current_sampled_tx_bytes);
+	/* save port speed in MBps units */
+	ports_bw[portid] = (doca_pcc_dev_mult(doca_pcc_dev_get_port_speed(portid), 1000) >> 3);
 	/* Sample counters and save in global table */
 	doca_pcc_dev_nic_counters_sample();
 	last_sample_ts = doca_pcc_dev_get_timer_lo();
 	/* Save sampled TX bytes */
-	for (int i = 0; i < NUM_AVAILABLE_PORTS; i++)
+	for (uint32_t i = 0; i < ports_num; i++)
 		previous_sampled_tx_bytes[i] = current_sampled_tx_bytes[i];
+	counters_started = 1;
+}
+
+/*
+ * Called on link or port info state change.
+ * This callback is used to configure port counters to query TX bytes on
+ *
+ * @return - void
+ */
+void doca_pcc_dev_user_port_info_changed(uint32_t portid)
+{
+	tx_counters_sampling_init(portid);
 }
 #endif
 
@@ -162,7 +199,8 @@ void doca_pcc_dev_user_init(uint32_t *disable_event_bitmask)
 	}
 
 #ifdef DOCA_PCC_SAMPLE_TX_BYTES
-	tx_counters_sampling_init();
+	/** Assuming this is called prior to doca_pcc_dev_user_port_info_changed() */
+	init_counter_ids();
 #endif
 
 	/* disable events of below type */
@@ -217,43 +255,4 @@ doca_pcc_dev_error_t doca_pcc_dev_user_set_algo_params(uint32_t port_num,
 		break;
 	}
 	return ret;
-}
-
-/*
- * Called when host sends a mailbox send request.
- * Used to save the ports active bandwidth that was queried from the host.
- *
- * @request [in]: Pointer to the host request.
- * @request_size [in]: Memory size of the request from host.
- * @max_response_size [in]: Maximum response memory size that was on host.
- * @response [out]: Pointer to the device response.
- * @response_size [out]: Memory size of the response.
- * @return -
- * DOCA_PCC_DEV_STATUS_OK: Mailbox operation done successfully
- * DOCA_PCC_DEV_STATUS_FAIL: Error in mailbox operation
- */
-doca_pcc_dev_error_t doca_pcc_dev_user_mailbox_handle(void *request,
-						      uint32_t request_size,
-						      uint32_t max_response_size,
-						      void *response,
-						      uint32_t *response_size)
-{
-	if (request_size != sizeof(uint32_t))
-		return DOCA_PCC_DEV_STATUS_FAIL;
-
-	uint32_t ports_active_bw = *(uint32_t *)(request);
-
-	for (int i = 0; i < NUM_AVAILABLE_PORTS; i++)
-		ports_bw[i] = ports_active_bw;
-
-	doca_pcc_dev_printf("Mailbox initiated port BW = %d\n", ports_active_bw);
-
-	mailbox_done = 1;
-	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-
-	(void)(max_response_size);
-	(void)(response);
-	(void)(response_size);
-
-	return DOCA_PCC_DEV_STATUS_OK;
 }

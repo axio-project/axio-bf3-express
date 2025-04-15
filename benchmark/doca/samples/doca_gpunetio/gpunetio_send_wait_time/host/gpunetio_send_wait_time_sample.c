@@ -23,20 +23,18 @@
  *
  */
 
-#include <rte_ethdev.h>
-#include <rte_pmd_mlx5.h>
-#include <rte_mbuf_dyn.h>
+#include <time.h>
 
 #include <doca_dpdk.h>
-#include <doca_rdma_bridge.h>
 #include <doca_flow.h>
 #include <doca_log.h>
+#include <doca_bitfield.h>
 
 #include "../gpunetio_common.h"
 
-#ifdef DOCA_ARCH_DPU
+#define MAC_ADDR_BYTE_SZ 6
+#define MAX_PORT_STR_LEN 128
 struct doca_flow_port *df_port;
-#endif
 
 DOCA_LOG_REGISTER(GPU_SEND_WAIT_TIME : SAMPLE);
 
@@ -45,26 +43,17 @@ DOCA_LOG_REGISTER(GPU_SEND_WAIT_TIME : SAMPLE);
  *
  * @nic_pcie_addr [in]: Network card PCIe address
  * @ddev [out]: DOCA device
- * @dpdk_port_id [out]: DPDK port id associated with the DOCA device
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t init_doca_device(char *nic_pcie_addr, struct doca_dev **ddev, uint16_t *dpdk_port_id)
+static doca_error_t init_doca_device(char *nic_pcie_addr, struct doca_dev **ddev)
 {
 	doca_error_t result;
-	int ret;
-	char *eal_param[3] = {"", "-a", "00:00.0"};
 
-	if (nic_pcie_addr == NULL || ddev == NULL || dpdk_port_id == NULL)
+	if (nic_pcie_addr == NULL || ddev == NULL)
 		return DOCA_ERROR_INVALID_VALUE;
 
 	if (strnlen(nic_pcie_addr, DOCA_DEVINFO_PCI_ADDR_SIZE) >= DOCA_DEVINFO_PCI_ADDR_SIZE)
 		return DOCA_ERROR_INVALID_VALUE;
-
-	ret = rte_eal_init(3, eal_param);
-	if (ret < 0) {
-		DOCA_LOG_ERR("DPDK init failed: %d", ret);
-		return DOCA_ERROR_DRIVER;
-	}
 
 	result = open_doca_device_with_pci(nic_pcie_addr, NULL, ddev);
 	if (result != DOCA_SUCCESS) {
@@ -72,124 +61,18 @@ static doca_error_t init_doca_device(char *nic_pcie_addr, struct doca_dev **ddev
 		return result;
 	}
 
-	/*
-	 * From CX7, tx_pp is not needed anymore.
-	 */
-	result = doca_dpdk_port_probe(*ddev, "tx_pp=500,txq_inline_max=0,dv_flow_en=2");
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpdk_port_probe returned %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	result = doca_dpdk_get_first_port_id(*ddev, dpdk_port_id);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpdk_get_first_port_id returned %s", doca_error_get_descr(result));
-		return result;
-	}
-
 	return DOCA_SUCCESS;
 }
 
 /*
- * Start DPDK port. This is not needed from CX7 or newer
+ * Init doca flow.
  *
- * @dpdk_port_id [in]: DPDK port id to start
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t start_dpdk_port(uint16_t dpdk_port_id)
+static doca_error_t init_doca_flow(void)
 {
-	int ret = 0, numq = 1;
-	struct rte_eth_dev_info dev_info = {0};
-	struct rte_eth_conf eth_conf = {
-		.txmode =
-			{
-				.offloads = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP,
-			},
-	};
-
-	struct rte_mempool *mp = NULL;
-	struct rte_eth_txconf tx_conf;
-	int32_t timestamp_offset;
-	int32_t dynflag_bitnum;
-
-	static const struct rte_mbuf_dynfield dynfield_desc = {
-		RTE_MBUF_DYNFIELD_TIMESTAMP_NAME,
-		sizeof(uint64_t),
-		.align = __alignof__(uint64_t),
-	};
-
-	static const struct rte_mbuf_dynflag dynflag_desc = {
-		RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME,
-		0,
-	};
-
-	timestamp_offset = rte_mbuf_dynfield_register(&dynfield_desc);
-	if (timestamp_offset < 0) {
-		DOCA_LOG_ERR("Failed rte_eth_dev_info_get with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	dynflag_bitnum = rte_mbuf_dynflag_register(&dynflag_desc);
-	if (dynflag_bitnum == -1) {
-		DOCA_LOG_ERR("Failed rte_eth_dev_info_get with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	/*
-	 * DPDK should be initialized and started before DOCA Flow.
-	 * DPDK doesn't start the device without, at least, one DPDK Rx queue.
-	 * DOCA Flow needs to specify in advance how many Rx queues will be used by the program.
-	 *
-	 * Following lines of code can be considered the minimum WAR for this issue.
-	 */
-
-	ret = rte_eth_dev_info_get(dpdk_port_id, &dev_info);
-	if (ret) {
-		DOCA_LOG_ERR("Failed rte_eth_dev_info_get with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	ret = rte_eth_dev_configure(dpdk_port_id, numq, numq, &eth_conf);
-	if (ret) {
-		DOCA_LOG_ERR("Failed rte_eth_dev_configure with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	mp = rte_pktmbuf_pool_create("TEST", 8192, 0, 0, 2048, rte_eth_dev_socket_id(dpdk_port_id));
-	if (mp == NULL) {
-		DOCA_LOG_ERR("Failed rte_pktmbuf_pool_create with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	tx_conf = dev_info.default_txconf;
-	for (int idx = 0; idx < numq; idx++) {
-		ret = rte_eth_rx_queue_setup(dpdk_port_id, idx, 2048, rte_eth_dev_socket_id(dpdk_port_id), NULL, mp);
-		if (ret) {
-			DOCA_LOG_ERR("Failed rte_eth_rx_queue_setup with: %s", rte_strerror(-ret));
-			return DOCA_ERROR_DRIVER;
-		}
-
-		ret = rte_eth_tx_queue_setup(dpdk_port_id, idx, 2048, rte_eth_dev_socket_id(dpdk_port_id), &tx_conf);
-		if (ret) {
-			DOCA_LOG_ERR("Failed rte_eth_tx_queue_setup with: %s", rte_strerror(-ret));
-			return DOCA_ERROR_DRIVER;
-		}
-	}
-
-	ret = rte_eth_dev_start(dpdk_port_id);
-	if (ret) {
-		DOCA_LOG_ERR("Failed rte_eth_dev_start with: %s", rte_strerror(-ret));
-		return DOCA_ERROR_DRIVER;
-	}
-
-#ifdef DOCA_ARCH_DPU
-/* Maximal length of port name */
-#define MAX_PORT_STR_LEN 128
-
-	struct doca_flow_port_cfg *port_cfg;
 	struct doca_flow_cfg *queue_flow_cfg;
 	doca_error_t result;
-	char port_id_str[MAX_PORT_STR_LEN];
 
 	/* Initialize doca flow framework */
 	result = doca_flow_cfg_create(&queue_flow_cfg);
@@ -204,11 +87,8 @@ static doca_error_t start_dpdk_port(uint16_t dpdk_port_id)
 		doca_flow_cfg_destroy(queue_flow_cfg);
 		return result;
 	}
-	/*
-	 * HWS: Hardware steering
-	 * Isolated: don't create RSS rule for DPDK created RX queues
-	 */
-	result = doca_flow_cfg_set_mode_args(queue_flow_cfg, "vnf,hws,isolated");
+
+	result = doca_flow_cfg_set_mode_args(queue_flow_cfg, "vnf,hws,isolated,use_doca_eth");
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_cfg mode_args: %s", doca_error_get_descr(result));
 		doca_flow_cfg_destroy(queue_flow_cfg);
@@ -223,26 +103,41 @@ static doca_error_t start_dpdk_port(uint16_t dpdk_port_id)
 	}
 	doca_flow_cfg_destroy(queue_flow_cfg);
 
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Start doca flow.
+ *
+ * @dev [in]: DOCA device
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t start_doca_flow(struct doca_dev *dev)
+{
+	struct doca_flow_port_cfg *port_cfg;
+	doca_error_t result;
+
 	/* Start doca flow port */
 	result = doca_flow_port_cfg_create(&port_cfg);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create doca_flow_port_cfg: %s", doca_error_get_descr(result));
 		return result;
 	}
-	snprintf(port_id_str, MAX_PORT_STR_LEN, "%d", dpdk_port_id);
-	result = doca_flow_port_cfg_set_devargs(port_cfg, port_id_str);
+
+	result = doca_flow_port_cfg_set_dev(port_cfg, dev);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg devargs: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg dev: %s", doca_error_get_descr(result));
 		doca_flow_port_cfg_destroy(port_cfg);
 		return result;
 	}
+
 	result = doca_flow_port_start(port_cfg, &df_port);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to start doca flow port with: %s", doca_error_get_descr(result));
 		doca_flow_port_cfg_destroy(port_cfg);
 		return result;
 	}
-#endif
+
 	return DOCA_SUCCESS;
 }
 
@@ -309,10 +204,37 @@ static doca_error_t create_tx_buf(struct txq_queue *txq, uint32_t num_packets, u
 		return status;
 	}
 
-	status = doca_mmap_set_memrange(buf->mmap, buf->gpu_pkt_addr, (buf->num_packets * buf->max_pkt_sz));
+	/* Map GPU memory buffer used to send packets with DMABuf */
+	status = doca_gpu_dmabuf_fd(buf->gpu_dev,
+				    buf->gpu_pkt_addr,
+				    buf->num_packets * buf->max_pkt_sz,
+				    &(buf->dmabuf_fd));
 	if (status != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Unable to start buf: doca mmap internal error");
-		return status;
+		DOCA_LOG_INFO("Mapping send queue buffer (0x%p size %dB) with legacy nvidia-peermem mode",
+			      buf->gpu_pkt_addr,
+			      buf->num_packets * buf->max_pkt_sz);
+
+		/* If failed, use nvidia-peermem legacy method */
+		status = doca_mmap_set_memrange(buf->mmap, buf->gpu_pkt_addr, (buf->num_packets * buf->max_pkt_sz));
+		if (status != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Unable to start buf: doca mmap internal error");
+			return status;
+		}
+	} else {
+		DOCA_LOG_INFO("Mapping send queue buffer (0x%p size %dB dmabuf fd %d) with dmabuf mode",
+			      buf->gpu_pkt_addr,
+			      (buf->num_packets * buf->max_pkt_sz),
+			      buf->dmabuf_fd);
+
+		status = doca_mmap_set_dmabuf_memrange(buf->mmap,
+						       buf->dmabuf_fd,
+						       buf->gpu_pkt_addr,
+						       0,
+						       (buf->num_packets * buf->max_pkt_sz));
+		if (status != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to set dmabuf memrange for mmap %s", doca_error_get_descr(status));
+			return status;
+		}
 	}
 
 	status = doca_mmap_set_permissions(buf->mmap, DOCA_ACCESS_FLAG_LOCAL_READ_WRITE);
@@ -364,18 +286,17 @@ static doca_error_t create_tx_buf(struct txq_queue *txq, uint32_t num_packets, u
  * Pre-prepare TX buf filling default values in GPU memory
  *
  * @txq [in]: DOCA Eth Tx queue handler
- * @dpdk_port_id [in]: DPDK port id of the DOCA device to get MAC address interface
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t prepare_tx_buf(struct txq_queue *txq, uint16_t dpdk_port_id)
+static doca_error_t prepare_tx_buf(struct txq_queue *txq, struct doca_dev *ddev)
 {
 	uint8_t *cpu_pkt_addr;
 	uint8_t *pkt;
 	struct ether_hdr *hdr;
 	cudaError_t res_cuda;
+	doca_error_t status;
 	struct tx_buf *buf;
-	struct rte_ether_addr mac_addr;
-	int ret;
+	uint8_t mac_addr[MAC_ADDR_BYTE_SZ];
 	uint32_t idx;
 	const char *payload = "Sent from DOCA GPUNetIO";
 
@@ -387,9 +308,11 @@ static doca_error_t prepare_tx_buf(struct txq_queue *txq, uint16_t dpdk_port_id)
 	buf = &(txq->txbuf);
 	buf->pkt_nbytes = strlen(payload);
 
-	ret = rte_eth_macaddr_get(dpdk_port_id, &mac_addr);
-	if (ret != 0)
-		return DOCA_ERROR_DRIVER;
+	status = doca_devinfo_get_mac_addr(doca_dev_as_devinfo(ddev), mac_addr, MAC_ADDR_BYTE_SZ);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Unable to get interface MAC address: %s", doca_error_get_descr(status));
+		return status;
+	}
 
 	cpu_pkt_addr = (uint8_t *)calloc(buf->num_packets * buf->max_pkt_sz, sizeof(uint8_t));
 	if (cpu_pkt_addr == NULL) {
@@ -401,12 +324,12 @@ static doca_error_t prepare_tx_buf(struct txq_queue *txq, uint16_t dpdk_port_id)
 		pkt = cpu_pkt_addr + (idx * buf->max_pkt_sz);
 		hdr = (struct ether_hdr *)pkt;
 
-		hdr->s_addr_bytes[0] = mac_addr.addr_bytes[0];
-		hdr->s_addr_bytes[1] = mac_addr.addr_bytes[1];
-		hdr->s_addr_bytes[2] = mac_addr.addr_bytes[2];
-		hdr->s_addr_bytes[3] = mac_addr.addr_bytes[3];
-		hdr->s_addr_bytes[4] = mac_addr.addr_bytes[4];
-		hdr->s_addr_bytes[5] = mac_addr.addr_bytes[5];
+		hdr->s_addr_bytes[0] = mac_addr[0];
+		hdr->s_addr_bytes[1] = mac_addr[1];
+		hdr->s_addr_bytes[2] = mac_addr[2];
+		hdr->s_addr_bytes[3] = mac_addr[3];
+		hdr->s_addr_bytes[4] = mac_addr[4];
+		hdr->s_addr_bytes[5] = mac_addr[5];
 
 		hdr->d_addr_bytes[0] = 0x10;
 		hdr->d_addr_bytes[1] = 0x11;
@@ -415,7 +338,7 @@ static doca_error_t prepare_tx_buf(struct txq_queue *txq, uint16_t dpdk_port_id)
 		hdr->d_addr_bytes[4] = 0x14;
 		hdr->d_addr_bytes[5] = 0x15;
 
-		hdr->ether_type = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_IPV4);
+		hdr->ether_type = DOCA_HTOBE16(DOCA_FLOW_ETHER_TYPE_IPV4);
 
 		/* Assuming no TCP flags needed */
 		pkt = pkt + sizeof(struct ether_hdr);
@@ -516,10 +439,8 @@ static doca_error_t destroy_txq(struct txq_queue *txq)
 		return DOCA_ERROR_BAD_STATE;
 	}
 
-#ifdef DOCA_ARCH_DPU
 	doca_flow_port_stop(df_port);
 	doca_flow_destroy();
-#endif
 
 	result = doca_dev_close(txq->ddev);
 	if (result != DOCA_SUCCESS) {
@@ -609,13 +530,12 @@ doca_error_t gpunetio_send_wait_time(struct sample_send_wait_cfg *sample_cfg)
 	uint64_t time_seed;
 	struct doca_gpu *gpu_dev = NULL;
 	struct doca_dev *ddev = NULL;
-	uint16_t dpdk_dev_port_id;
 	struct txq_queue txq = {0};
 	enum doca_eth_wait_on_time_type wait_on_time_mode;
 	cudaStream_t stream;
 	cudaError_t res_rt = cudaSuccess;
 
-	result = init_doca_device(sample_cfg->nic_pcie_addr, &ddev, &dpdk_dev_port_id);
+	result = init_doca_device(sample_cfg->nic_pcie_addr, &ddev);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function init_doca_device returned %s", doca_error_get_descr(result));
 		return EXIT_FAILURE;
@@ -627,21 +547,29 @@ doca_error_t gpunetio_send_wait_time(struct sample_send_wait_cfg *sample_cfg)
 		goto exit;
 	}
 
-#ifdef DOCA_ARCH_DPU
-	result = start_dpdk_port(dpdk_dev_port_id);
+	/* Init and start port for eth */
+	result = init_doca_flow();
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function create_txq returned %s", doca_error_get_descr(result));
 		goto exit;
 	}
-#else
+
+	result = start_doca_flow(ddev);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Function start_doca_flow returned %s", doca_error_get_descr(result));
+		goto exit;
+	}
+
 	if (wait_on_time_mode == DOCA_ETH_WAIT_ON_TIME_TYPE_DPDK) {
-		result = start_dpdk_port(dpdk_dev_port_id);
+		/*
+		 * From CX7, tx_pp is not needed anymore.
+		 */
+		result = doca_dpdk_port_probe(ddev, "tx_pp=500,txq_inline_max=0,dv_flow_en=2");
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Function create_txq returned %s", doca_error_get_descr(result));
-			goto exit;
+			DOCA_LOG_ERR("Function doca_dpdk_port_probe returned %s", doca_error_get_descr(result));
+			return result;
 		}
 	}
-#endif
 
 	DOCA_LOG_INFO("Wait on time supported mode: %s",
 		      (wait_on_time_mode == DOCA_ETH_WAIT_ON_TIME_TYPE_DPDK) ? "DPDK" : "Native");
@@ -664,7 +592,7 @@ doca_error_t gpunetio_send_wait_time(struct sample_send_wait_cfg *sample_cfg)
 		goto exit;
 	}
 
-	result = prepare_tx_buf(&txq, dpdk_dev_port_id);
+	result = prepare_tx_buf(&txq, ddev);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function prepare_tx_buf returned %s", doca_error_get_descr(result));
 		goto exit;

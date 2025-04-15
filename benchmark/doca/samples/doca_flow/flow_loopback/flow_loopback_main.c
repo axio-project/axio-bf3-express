@@ -126,7 +126,7 @@ int main(int argc, char **argv)
 	doca_error_t result;
 	struct doca_log_backend *sdk_log;
 	int exit_status = EXIT_FAILURE;
-	uint8_t mac_addresses[NB_PORTS][MAC_ADDR_LEN];
+	uint8_t mac_addresses[NB_PORTS][MAC_ADDR_LEN] = {};
 	struct application_dpdk_config dpdk_config = {
 		.port_config.nb_ports = NB_PORTS,
 		.port_config.nb_queues = 1,

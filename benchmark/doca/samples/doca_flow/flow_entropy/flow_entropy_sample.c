@@ -37,6 +37,13 @@
 DOCA_LOG_REGISTER(FLOW_ENTROPY);
 
 /*
+ * Entropy sample does not create flows.
+ * Allocate minimal resources.
+ */
+#define DOCA_SAMPLE_ENTROPY_QUEUES_NUM 1
+#define DOCA_SAMPLE_ENTROPY_ENTRIES_NUM 1
+
+/*
  * Run flow_entropy sample
  *
  * @ctx [in]: flow switch context the sample will use
@@ -45,6 +52,7 @@ DOCA_LOG_REGISTER(FLOW_ENTROPY);
 doca_error_t flow_entropy(struct flow_switch_ctx *ctx)
 {
 	const int nb_ports = 1;
+	uint32_t actions_mem_size[nb_ports];
 	struct flow_resources resource = {0};
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
@@ -61,7 +69,8 @@ doca_error_t flow_entropy(struct flow_switch_ctx *ctx)
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
 	dev_arr[0] = ctx->doca_dev[0];
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(DOCA_SAMPLE_ENTROPY_QUEUES_NUM, DOCA_SAMPLE_ENTROPY_ENTRIES_NUM));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

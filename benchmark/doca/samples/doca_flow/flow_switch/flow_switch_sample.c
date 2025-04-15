@@ -195,6 +195,7 @@ doca_error_t flow_switch(int nb_queues, int nb_ports, struct doca_dev *dev_main,
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe1;
 	struct doca_flow_pipe *pipe2;
 	struct doca_flow_resource_query query_stats;
@@ -214,7 +215,8 @@ doca_error_t flow_switch(int nb_queues, int nb_ports, struct doca_dev *dev_main,
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
 	dev_arr[0] = dev_main;
 	dev_arr[3] = dev_sec;
-	result = init_doca_flow_ports(nb_ports, ports, false /* is_hairpin */, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, NB_ENTRIES));
+	result = init_doca_flow_ports(nb_ports, ports, false /* is_hairpin */, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

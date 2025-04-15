@@ -46,7 +46,7 @@
 DOCA_LOG_REGISTER(UROM_MULTI_WORKERS_BOOTS::SAMPLE);
 
 static int nb_exit_workers;    /* Number of exited workers */
-static int nb_running_workers; /* Number of exited workers */
+static int nb_running_workers; /* Number of running workers */
 static pthread_mutex_t mutex;  /* Mutex to sync between the workers threads */
 static bool worker_force_quit; /* Flag for forcing Workers to exit and terminate the sample */
 

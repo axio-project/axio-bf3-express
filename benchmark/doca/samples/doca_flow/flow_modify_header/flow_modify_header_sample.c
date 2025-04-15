@@ -30,10 +30,15 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "flow_common.h"
 
 #define NB_ACTION_DESC (1)
+#define NB_VXLAN_ENTRIES (1)
+#define NB_GPE_ENTRIES (1)
+#define NB_MODIFY_HDR_ENTRIES (1)
+#define TOTAL_ENTRIES (NB_VXLAN_ENTRIES + NB_GPE_ENTRIES + NB_MODIFY_HDR_ENTRIES)
 
 DOCA_LOG_REGISTER(FLOW_MODIFY_HEADER);
 
@@ -124,7 +129,7 @@ static doca_error_t add_vxlan_pipe_entry(struct doca_flow_pipe *pipe, struct ent
 	match.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_DEFAULT_PORT);
 	match.tun.type = DOCA_FLOW_TUN_VXLAN;
 	match.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_STANDARD;
-	match.tun.vxlan_tun_id = BUILD_VNI(100);
+	match.tun.vxlan_tun_id = DOCA_HTOBE32(100);
 
 	actions.action_idx = 0;
 	actions.tun.vxlan_tun_rsvd1 = 0x12;
@@ -238,7 +243,7 @@ static doca_error_t add_vxlan_gpe_pipe_entry(struct doca_flow_pipe *pipe, struct
 	match.outer.udp.l4_port.dst_port = RTE_BE16(DOCA_FLOW_VXLAN_GPE_DEFAULT_PORT);
 	match.tun.type = DOCA_FLOW_TUN_VXLAN;
 	match.tun.vxlan_type = DOCA_FLOW_TUN_EXT_VXLAN_GPE;
-	match.tun.vxlan_tun_id = BUILD_VNI(100);
+	match.tun.vxlan_tun_id = DOCA_HTOBE32(100);
 
 	actions.action_idx = 0;
 	actions.tun.vxlan_tun_rsvd1 = 0x34;
@@ -389,6 +394,7 @@ doca_error_t flow_modify_header(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe, *vxlan_pipe, *vxlan_gpe_pipe;
 	struct entries_status status;
 	int num_of_entries = 0;
@@ -402,7 +408,8 @@ doca_error_t flow_modify_header(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, TOTAL_ENTRIES));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

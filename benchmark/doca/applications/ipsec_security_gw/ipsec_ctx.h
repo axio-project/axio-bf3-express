@@ -35,26 +35,28 @@
 extern "C" {
 #endif
 
-#define MAX_SOCKET_PATH_NAME (108)		  /* Maximum socket file name length */
-#define MAX_FILE_NAME (255)			  /* Maximum file name length */
-#define MAX_NB_RULES (1048576)			  /* Maximal number of rules == 2^20 */
-#define DYN_RESERVED_RULES (1024)		  /* Reserved rules for dynamic rules */
-#define MAX_KEY_LEN (32)			  /* Maximal GCM key size is 256bit==32B */
+#define MAX_SOCKET_PATH_NAME (108) /* Maximum socket file name length */
+#define MAX_FILE_NAME (255)	   /* Maximum file name length */
+#define MAX_NB_RULES (1048576)	   /* Maximal number of rules == 2^20 */
+#define DYN_RESERVED_RULES (1024)  /* Reserved rules for dynamic rules */
+#define MAX_KEY_LEN (32)	   /* Maximal GCM key size is 256bit==32B */
+#ifndef MLX5DV_HWS
 #define ENCRYPT_DUMMY_ID ((MAX_NB_RULES * 2) + 1) /* Dummy resource ID for encrypt pipe creation */
 #define DECRYPT_DUMMY_ID ((MAX_NB_RULES * 2) + 2) /* Dummy resource ID for decrypt pipe creation */
-#define NUM_OF_SYNDROMES (4)			  /* Number of bad syndromes */
-#define SW_WINDOW_SIZE 64			  /* The size of the replay window when anti replay is done by SW */
-#define HW_WINDOW_SIZE 128			  /* The size of the replay window when anti replay is done by HW*/
-#define MAX_NAME_LEN (20)			  /* Max pipe and entry name length */
+#endif
+#define NUM_OF_SYNDROMES (4)		    /* Number of bad syndromes */
+#define SW_WINDOW_SIZE 64		    /* The size of the replay window when anti replay is done by SW */
+#define HW_WINDOW_SIZE 128		    /* The size of the replay window when anti replay is done by HW*/
+#define MAX_NAME_LEN (20)		    /* Max pipe and entry name length */
+#define MAX_ACTIONS_MEM_SIZE (8388608 * 64) /* 2^23 * size of max_entry */
 
 /* SA attrs struct */
 struct ipsec_security_gw_sa_attrs {
-	enum doca_flow_crypto_icv_len icv_length; /* ICV length */
-	enum doca_flow_crypto_key_type key_type;  /* Key type */
-	uint8_t enc_key_data[MAX_KEY_LEN];	  /* Policy encryption key */
-	uint32_t salt;				  /* Key Salt */
-	uint32_t lifetime_threshold;		  /* SA lifetime threshold */
-	bool esn_en;				  /* If extended sn is enable*/
+	enum doca_flow_crypto_key_type key_type; /* Key type */
+	uint8_t enc_key_data[MAX_KEY_LEN];	 /* Policy encryption key */
+	uint32_t salt;				 /* Key Salt */
+	uint32_t lifetime_threshold;		 /* SA lifetime threshold */
+	bool esn_en;				 /* If extended sn is enable*/
 };
 
 /* will hold an entry of a bad syndrome and its last counter */
@@ -169,8 +171,8 @@ struct switch_pipes {
 struct ipsec_security_gw_rules {
 	struct encrypt_rule *encrypt_rules; /* Encryption rules array */
 	struct decrypt_rule *decrypt_rules; /* Decryption rules array */
-	int nb_encrypted_rules;		    /* Number of encryption rules in array */
-	int nb_decrypted_rules;		    /* Number of decryption rules in array */
+	int nb_encrypt_rules;		    /* Number of encryption rules in array */
+	int nb_decrypt_rules;		    /* Number of decryption rules in array */
 	int nb_rules;			    /* Total number of rules, will be used to indicate
 					     * which crypto index is the next one.
 					     */
@@ -259,6 +261,7 @@ struct ipsec_security_gw_config {
 	struct ipsec_security_gw_socket_ctx socket_ctx;	  /* Application DOCA socket context */
 	uint8_t nb_cores;				  /* number of cores to DPDK -l flag */
 	uint32_t vni;					  /* vni to use when vxlan encap is true */
+	enum doca_flow_crypto_icv_len icv_length;	  /* Supported icv (Integrity Check Value) length */
 };
 
 /*

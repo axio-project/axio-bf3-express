@@ -30,8 +30,9 @@
 
 #include <doca_flow.h>
 #include <doca_dev.h>
+#include <common.h>
 
-#define FLOW_SWITCH_PORTS_MAX (2)
+#define FLOW_SWITCH_PORTS_MAX (128)
 
 /* doca flow switch context */
 struct flow_switch_ctx {
@@ -41,6 +42,7 @@ struct flow_switch_ctx {
 	const char *dev_arg[FLOW_SWITCH_PORTS_MAX];	  /* dpdk dev_arg */
 	const char *rep_arg[FLOW_SWITCH_PORTS_MAX];	  /* dpdk rep_arg */
 	struct doca_dev *doca_dev[FLOW_SWITCH_PORTS_MAX]; /* port doca_dev */
+	tasks_check port_cap;				  /* Optional port capability callback */
 };
 
 /*

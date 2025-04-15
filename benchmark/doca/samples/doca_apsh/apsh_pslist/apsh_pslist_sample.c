@@ -39,16 +39,17 @@ DOCA_LOG_REGISTER(PSLIST);
  * @os_type [in]: Indicates the OS type of the target system
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t pslist(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_system_os os_type)
+doca_error_t pslist(const char *dma_device_name,
+		    const char *pci_vuid,
+		    enum doca_apsh_system_os os_type,
+		    const char *mem_region,
+		    const char *os_symbols)
 {
 	doca_error_t result;
 	int num_processes, i;
 	struct doca_apsh_ctx *apsh_ctx;
 	struct doca_apsh_system *sys;
 	struct doca_apsh_process **pslist;
-	/* Hardcoded paths to the files created by doca_apsh_config tool */
-	const char *os_symbols = "/tmp/symbols.json";
-	const char *mem_region = "/tmp/mem_regions.json";
 
 	/* Init */
 	result = init_doca_apsh(dma_device_name, &apsh_ctx);

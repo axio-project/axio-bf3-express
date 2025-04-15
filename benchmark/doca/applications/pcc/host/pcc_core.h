@@ -40,12 +40,9 @@
 #define IFA2_GNS_IGNORE_DEFAULT_MASK (0)			      /* IFA2 packet GNS value */
 #define PCC_COREDUMP_FILE_DEFAULT_PATH ("/tmp/doca_pcc_coredump.txt") /* Default pathname for device coredump file */
 #define PCC_PRINT_BUFFER_SIZE_DEFAULT_VALUE (512 * 2048)	      /* Device print buffer size - default value */
-#define PCC_MAILBOX_REQUEST_SIZE \
-	(sizeof(uint32_t))		     /* Size of the mailbox request. Currently used to pass port bandwidth */
+#define PCC_MAILBOX_REQUEST_SIZE (sizeof(uint32_t))		      /* Size of the mailbox request */
 #define PCC_MAILBOX_RESPONSE_SIZE (0)	     /* Size of the mailbox response. Currently not used */
-#define PCC_PHYSICAL_PORT_DEFAULT_ID (0)     /* Physical port ID - default value */
-#define NUM_AVAILABLE_PORTS (4)		     /* Number of available physical ports */
-#define MAX_USER_ARG_SIZE (256)		     /* Maximum size of user input argument */
+#define MAX_USER_ARG_SIZE (1024)	     /* Maximum size of user input argument */
 #define MAX_ARG_SIZE (MAX_USER_ARG_SIZE + 1) /* Maximum size of input argument */
 
 #define LOG_LEVEL_CRIT (20)    /* Critical log level */
@@ -143,7 +140,6 @@ struct pcc_config {
 	uint8_t gns_ignore_value;			 /* IFA2 GNS ignore value */
 	uint8_t gns_ignore_mask;			 /* IFA2 GNS ignore mask */
 	char coredump_file[MAX_ARG_SIZE];		 /* Coredump file pathname */
-	uint32_t port_id;				 /* Physical port ID of device */
 };
 
 struct pcc_resources {

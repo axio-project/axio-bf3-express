@@ -1,0 +1,83 @@
+flexio_packet_process
+====================
+
+This example demonstrates packet processing handling.
+
+The device application implements a handler for 'flexio_pp_dev' that receives
+packets from the network, swaps MAC addresses, inserts some text into the packet,
+and sends it back.
+
+This allows the user to send UDP packets (with a packet length of 65 bytes) and
+check the content of returned packets. Additionally, the console displays the
+execution of packet processing, printing each new packet index.
+
+Device messaging operates in synchronous mode, meaning that each message from
+the device received by the host is output immediately.
+
+This sample illustrates how applications work with libraries (DPA and host),
+how to create SQ, RQ, CQ, memory keys, doorbell rings, how to create and use
+DPA memory buffers, how to use UAR, and how to create and run event handlers.
+
+Build the project
+-----------------
+perform
+$ ./build.sh
+from root of samples
+
+Results are:
+<Samples root>/build/packet_processor/host/flexio_packet_processor
+
+Invocation
+----------
+Usage: sudo <Samples root>/build/packet_processor/host/flexio_packet_processor <mlx5 device>
+      [--nic-mode]
+Where:
+ mlx5 device - the name of IB device with DPA
+ --nic-mode  - optional parameter indicated that the application run from the host.
+               If the application run from DPU then the parameter is not used.
+
+For example:
+$ cd <Samples root>
+$ sudo ./build/packet_processor/host/flexio_packet_processor mlx5_0
+
+The application must run with root privileges.
+
+Running with traffic
+--------------------
+Run host side sample
+$ cd <Samples root>
+$ sudo ./build/packet_processor/host/flexio_packet_processor mlx5_0
+
+Use another machine which is connected to the setup running the application.
+
+Bring the interface used as packet generator up:
+$ sudo ifconfig my_interface up
+
+Use scapy in order to run traffic to the device the application is running on:
+$ python
+
+>>> from scapy.all import *
+>>> from scapy.layers.inet import IP, UDP, Ether
+
+>>> sendp(Ether(src="02:42:7e:7f:eb:02", dst='52:54:00:79:db:d3')/IP()/UDP()/Raw(load="===============12345678"), iface="my_interface")
+
+- Source MAC must be same as above as the application defines a steering rule for it.
+- Destination MAC can be anything.
+- Load should be kept same as above as the application looks for this pattern and changes it during
+  processing.
+- Interface name should be changed to the interfaced used for traffic generation.
+
+The packets can be viewed using tcpdump:
+$ sudo tcpdump -i my_interface -en host 127.0.0.1 -X
+
+Example output:
+11:53:51.422075 02:42:7e:7f:eb:02 > 52:54:00:12:34:56, ethertype IPv4 (0x0800), length 65: 127.0.0.1.domain > 127.0.0.1.domain: 15677 op7+% [b2&3=0x3d3d] [15677a] [15677q] [15677n] [15677au][|domain]
+        0x0000:  4500 0033 0001 0000 4011 7cb7 7f00 0001  E..3....@.|.....
+        0x0010:  7f00 0001 0035 0035 001f 42c6 3d3d 3d3d  .....5.5..B.==== <-- Original data
+        0x0020:  3d3d 3d3d 3d3d 3d3d 3d3d 3d31 3233 3435  ===========12345
+        0x0030:  3637 38                                  678
+11:53:51.700038 52:54:00:12:34:56 > 02:42:7e:7f:eb:02, ethertype IPv4 (0x0800), length 65: 127.0.0.1.domain > 127.0.0.1.domain: 26144 op8+% [b2&3=0x4576] [29728a] [25966q] [25701n] [28015au][|domain]
+        0x0000:  4500 0033 0001 0000 4011 7cb7 7f00 0001  E..3....@.|.....
+        0x0010:  7f00 0001 0035 0035 001f 42c6 6620 4576  .....5.5..B.f.Ev <-- Modified data
+        0x0020:  656e 7420 6465 6d6f 2a2a 2a2a 2a2a 2a2a  ent.demo********
+        0x0030:  2a2a 2a                                  ***

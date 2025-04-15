@@ -41,13 +41,14 @@ doca_error_t dpa_initiator_target(struct dpa_resources *resources);
  */
 int main(int argc, char **argv)
 {
-	struct dpa_config cfg = {{0}};
+	struct dpa_config cfg;
 	struct dpa_resources resources = {0};
 	doca_error_t result = DOCA_SUCCESS;
 	struct doca_log_backend *sdk_log = NULL;
 	int exit_status = EXIT_FAILURE;
 
-	strcpy(cfg.device_name, DEVICE_DEFAULT_NAME);
+	strcpy(cfg.pf_device_name, DEVICE_DEFAULT_NAME);
+	strcpy(cfg.rdma_device_name, DEVICE_DEFAULT_NAME);
 
 	result = doca_log_backend_create_standard();
 	if (result != DOCA_SUCCESS)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -269,7 +269,7 @@ doca_error_t parse_ipv4_str(const char *str_ip, doca_be32_t *ipv4_addr)
 {
 	char *ptr;
 	int i;
-	int ips[4];
+	uint32_t ips[4];
 
 	if (strcmp(str_ip, UINT32_CHANGEABLE_FIELD) == 0) {
 		*ipv4_addr = UINT32_MAX;
@@ -379,6 +379,26 @@ static doca_error_t parse_fwd_type(const char *fwd_str, enum doca_flow_fwd_type 
 		*fwd = DOCA_FLOW_FWD_DROP;
 	else {
 		DOCA_LOG_ERR("FWD type %s is not supported", fwd_str);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Parse forward rss type
+ *
+ * @rss_type_str [in]: String to parse from
+ * @fwd [out]: Forward RSS type
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t parse_fwd_rss_type(const char *rss_type_str, enum doca_flow_resource_type *type)
+{
+	if (strcmp(rss_type_str, "shared") == 0)
+		*type = DOCA_FLOW_RESOURCE_TYPE_SHARED;
+	else if (strcmp(rss_type_str, "immediate") == 0)
+		*type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	else {
+		DOCA_LOG_ERR("FWD rss type %s is not supported", rss_type_str);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 	return DOCA_SUCCESS;
@@ -623,18 +643,22 @@ static doca_error_t parse_fwd_field(char *field_name, char *value, void *struct_
 		result = parse_fwd_type(value, &fwd->type);
 		if (result != DOCA_SUCCESS)
 			return result;
-	} else if (strcmp(field_name, "rss_outer_flags") == 0)
-		fwd->rss_outer_flags = strtol(value, NULL, 0);
-	else if (strcmp(field_name, "rss_inner_flags") == 0)
-		fwd->rss_inner_flags = strtol(value, NULL, 0);
-
-	else if (strcmp(field_name, "rss_queues") == 0) {
-		result = parse_rss_queues(value, fwd->num_of_queues);
+	} else if (strcmp(field_name, "rss_type") == 0) {
+		result = parse_fwd_rss_type(value, &fwd->rss_type);
 		if (result != DOCA_SUCCESS)
 			return result;
-		fwd->rss_queues = rss_queues;
+	} else if (strcmp(field_name, "rss_outer_flags") == 0)
+		fwd->rss.outer_flags = strtol(value, NULL, 0);
+	else if (strcmp(field_name, "rss_inner_flags") == 0)
+		fwd->rss.inner_flags = strtol(value, NULL, 0);
+
+	else if (strcmp(field_name, "rss_queues") == 0) {
+		result = parse_rss_queues(value, fwd->rss.nr_queues);
+		if (result != DOCA_SUCCESS)
+			return result;
+		fwd->rss.queues_array = rss_queues;
 	} else if (strcmp(field_name, "num_of_queues") == 0)
-		fwd->num_of_queues = strtol(value, NULL, 0);
+		fwd->rss.nr_queues = strtol(value, NULL, 0);
 
 	else if (strcmp(field_name, "port_id") == 0)
 		fwd->port_id = strtol(value, NULL, 0);
@@ -666,18 +690,22 @@ static doca_error_t parse_fwd_miss_field(char *field_name, char *value, void *st
 		result = parse_fwd_type(value, &fwd_miss->type);
 		if (result != DOCA_SUCCESS)
 			return result;
-	} else if (strcmp(field_name, "rss_outer_flags") == 0)
-		fwd_miss->rss_outer_flags = strtol(value, NULL, 0);
-	else if (strcmp(field_name, "rss_inner_flags") == 0)
-		fwd_miss->rss_inner_flags = strtol(value, NULL, 0);
-
-	else if (strcmp(field_name, "rss_queues") == 0) {
-		result = parse_rss_queues(value, fwd_miss->num_of_queues);
+	} else if (strcmp(field_name, "rss_type") == 0) {
+		result = parse_fwd_rss_type(value, &fwd_miss->rss_type);
 		if (result != DOCA_SUCCESS)
 			return result;
-		fwd_miss->rss_queues = rss_queues;
+	} else if (strcmp(field_name, "rss_outer_flags") == 0)
+		fwd_miss->rss.outer_flags = strtol(value, NULL, 0);
+	else if (strcmp(field_name, "rss_inner_flags") == 0)
+		fwd_miss->rss.inner_flags = strtol(value, NULL, 0);
+
+	else if (strcmp(field_name, "rss_queues") == 0) {
+		result = parse_rss_queues(value, fwd_miss->rss.nr_queues);
+		if (result != DOCA_SUCCESS)
+			return result;
+		fwd_miss->rss.queues_array = rss_queues;
 	} else if (strcmp(field_name, "num_of_queues") == 0)
-		fwd_miss->num_of_queues = strtol(value, NULL, 0);
+		fwd_miss->rss.nr_queues = strtol(value, NULL, 0);
 
 	else if (strcmp(field_name, "port_id") == 0)
 		fwd_miss->port_id = strtol(value, NULL, 0);
@@ -1255,20 +1283,20 @@ static doca_error_t parse_add_entry_params(char *params_str,
 	doca_error_t result;
 	char tmp_char;
 	char ptr[MAX_CMDLINE_INPUT_LEN];
+	char *tmp;
 	char *param_str_name;
 	bool has_pipe_id = false;
 	bool has_pipe_queue = false;
-
 	do {
 		if (strncmp(params_str, "pipe_id=", PIPE_ID_STR_LEN) == 0) {
 			params_str += PIPE_ID_STR_LEN;
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			*pipe_id = strtoull(ptr, &params_str, 0);
+			tmp = params_str;
+			*pipe_id = strtoull(tmp, &params_str, 0);
 			has_pipe_id = true;
 		} else if (strncmp(params_str, "pipe_queue=", PIPE_QUEUE_STR_LEN) == 0) {
 			params_str += PIPE_QUEUE_STR_LEN;
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			*pipe_queue = strtol(ptr, &params_str, 0);
+			tmp = params_str;
+			*pipe_queue = strtol(tmp, &params_str, 0);
 			has_pipe_queue = true;
 		} else if (strncmp(params_str, "monitor=", MONITOR_STR_LEN) == 0) {
 			result = parse_bool_params_input(&params_str, MONITOR_STR_LEN, monitor_action);
@@ -1314,18 +1342,17 @@ static doca_error_t parse_add_entry_params(char *params_str,
  */
 static doca_error_t parse_fw_add_entry_params(char *params_str, uint16_t *port_id)
 {
-	char ptr[MAX_CMDLINE_INPUT_LEN];
 	char *param_str_name;
 	bool has_port_id = false;
+	char *tmp;
 
 	if (strncmp(params_str, "port_id=", PORT_ID_STR_LEN) == 0) {
 		params_str += PORT_ID_STR_LEN;
-		strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-		*port_id = strtoull(ptr, &params_str, 0);
+		tmp = params_str;
+		*port_id = strtoull(tmp, &params_str, 0);
 		has_port_id = true;
 	} else {
-		strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-		param_str_name = strtok(ptr, "=");
+		param_str_name = strtok(params_str, "=");
 		DOCA_LOG_ERR("The %s is not a valid parameter for pipe add entry command", param_str_name);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
@@ -1358,8 +1385,8 @@ static doca_error_t parse_add_control_pipe_entry_params(char *params_str,
 {
 	doca_error_t result;
 	char tmp_char;
-	char ptr[MAX_CMDLINE_INPUT_LEN];
 	char *param_str_name;
+	char *tmp;
 	bool has_pipe_id = false;
 	bool has_pipe_queue = false;
 	bool has_priority = false;
@@ -1367,18 +1394,18 @@ static doca_error_t parse_add_control_pipe_entry_params(char *params_str,
 	do {
 		if (strncmp(params_str, "pipe_id=", PIPE_ID_STR_LEN) == 0) {
 			params_str += PIPE_ID_STR_LEN;
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			*pipe_id = strtoull(ptr, &params_str, 0);
+			tmp = params_str;
+			*pipe_id = strtoull(tmp, &params_str, 0);
 			has_pipe_id = true;
 		} else if (strncmp(params_str, "pipe_queue=", PIPE_QUEUE_STR_LEN) == 0) {
 			params_str += PIPE_QUEUE_STR_LEN;
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			*pipe_queue = strtol(ptr, &params_str, 0);
+			tmp = params_str;
+			*pipe_queue = strtol(tmp, &params_str, 0);
 			has_pipe_queue = true;
 		} else if (strncmp(params_str, "priority=", PRIORITY_STR_LEN) == 0) {
 			params_str += PRIORITY_STR_LEN;
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			*priority = strtol(ptr, &params_str, 0);
+			tmp = params_str;
+			*priority = strtol(tmp, &params_str, 0);
 			has_priority = true;
 		} else if (strncmp(params_str, "match_mask=", MATCH_MASK_STR_LEN) == 0) {
 			result = parse_bool_params_input(&params_str, MATCH_MASK_STR_LEN, match_mask_action);
@@ -1393,8 +1420,7 @@ static doca_error_t parse_add_control_pipe_entry_params(char *params_str,
 				return DOCA_ERROR_INVALID_VALUE;
 			}
 		} else {
-			strlcpy(ptr, params_str, MAX_CMDLINE_INPUT_LEN);
-			param_str_name = strtok(ptr, "=");
+			param_str_name = strtok(params_str, "=");
 			DOCA_LOG_ERR("The param %s is not a valid parameter for control pipe add entry command",
 				     param_str_name);
 			return DOCA_ERROR_INVALID_VALUE;
@@ -1432,26 +1458,25 @@ static doca_error_t parse_add_control_pipe_entry_params(char *params_str,
 static doca_error_t parse_entry_params(char *params, bool pipe_queue_mandatory, uint16_t *pipe_queue, uint64_t *entry_id)
 {
 	char tmp_char;
-	char ptr[MAX_CMDLINE_INPUT_LEN];
 	char *param_str_name;
+	char *tmp;
 	bool has_pipe_queue = false;
 	bool has_entry_id = false;
 
 	do {
 		if (strncmp(params, "pipe_queue=", PIPE_QUEUE_STR_LEN) == 0) {
 			params += PIPE_QUEUE_STR_LEN;
-			strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
+			tmp = params;
 			if (pipe_queue != NULL)
-				*pipe_queue = strtol(ptr, &params, 0);
+				*pipe_queue = strtol(tmp, &params, 0);
 			has_pipe_queue = true;
 		} else if (strncmp(params, "entry_id=", ENTRY_ID_STR_LEN) == 0) {
 			params += ENTRY_ID_STR_LEN;
-			strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-			*entry_id = strtoull(ptr, &params, 0);
+			tmp = params;
+			*entry_id = strtoull(tmp, &params, 0);
 			has_entry_id = true;
 		} else {
-			strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-			param_str_name = strtok(ptr, "=");
+			param_str_name = strtok(params, "=");
 			DOCA_LOG_ERR("The param %s is not a valid parameter for rm/query entry command",
 				     param_str_name);
 			return DOCA_ERROR_INVALID_VALUE;
@@ -1481,18 +1506,17 @@ static doca_error_t parse_entry_params(char *params, bool pipe_queue_mandatory, 
  */
 static doca_error_t parse_fw_entry_params(char *params, uint64_t *entry_id)
 {
-	char ptr[MAX_CMDLINE_INPUT_LEN];
 	char *param_str_name;
+	char *tmp;
 	bool has_entry_id = false;
 
 	if (strncmp(params, "entry_id=", ENTRY_ID_STR_LEN) == 0) {
 		params += ENTRY_ID_STR_LEN;
-		strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-		*entry_id = strtoull(ptr, &params, 0);
+		tmp = params;
+		*entry_id = strtoull(tmp, &params, 0);
 		has_entry_id = true;
 	} else {
-		strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-		param_str_name = strtok(ptr, "=");
+		param_str_name = strtok(params, "=");
 		DOCA_LOG_ERR("The param %s is not a valid parameter for rm entry command", param_str_name);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
@@ -1518,14 +1542,15 @@ static doca_error_t parse_dump_pipe_params(char *params, uint16_t *port_id, FILE
 	char *name;
 	char ptr[MAX_CMDLINE_INPUT_LEN];
 	char *param_str_name;
+	char *tmp;
 	bool has_port_id = false;
 	bool has_file = false;
 
 	do {
 		if (strncmp(params, "port_id=", PORT_ID_STR_LEN) == 0) {
 			params += PORT_ID_STR_LEN;
-			strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-			*port_id = strtol(ptr, &params, 0);
+			tmp = params;
+			*port_id = strtol(tmp, &params, 0);
 			has_port_id = true;
 		} else if (strncmp(params, "file=", FILE_STR_LEN) == 0) {
 			if (has_file) {
@@ -1545,8 +1570,7 @@ static doca_error_t parse_dump_pipe_params(char *params, uint16_t *port_id, FILE
 			}
 			has_file = true;
 		} else {
-			strlcpy(ptr, params, MAX_CMDLINE_INPUT_LEN);
-			param_str_name = strtok(ptr, "=");
+			param_str_name = strtok(params, "=");
 			DOCA_LOG_ERR("The param %s is not a valid parameter for port pipes dump command",
 				     param_str_name);
 			return DOCA_ERROR_INVALID_VALUE;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -218,46 +218,6 @@ static doca_error_t create_esn_en(struct json_object *cur_rule, bool *esn_en)
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 	*esn_en = json_object_get_boolean(json_esn_en);
-	return DOCA_SUCCESS;
-}
-
-/*
- * Parse json object for ICV length
- *
- * @json_config [in]: json config object
- * @icv_length [out]: the parsed ICV length
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t parse_icv_length(struct json_object *json_config, enum doca_flow_crypto_icv_len *icv_length)
-{
-	int icv_length_int;
-	struct json_object *icv_length_config;
-
-	if (!json_object_object_get_ex(json_config, "icv-length", &icv_length_config)) {
-		DOCA_LOG_DBG("Missing \"icv_length\" parameter, default is 16");
-		*icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_16;
-		return DOCA_SUCCESS;
-	}
-	if (json_object_get_type(icv_length_config) != json_type_int) {
-		DOCA_LOG_ERR("Expecting a int value for \"icv-length\"");
-		return DOCA_ERROR_INVALID_VALUE;
-	}
-
-	icv_length_int = json_object_get_int(icv_length_config);
-	switch (icv_length_int) {
-	case 8:
-		*icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_8;
-		break;
-	case 12:
-		*icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_12;
-		break;
-	case 16:
-		*icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_16;
-		break;
-	default:
-		DOCA_LOG_ERR("ICV length can only be one of the following: 8, 12, 16");
-		return DOCA_ERROR_INVALID_VALUE;
-	}
 	return DOCA_SUCCESS;
 }
 
@@ -539,7 +499,7 @@ static doca_error_t parse_encrypt_encap_ip(struct json_object *cur_rule, struct 
  * Parse json object of the decryption rules and set it in decrypt_rules array
  *
  * @json_rules [in]: json object of the rules to parse
- * @app_cfg [in/out]: internal array will hold the decrypted rules
+ * @app_cfg [in/out]: internal array will hold the decryption rules
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 static doca_error_t parse_json_decrypt_rules(struct json_object *json_rules, struct ipsec_security_gw_config *app_cfg)
@@ -548,9 +508,9 @@ static doca_error_t parse_json_decrypt_rules(struct json_object *json_rules, str
 	doca_error_t result;
 	struct json_object *cur_rule;
 
-	DOCA_LOG_DBG("Number of decrypt rules in input file: %d", app_cfg->app_rules.nb_decrypted_rules);
+	DOCA_LOG_DBG("Number of decrypt rules in input file: %d", app_cfg->app_rules.nb_decrypt_rules);
 
-	for (i = 0; i < app_cfg->app_rules.nb_decrypted_rules; i++) {
+	for (i = 0; i < app_cfg->app_rules.nb_decrypt_rules; i++) {
 		cur_rule = json_object_array_get_idx(json_rules, i);
 		result = create_l3_type(cur_rule, "ip-version", &app_cfg->app_rules.decrypt_rules[i].l3_type);
 		if (result != DOCA_SUCCESS)
@@ -585,10 +545,6 @@ static doca_error_t parse_json_decrypt_rules(struct json_object *json_rules, str
 		if (result != DOCA_SUCCESS)
 			return result;
 
-		result = parse_icv_length(cur_rule, &app_cfg->app_rules.decrypt_rules[i].sa_attrs.icv_length);
-		if (result != DOCA_SUCCESS)
-			return result;
-
 		result = create_salt(cur_rule, &app_cfg->app_rules.decrypt_rules[i].sa_attrs.salt);
 		if (result != DOCA_SUCCESS)
 			return result;
@@ -618,9 +574,9 @@ static doca_error_t parse_json_encrypt_rules(struct json_object *json_rules, str
 	doca_error_t result;
 	struct json_object *cur_rule;
 
-	DOCA_LOG_DBG("Number of encrypt rules in input file: %d", app_cfg->app_rules.nb_encrypted_rules);
+	DOCA_LOG_DBG("Number of encrypt rules in input file: %d", app_cfg->app_rules.nb_encrypt_rules);
 
-	for (i = 0; i < app_cfg->app_rules.nb_encrypted_rules; i++) {
+	for (i = 0; i < app_cfg->app_rules.nb_encrypt_rules; i++) {
 		cur_rule = json_object_array_get_idx(json_rules, i);
 		result = create_l3_type(cur_rule, "ip-version", &app_cfg->app_rules.encrypt_rules[i].l3_type);
 		if (result != DOCA_SUCCESS)
@@ -670,10 +626,6 @@ static doca_error_t parse_json_encrypt_rules(struct json_object *json_rules, str
 		result = create_key(cur_rule,
 				    app_cfg->app_rules.encrypt_rules[i].sa_attrs.key_type,
 				    app_cfg->app_rules.encrypt_rules[i].sa_attrs.enc_key_data);
-		if (result != DOCA_SUCCESS)
-			return result;
-
-		result = parse_icv_length(cur_rule, &app_cfg->app_rules.encrypt_rules[i].sa_attrs.icv_length);
 		if (result != DOCA_SUCCESS)
 			return result;
 
@@ -1015,6 +967,46 @@ static doca_error_t parse_bad_syndrome_fwd(struct json_object *json_config, stru
 }
 
 /*
+ * Parse json object for ICV length
+ *
+ * @json_config [in]: json config object
+ * @app_cfg [out]: application configuration struct
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t parse_icv_length(struct json_object *json_config, struct ipsec_security_gw_config *app_cfg)
+{
+	int icv_length_int;
+	struct json_object *icv_length_config;
+
+	if (!json_object_object_get_ex(json_config, "icv-length", &icv_length_config)) {
+		DOCA_LOG_DBG("Missing \"icv_length\" parameter, default is 16");
+		app_cfg->icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_16;
+		return DOCA_SUCCESS;
+	}
+	if (json_object_get_type(icv_length_config) != json_type_int) {
+		DOCA_LOG_ERR("Expecting a int value for \"icv-length\"");
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	icv_length_int = json_object_get_int(icv_length_config);
+	switch (icv_length_int) {
+	case 8:
+		app_cfg->icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_8;
+		break;
+	case 12:
+		app_cfg->icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_12;
+		break;
+	case 16:
+		app_cfg->icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_16;
+		break;
+	default:
+		DOCA_LOG_ERR("ICV length can only be one of the following: 8, 12, 16");
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+	return DOCA_SUCCESS;
+}
+
+/*
  * Parse json object of the config
  *
  * @json_config [in]: json object of the config to parse
@@ -1067,6 +1059,10 @@ static doca_error_t parse_json_config(struct json_object *json_config, struct ip
 	if (result != DOCA_SUCCESS)
 		return result;
 
+	result = parse_icv_length(json_config, app_cfg);
+	if (result != DOCA_SUCCESS)
+		return result;
+
 	return DOCA_SUCCESS;
 }
 
@@ -1075,7 +1071,7 @@ static doca_error_t parse_json_config(struct json_object *json_config, struct ip
  *
  * @fp [in]: file pointer to the input rules file
  * @file_length [out]: total bytes in file
- * @json_data [out]: allocated buffer
+ * @json_data [out]: allocated buffer, with null termination
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 static doca_error_t allocate_json_buffer_dynamic(FILE *fp, size_t *file_length, char **json_data)
@@ -1252,23 +1248,22 @@ doca_error_t ipsec_security_gw_parse_config(struct ipsec_security_gw_config *app
 			goto json_release;
 		}
 
-		app_cfg->app_rules.nb_encrypted_rules = json_object_array_length(json_encrypt_rules);
-		app_cfg->app_rules.nb_decrypted_rules = json_object_array_length(json_decrypt_rules);
-		if ((app_cfg->app_rules.nb_encrypted_rules > MAX_NB_RULES) ||
-		    (app_cfg->app_rules.nb_decrypted_rules > MAX_NB_RULES)) {
+		app_cfg->app_rules.nb_encrypt_rules = json_object_array_length(json_encrypt_rules);
+		app_cfg->app_rules.nb_decrypt_rules = json_object_array_length(json_decrypt_rules);
+		if ((app_cfg->app_rules.nb_encrypt_rules > MAX_NB_RULES) ||
+		    (app_cfg->app_rules.nb_decrypt_rules > MAX_NB_RULES)) {
 			DOCA_LOG_ERR("Number of rules exceeds the maximum number of rules allowed");
 			result = DOCA_ERROR_INVALID_VALUE;
 			goto json_release;
 		}
 
-		app_cfg->app_rules.nb_rules =
-			app_cfg->app_rules.nb_encrypted_rules + app_cfg->app_rules.nb_decrypted_rules;
+		app_cfg->app_rules.nb_rules = app_cfg->app_rules.nb_encrypt_rules + app_cfg->app_rules.nb_decrypt_rules;
 
-		nb_encrypt_alloc = app_cfg->app_rules.nb_encrypted_rules;
-		nb_decrypt_alloc = app_cfg->app_rules.nb_decrypted_rules;
+		nb_encrypt_alloc = app_cfg->app_rules.nb_encrypt_rules;
+		nb_decrypt_alloc = app_cfg->app_rules.nb_decrypt_rules;
 	} else {
-		app_cfg->app_rules.nb_encrypted_rules = nb_encrypt_alloc;
-		app_cfg->app_rules.nb_decrypted_rules = nb_decrypt_alloc;
+		app_cfg->app_rules.nb_encrypt_rules = nb_encrypt_alloc;
+		app_cfg->app_rules.nb_decrypt_rules = nb_decrypt_alloc;
 	}
 
 	app_cfg->app_rules.encrypt_rules = (struct encrypt_rule *)calloc(nb_encrypt_alloc, sizeof(struct encrypt_rule));
@@ -1299,7 +1294,7 @@ doca_error_t ipsec_security_gw_parse_config(struct ipsec_security_gw_config *app
 			goto dec_enc_release;
 		}
 	}
-
+	json_object_put(parsed_json);
 	free(json_data);
 	return DOCA_SUCCESS;
 dec_enc_release:
@@ -1307,6 +1302,7 @@ dec_enc_release:
 encrypt_release:
 	free(app_cfg->app_rules.encrypt_rules);
 json_release:
+	json_object_put(parsed_json);
 	free(json_data);
 	return result;
 }

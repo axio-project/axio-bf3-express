@@ -59,7 +59,7 @@ doca_error_t flow_ct_register_params(void);
  * @nb_arm_queues [in]: Number of threads the sample will use
  * @nb_ctrl_queues [in]: Number of control queues
  * @nb_user_actions [in]: Number of CT user actions
- * @flow_log_cb [in]: Flow log callback
+ * @entry_finalize_cb [in]: Entry finalize callback
  * @nb_ipv4_sessions [in]: Number of IPv4 sessions
  * @nb_ipv6_sessions [in]: Number of IPv6 sessions
  * @dup_filter_sz [in]: Number of connections to cache in duplication filter
@@ -75,7 +75,7 @@ doca_error_t init_doca_flow_ct(uint32_t flags,
 			       uint32_t nb_arm_queues,
 			       uint32_t nb_ctrl_queues,
 			       uint32_t nb_user_actions,
-			       doca_flow_ct_flow_log_cb flow_log_cb,
+			       doca_flow_ct_entry_finalize_cb entry_finalize_cb,
 			       uint32_t nb_ipv4_sessions,
 			       uint32_t nb_ipv6_sessions,
 			       uint32_t dup_filter_sz,
@@ -107,11 +107,11 @@ doca_error_t flow_ct_capable(struct doca_devinfo *dev_info);
  * Calculates a 6 tuple hash for the givin match
  *
  * @match [in]: Doca flow ct match struct that contains the 6 tuple data
+ * @zone_field [in]: zone mask (field) in metadata
  * @is_ipv6 [in]: Indicates ipv6 header match, otherwise ipv4 header match
- * @is_reply [in]: Indicates reply direction, otherwise origin direction
  * @return: hash value
  */
-uint32_t flow_ct_hash_6tuple(const struct doca_flow_ct_match *match, bool is_ipv6, bool is_reply);
+uint32_t flow_ct_hash_6tuple(const struct doca_flow_ct_match *match, doca_be32_t zone_field, bool is_ipv6);
 
 /*
  * Initialize DPDK environment for DOCA Flow CT

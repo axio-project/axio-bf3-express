@@ -34,7 +34,8 @@
  * Alltoall kernel function.
  * Performs RDMA write operations using doca_dpa_dev_rdma_write() from local buffer to remote buffer.
  *
- * @rdmas_dev_ptr [in]: An array of DOCA DPA RDMA handlers
+ * @rdma_dpa_ctx_handle [in]: Extended DPA context handle for RDMA DOCA device. Needed when running from DPU
+ * @rdmas_dev_ptr [in]: An array of DOCA DPA RDMA handles
  * @local_buf_addr [in]: local buffer address for alltoall
  * @local_buf_mmap_handle [in]: local buffer mmap handle for alltoall
  * @count [in]: Number of elements to write
@@ -49,7 +50,8 @@
  * updated by this rank
  * @a2a_seq_num [in]: The number of times we called the alltoall_kernel in iterations
  */
-__dpa_global__ void alltoall_kernel(doca_dpa_dev_uintptr_t rdmas_dev_ptr,
+__dpa_global__ void alltoall_kernel(doca_dpa_dev_t rdma_dpa_ctx_handle,
+				    doca_dpa_dev_uintptr_t rdmas_dev_ptr,
 				    uint64_t local_buf_addr,
 				    doca_dpa_dev_mmap_t local_buf_mmap_handle,
 				    uint64_t count,
@@ -79,6 +81,10 @@ __dpa_global__ void alltoall_kernel(doca_dpa_dev_uintptr_t rdmas_dev_ptr,
 	unsigned int num_threads = doca_dpa_dev_num_threads();
 	unsigned int i;
 
+	if (rdma_dpa_ctx_handle) {
+		doca_dpa_dev_device_set(rdma_dpa_ctx_handle);
+	}
+
 	/*
 	 * Each process should perform as the number of processes RDMA write operations with local and remote buffers
 	 * according to the rank of the local process and the rank of the remote processes (we iterate over the rank
@@ -88,24 +94,23 @@ __dpa_global__ void alltoall_kernel(doca_dpa_dev_uintptr_t rdmas_dev_ptr,
 	 */
 	for (i = thread_rank; i < num_ranks; i += num_threads) {
 		doca_dpa_dev_rdma_post_write(rdma_handles[i],
+					     0,
 					     remote_recvbufs_mmap_handles[i],
 					     remote_recvbufs[i] + (my_rank * count * type_length),
 					     local_buf_mmap_handle,
 					     local_buf_addr + (i * count * type_length),
 					     (type_length * count),
-					     1);
+					     DOCA_DPA_DEV_SUBMIT_FLAG_OPTIMIZE_REPORTS |
+						     DOCA_DPA_DEV_SUBMIT_FLAG_FLUSH);
 
-		doca_dpa_dev_rdma_signal_set(rdma_handles[i], remote_events[i], a2a_seq_num);
+		doca_dpa_dev_rdma_signal_set(rdma_handles[i], 0, remote_events[i], a2a_seq_num);
 	}
 
 	/*
 	 * Each thread should wait on his local events to make sure that the
 	 * remote processes have finished RDMA write operations.
-	 * Each thread should also synchronize its rdma dpa handles to make sure
-	 * that the local RDMA operation calls has finished
 	 */
 	for (i = thread_rank; i < num_ranks; i += num_threads) {
 		doca_dpa_dev_sync_event_wait_gt(local_events[i], a2a_seq_num - 1, SYNC_EVENT_MASK_FFS);
-		doca_dpa_dev_rdma_synchronize(rdma_handles[i]);
 	}
 }

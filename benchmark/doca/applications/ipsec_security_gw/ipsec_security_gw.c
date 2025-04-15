@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2022-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -28,8 +28,10 @@
 #include <rte_ethdev.h>
 
 #include <doca_argp.h>
+#include <doca_flow_tune_server.h>
 #include <doca_log.h>
 #include <doca_pe.h>
+#include <doca_dev.h>
 
 #include <dpdk_utils.h>
 #include <pack.h>
@@ -47,16 +49,17 @@ DOCA_LOG_REGISTER(IPSEC_SECURITY_GW);
 #define PACKET_BURST 32		  /* The number of packets in the rx queue */
 #define NB_TX_BURST_TRIES 5	  /* Number of tries for sending batch of packets */
 #define MIN_ENTRIES_PER_CORE 1024 /* Minimum number of entries per core */
+#define MAC_ADDRESS_SIZE 6	  /* Size of mac address */
 
 /* Rule Inserter worker thread context struct */
 struct multi_thread_insertion_ctx {
 	struct ipsec_security_gw_config *app_cfg;   /* Application configuration struct */
 	struct ipsec_security_gw_ports_map **ports; /* Application ports */
 	int queue_id;				    /* Queue ID */
-	int nb_encrypted_rules;			    /* Number of encrypted rules */
-	int nb_decrypted_rules;			    /* Number of decrypted rules */
-	int encrypt_rule_offset;		    /* Offset for encrypted rules */
-	int decrypt_rule_offset;		    /* Offset for decrypted rules */
+	int nb_encrypt_rules;			    /* Number of encryption rules */
+	int nb_decrypt_rules;			    /* Number of decryption rules */
+	int encrypt_rule_offset;		    /* Offset for encryption rules */
+	int decrypt_rule_offset;		    /* Offset for decryption rules */
 };
 
 static bool force_quit; /* Set when signal is received */
@@ -160,6 +163,8 @@ static void query_encrypt_pipes(struct ipsec_security_gw_config *app_cfg)
 {
 	bool changed = false;
 
+	if (app_cfg->flow_mode == IPSEC_SECURITY_GW_SWITCH)
+		changed |= query_pipe_info(&app_cfg->encrypt_pipes.encrypt_root);
 	changed |= query_pipe_info(&app_cfg->encrypt_pipes.ipv4_tcp_pipe);
 	changed |= query_pipe_info(&app_cfg->encrypt_pipes.ipv4_udp_pipe);
 	changed |= query_pipe_info(&app_cfg->encrypt_pipes.ipv6_tcp_pipe);
@@ -208,7 +213,7 @@ static void process_syndrome_packets(void *args)
 	double delta;
 	double cycle_time = 5;
 	uint64_t max_timeout = 4000000;
-	uint32_t max_resources = ctx->config->app_rules.nb_decrypted_rules + ctx->config->app_rules.nb_encrypted_rules;
+	uint32_t max_resources = ctx->config->app_rules.nb_decrypt_rules + ctx->config->app_rules.nb_encrypt_rules;
 
 	while (!force_quit) {
 		start_time = rte_get_timer_cycles();
@@ -216,7 +221,7 @@ static void process_syndrome_packets(void *args)
 		if (ctx->config->debug_mode) {
 			query_encrypt_pipes(ctx->config);
 			query_decrypt_pipes(ctx->config);
-			for (i = 0; i < ctx->config->app_rules.nb_decrypted_rules; i++)
+			for (i = 0; i < ctx->config->app_rules.nb_decrypt_rules; i++)
 				query_bad_syndrome(&ctx->config->app_rules.decrypt_rules[i]);
 		}
 		end_time = rte_get_timer_cycles();
@@ -381,7 +386,7 @@ static doca_error_t ipsec_security_gw_process_bad_packets(struct ipsec_security_
 	ctx->config = config;
 	ctx->encrypt_rules = config->app_rules.encrypt_rules;
 	ctx->decrypt_rules = config->app_rules.decrypt_rules;
-	ctx->nb_encrypt_rules = &config->app_rules.nb_encrypted_rules;
+	ctx->nb_encrypt_rules = &config->app_rules.nb_encrypt_rules;
 	ctx->ports = ports;
 
 	if (rte_eal_remote_launch((void *)process_syndrome_packets, (void *)ctx, current_lcore) != 0) {
@@ -419,7 +424,7 @@ static doca_error_t ipsec_security_gw_process_packets(struct ipsec_security_gw_c
 		ctx->config = config;
 		ctx->encrypt_rules = config->app_rules.encrypt_rules;
 		ctx->decrypt_rules = config->app_rules.decrypt_rules;
-		ctx->nb_encrypt_rules = &config->app_rules.nb_encrypted_rules;
+		ctx->nb_encrypt_rules = &config->app_rules.nb_encrypt_rules;
 		ctx->ports = ports;
 
 		/* Launch the worker to start process packets */
@@ -629,9 +634,9 @@ static doca_error_t ipsec_security_gw_wait_for_traffic(struct ipsec_security_gw_
 	DOCA_LOG_INFO("Waiting for traffic, press Ctrl+C for termination");
 	if (app_cfg->offload != IPSEC_SECURITY_GW_ESP_OFFLOAD_BOTH || is_fwd_syndrome_rss(app_cfg)) {
 		encrypt_array_size = app_cfg->socket_ctx.socket_conf ? DYN_RESERVED_RULES :
-								       app_cfg->app_rules.nb_encrypted_rules;
+								       app_cfg->app_rules.nb_encrypt_rules;
 		decrypt_array_size = app_cfg->socket_ctx.socket_conf ? DYN_RESERVED_RULES :
-								       app_cfg->app_rules.nb_decrypted_rules;
+								       app_cfg->app_rules.nb_decrypt_rules;
 		if (app_cfg->sw_sn_inc_enable) {
 			sw_handling_sn_inc(app_cfg, app_cfg->app_rules.encrypt_rules, encrypt_array_size);
 		}
@@ -679,19 +684,19 @@ static doca_error_t ipsec_security_gw_wait_for_traffic(struct ipsec_security_gw_
 		print_policy_attrs(&policy);
 
 		if (policy.policy_direction == POLICY_DIR_OUT) {
-			if (app_cfg->app_rules.nb_encrypted_rules >= MAX_NB_RULES) {
+			if (app_cfg->app_rules.nb_encrypt_rules >= MAX_NB_RULES) {
 				DOCA_LOG_ERR("Can't receive more encryption policies, maximum size is [%d]",
 					     MAX_NB_RULES);
 				result = DOCA_ERROR_BAD_STATE;
 				goto exit_failure;
 			}
 			/* Check if the array is full and reallocate memory of DYN_RESERVED_RULES blocks */
-			if ((app_cfg->app_rules.nb_encrypted_rules != 0) &&
-			    (app_cfg->app_rules.nb_encrypted_rules % DYN_RESERVED_RULES == 0)) {
+			if ((app_cfg->app_rules.nb_encrypt_rules != 0) &&
+			    (app_cfg->app_rules.nb_encrypt_rules % DYN_RESERVED_RULES == 0)) {
 				DOCA_LOG_DBG("Reallocating memory for new encryption rules");
 				app_cfg->app_rules.encrypt_rules =
 					realloc(app_cfg->app_rules.encrypt_rules,
-						(app_cfg->app_rules.nb_encrypted_rules + DYN_RESERVED_RULES) *
+						(app_cfg->app_rules.nb_encrypt_rules + DYN_RESERVED_RULES) *
 							sizeof(struct encrypt_rule));
 				if (app_cfg->app_rules.encrypt_rules == NULL) {
 					DOCA_LOG_ERR("Failed to allocate memory for new encryption rule");
@@ -702,30 +707,30 @@ static doca_error_t ipsec_security_gw_wait_for_traffic(struct ipsec_security_gw_
 				if (app_cfg->sw_sn_inc_enable) {
 					sw_handling_sn_inc(app_cfg,
 							   app_cfg->app_rules.encrypt_rules +
-								   app_cfg->app_rules.nb_encrypted_rules,
+								   app_cfg->app_rules.nb_encrypt_rules,
 							   DYN_RESERVED_RULES);
 				}
 			}
 			/* Get the next empty encryption rule for egress traffic */
-			enc_rule = &app_cfg->app_rules.encrypt_rules[app_cfg->app_rules.nb_encrypted_rules];
+			enc_rule = &app_cfg->app_rules.encrypt_rules[app_cfg->app_rules.nb_encrypt_rules];
 			result = ipsec_security_gw_handle_encrypt_policy(app_cfg, ports, &policy, enc_rule);
 			if (result != DOCA_SUCCESS) {
 				DOCA_LOG_ERR("Failed to handle new encryption policy");
 				goto exit_failure;
 			}
 		} else if (policy.policy_direction == POLICY_DIR_IN) {
-			if (app_cfg->app_rules.nb_decrypted_rules >= MAX_NB_RULES) {
+			if (app_cfg->app_rules.nb_decrypt_rules >= MAX_NB_RULES) {
 				DOCA_LOG_ERR("Can't receive more decryption policies, maximum size is [%d]",
 					     MAX_NB_RULES);
 				result = DOCA_ERROR_BAD_STATE;
 				goto exit_failure;
 			}
 			/* Check if the array is full and reallocate memory of DYN_RESERVED_RULES blocks */
-			if ((app_cfg->app_rules.nb_decrypted_rules != 0) &&
-			    (app_cfg->app_rules.nb_decrypted_rules % DYN_RESERVED_RULES == 0)) {
+			if ((app_cfg->app_rules.nb_decrypt_rules != 0) &&
+			    (app_cfg->app_rules.nb_decrypt_rules % DYN_RESERVED_RULES == 0)) {
 				app_cfg->app_rules.decrypt_rules =
 					realloc(app_cfg->app_rules.decrypt_rules,
-						(app_cfg->app_rules.nb_decrypted_rules + DYN_RESERVED_RULES) *
+						(app_cfg->app_rules.nb_decrypt_rules + DYN_RESERVED_RULES) *
 							sizeof(struct decrypt_rule));
 				if (app_cfg->app_rules.decrypt_rules == NULL) {
 					DOCA_LOG_ERR("Failed to allocate memory for new decryption rule");
@@ -735,12 +740,12 @@ static doca_error_t ipsec_security_gw_wait_for_traffic(struct ipsec_security_gw_
 				if (app_cfg->sw_antireplay) {
 					sw_handling_antireplay(app_cfg,
 							       app_cfg->app_rules.decrypt_rules +
-								       app_cfg->app_rules.nb_decrypted_rules,
+								       app_cfg->app_rules.nb_decrypt_rules,
 							       DYN_RESERVED_RULES);
 				}
 			}
 			/* Get the next empty decryption rule for ingress traffic */
-			dec_rule = &app_cfg->app_rules.decrypt_rules[app_cfg->app_rules.nb_decrypted_rules];
+			dec_rule = &app_cfg->app_rules.decrypt_rules[app_cfg->app_rules.nb_decrypt_rules];
 			result = ipsec_security_gw_handle_decrypt_policy(app_cfg, secured_port, &policy, dec_rule);
 			if (result != DOCA_SUCCESS) {
 				DOCA_LOG_ERR("Failed to handle new decryption policy");
@@ -862,16 +867,16 @@ static void rule_inserter_worker(void *args)
 	struct multi_thread_insertion_ctx *ctx = (struct multi_thread_insertion_ctx *)args;
 	doca_error_t result;
 
-	DOCA_LOG_DBG("Core %d is inserting on queue %d: %d encrypted rules and %d decrypted rules",
+	DOCA_LOG_DBG("Core %d is inserting on queue %d: %d encryption rules and %d decryption rules",
 		     rte_lcore_id(),
 		     ctx->queue_id,
-		     ctx->nb_encrypted_rules,
-		     ctx->nb_decrypted_rules);
-	if (ctx->nb_encrypted_rules > 0) {
+		     ctx->nb_encrypt_rules,
+		     ctx->nb_decrypt_rules);
+	if (ctx->nb_encrypt_rules > 0) {
 		result = add_encrypt_entries(ctx->app_cfg,
 					     ctx->ports,
 					     ctx->queue_id,
-					     ctx->nb_encrypted_rules,
+					     ctx->nb_encrypt_rules,
 					     ctx->encrypt_rule_offset);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add encrypt entries");
@@ -879,11 +884,11 @@ static void rule_inserter_worker(void *args)
 			return;
 		}
 	}
-	if (ctx->nb_decrypted_rules > 0) {
+	if (ctx->nb_decrypt_rules > 0) {
 		result = add_decrypt_entries(ctx->app_cfg,
 					     ctx->ports[SECURED_IDX],
 					     ctx->queue_id,
-					     ctx->nb_decrypted_rules,
+					     ctx->nb_decrypt_rules,
 					     ctx->decrypt_rule_offset);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add decrypt entries");
@@ -931,7 +936,7 @@ static doca_error_t run_multithread_insertion(struct ipsec_security_gw_config *a
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
-	if (app_cfg->app_rules.nb_encrypted_rules == 0 && app_cfg->app_rules.nb_decrypted_rules == 0) {
+	if (app_cfg->app_rules.nb_encrypt_rules == 0 && app_cfg->app_rules.nb_decrypt_rules == 0) {
 		DOCA_LOG_WARN("No rules to insert");
 		return DOCA_SUCCESS;
 	}
@@ -939,8 +944,8 @@ static doca_error_t run_multithread_insertion(struct ipsec_security_gw_config *a
 	/* Calculate the number of queues to run - Don't create cores with less than MIN_ENTRIES_PER_CORE entries for
 	 * encrypt/ decrypt */
 	nb_queues = RTE_MIN(nb_queues,
-			    RTE_MAX(RTE_MAX((int)(app_cfg->app_rules.nb_encrypted_rules / MIN_ENTRIES_PER_CORE),
-					    (int)(app_cfg->app_rules.nb_decrypted_rules / MIN_ENTRIES_PER_CORE)),
+			    RTE_MAX(RTE_MAX((int)(app_cfg->app_rules.nb_encrypt_rules / MIN_ENTRIES_PER_CORE),
+					    (int)(app_cfg->app_rules.nb_decrypt_rules / MIN_ENTRIES_PER_CORE)),
 				    1));
 
 	DOCA_LOG_DBG("Running multi-thread insertion on %d queues", nb_queues);
@@ -950,8 +955,8 @@ static doca_error_t run_multithread_insertion(struct ipsec_security_gw_config *a
 		DOCA_LOG_ERR("malloc() failed");
 		return DOCA_ERROR_NO_MEMORY;
 	}
-	encrypt_ratio = (float)app_cfg->app_rules.nb_encrypted_rules / nb_queues;
-	decrypt_ratio = (float)app_cfg->app_rules.nb_decrypted_rules / nb_queues;
+	encrypt_ratio = (float)app_cfg->app_rules.nb_encrypt_rules / nb_queues;
+	decrypt_ratio = (float)app_cfg->app_rules.nb_decrypt_rules / nb_queues;
 
 	if (insertion_rate_print)
 		start_time = rte_get_timer_cycles();
@@ -968,24 +973,24 @@ static doca_error_t run_multithread_insertion(struct ipsec_security_gw_config *a
 		ctx->ports = ports;
 		ctx->queue_id = lcore_index;
 		if (encrypt_ratio < 1) { /* If the number of rules is less than the number of queues */
-			ctx->nb_encrypted_rules = lcore_index < app_cfg->app_rules.nb_encrypted_rules ? 1 : 0;
+			ctx->nb_encrypt_rules = lcore_index < app_cfg->app_rules.nb_encrypt_rules ? 1 : 0;
 			ctx->encrypt_rule_offset = lcore_index;
 		} else {
 			ctx->encrypt_rule_offset = next_encrypt_rule_offset;
 			next_encrypt_rule_offset = (lcore_index != (nb_queues - 1)) ?
 							   (int)((lcore_index + 1) * encrypt_ratio) :
-							   app_cfg->app_rules.nb_encrypted_rules;
-			ctx->nb_encrypted_rules = next_encrypt_rule_offset - ctx->encrypt_rule_offset;
+							   app_cfg->app_rules.nb_encrypt_rules;
+			ctx->nb_encrypt_rules = next_encrypt_rule_offset - ctx->encrypt_rule_offset;
 		}
 		if (decrypt_ratio < 1) { /* If the number of rules is less than the number of queues */
-			ctx->nb_decrypted_rules = lcore_index < app_cfg->app_rules.nb_decrypted_rules ? 1 : 0;
+			ctx->nb_decrypt_rules = lcore_index < app_cfg->app_rules.nb_decrypt_rules ? 1 : 0;
 			ctx->decrypt_rule_offset = lcore_index;
 		} else {
 			ctx->decrypt_rule_offset = next_decrypt_rule_offset;
 			next_decrypt_rule_offset = (lcore_index != (nb_queues - 1)) ?
 							   (int)((lcore_index + 1) * decrypt_ratio) :
-							   app_cfg->app_rules.nb_decrypted_rules;
-			ctx->nb_decrypted_rules = next_decrypt_rule_offset - ctx->decrypt_rule_offset;
+							   app_cfg->app_rules.nb_decrypt_rules;
+			ctx->nb_decrypt_rules = next_decrypt_rule_offset - ctx->decrypt_rule_offset;
 		}
 
 		if (rte_eal_remote_launch((void *)rule_inserter_worker, (void *)ctx, current_lcore) != 0) {
@@ -1007,12 +1012,12 @@ static doca_error_t run_multithread_insertion(struct ipsec_security_gw_config *a
 	}
 	DOCA_LOG_DBG("All threads finished inserting rules");
 	if (insertion_rate_print) {
-		DOCA_LOG_INFO("Total time insert %d encrypted rules and %d decrypted rules: %f",
-			      app_cfg->app_rules.nb_encrypted_rules,
-			      app_cfg->app_rules.nb_decrypted_rules,
+		DOCA_LOG_INFO("Total insertion time for %d encryption rules and %d decryption rules: %f",
+			      app_cfg->app_rules.nb_encrypt_rules,
+			      app_cfg->app_rules.nb_decrypt_rules,
 			      total_time);
 		rules_per_sec =
-			(app_cfg->app_rules.nb_encrypted_rules + app_cfg->app_rules.nb_decrypted_rules) / total_time;
+			(app_cfg->app_rules.nb_encrypt_rules + app_cfg->app_rules.nb_decrypt_rules) / total_time;
 		DOCA_LOG_INFO("Rules/Sec: %f", rules_per_sec);
 	}
 
@@ -1044,7 +1049,9 @@ int main(int argc, char **argv)
 		.reserve_main_thread = true,
 	};
 	char cores_str[10];
-	char *eal_param[5] = {"", "-a", "00:00.0", "-l", ""};
+	char pid_str[50]; /* Buffer for "pid_" + process ID */
+	snprintf(pid_str, sizeof(pid_str), "pid_%d", getpid());
+	char *eal_param[7] = {"", "-a", "00:00.0", "-l", "", "--file-prefix", pid_str};
 	struct doca_log_backend *sdk_log;
 
 	app_cfg.dpdk_config = &dpdk_config;
@@ -1089,7 +1096,7 @@ int main(int argc, char **argv)
 
 	snprintf(cores_str, sizeof(cores_str), "0-%d", app_cfg.nb_cores - 1);
 	eal_param[4] = cores_str;
-	ret = rte_eal_init(5, eal_param);
+	ret = rte_eal_init(7, eal_param);
 	if (ret < 0) {
 		DOCA_LOG_ERR("EAL initialization failed");
 		doca_argp_destroy();
@@ -1128,8 +1135,32 @@ int main(int argc, char **argv)
 		goto dpdk_cleanup;
 	}
 
+	result = doca_devinfo_get_mac_addr(doca_dev_as_devinfo((app_cfg.objects.secured_dev.doca_dev)),
+					   ports[SECURED_IDX]->eth_header.src_mac,
+					   MAC_ADDRESS_SIZE);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_WARN("Failed to get mac address from DOCA device, setting mac address to default");
+		SET_MAC_ADDR(ports[SECURED_IDX]->eth_header.src_mac, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66);
+	}
+
 	if (app_cfg.flow_mode == IPSEC_SECURITY_GW_SWITCH) {
-		result = create_rss_pipe(ports[SECURED_IDX]->port,
+		DOCA_LOG_WARN("switch mode can not set real source mac, setting mac address to default");
+		SET_MAC_ADDR(ports[UNSECURED_IDX]->eth_header.src_mac, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66);
+	}
+
+	else {
+		result = doca_devinfo_get_mac_addr(doca_dev_as_devinfo((app_cfg.objects.unsecured_dev.doca_dev)),
+						   ports[UNSECURED_IDX]->eth_header.src_mac,
+						   MAC_ADDRESS_SIZE);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_WARN("Failed to get mac address from DOCA device, setting mac address to default");
+			SET_MAC_ADDR(ports[UNSECURED_IDX]->eth_header.src_mac, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66);
+		}
+	}
+
+	if (app_cfg.flow_mode == IPSEC_SECURITY_GW_SWITCH) {
+		result = create_rss_pipe(&app_cfg,
+					 ports[SECURED_IDX]->port,
 					 dpdk_config.port_config.nb_queues,
 					 &app_cfg.switch_pipes.rss_pipe.pipe);
 		if (result != DOCA_SUCCESS) {
@@ -1162,7 +1193,7 @@ int main(int argc, char **argv)
 		goto doca_flow_cleanup;
 	}
 
-	result = ipsec_security_gw_insert_decrypt_rules(ports[SECURED_IDX], &app_cfg);
+	result = ipsec_security_gw_insert_decrypt_rules(ports, &app_cfg);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create decrypt rules");
 		exit_status = EXIT_FAILURE;
@@ -1186,8 +1217,8 @@ int main(int argc, char **argv)
 			goto doca_flow_cleanup;
 		}
 	} else {
-		app_cfg.app_rules.nb_encrypted_rules = 0;
-		app_cfg.app_rules.nb_decrypted_rules = 0;
+		app_cfg.app_rules.nb_encrypt_rules = 0;
+		app_cfg.app_rules.nb_decrypt_rules = 0;
 		result = create_policy_socket(&app_cfg);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create policy socket");
@@ -1207,6 +1238,7 @@ doca_flow_cleanup:
 	security_gateway_free_resources(&app_cfg);
 	/* Flow cleanup */
 	doca_flow_cleanup(nb_ports, ports);
+	doca_flow_tune_server_destroy();
 dpdk_cleanup:
 	/* DPDK cleanup */
 	dpdk_queues_and_ports_fini(&dpdk_config);

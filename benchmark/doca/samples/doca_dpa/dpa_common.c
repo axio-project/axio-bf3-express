@@ -34,15 +34,15 @@ DOCA_LOG_REGISTER(DPA_COMMON);
 extern struct doca_dpa_app *dpa_sample_app;
 
 /*
- * ARGP Callback - Handle device name parameter
+ * ARGP Callback - Handle PF device name parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t device_name_param_callback(void *param, void *config)
+static doca_error_t pf_device_name_param_callback(void *param, void *config)
 {
-	struct dpa_config *dpa_cgf = (struct dpa_config *)config;
+	struct dpa_config *dpa_cfg = (struct dpa_config *)config;
 	char *device_name = (char *)param;
 	int len;
 
@@ -51,52 +51,111 @@ static doca_error_t device_name_param_callback(void *param, void *config)
 		DOCA_LOG_ERR("Entered device name exceeding the maximum size of %d", DOCA_DEVINFO_IBDEV_NAME_SIZE - 1);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
-	strncpy(dpa_cgf->device_name, device_name, len + 1);
+	strncpy(dpa_cfg->pf_device_name, device_name, len + 1);
 
 	return DOCA_SUCCESS;
 }
 
+#ifdef DOCA_ARCH_DPU
+/*
+ * ARGP Callback - Handle RDMA device name parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t rdma_device_name_param_callback(void *param, void *config)
+{
+	struct dpa_config *dpa_cfg = (struct dpa_config *)config;
+	char *device_name = (char *)param;
+	int len;
+
+	len = strnlen(device_name, DOCA_DEVINFO_IBDEV_NAME_SIZE);
+	if (len == DOCA_DEVINFO_IBDEV_NAME_SIZE) {
+		DOCA_LOG_ERR("Entered device name exceeding the maximum size of %d", DOCA_DEVINFO_IBDEV_NAME_SIZE - 1);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+	strncpy(dpa_cfg->rdma_device_name, device_name, len + 1);
+
+	return DOCA_SUCCESS;
+}
+#endif
+
 doca_error_t register_dpa_params(void)
 {
 	doca_error_t result;
-	struct doca_argp_param *device_param;
+	struct doca_argp_param *pf_device_param;
 
-	result = doca_argp_param_create(&device_param);
+	result = doca_argp_param_create(&pf_device_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
 		return result;
 	}
-	doca_argp_param_set_short_name(device_param, "d");
-	doca_argp_param_set_long_name(device_param, "device");
-	doca_argp_param_set_arguments(device_param, "<device name>");
+	doca_argp_param_set_short_name(pf_device_param, "pf_dev");
+	doca_argp_param_set_long_name(pf_device_param, "pf-device");
+	doca_argp_param_set_arguments(pf_device_param, "<PF DOCA device name>");
 	doca_argp_param_set_description(
-		device_param,
-		"device name that supports DPA (optional). If not provided then a random device will be chosen");
-	doca_argp_param_set_callback(device_param, device_name_param_callback);
-	doca_argp_param_set_type(device_param, DOCA_ARGP_TYPE_STRING);
-	result = doca_argp_register_param(device_param);
+		pf_device_param,
+		"PF device name that supports DPA (optional). If not provided then a random device will be chosen");
+	doca_argp_param_set_callback(pf_device_param, pf_device_name_param_callback);
+	doca_argp_param_set_type(pf_device_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(pf_device_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
 		return result;
 	}
 
+#ifdef DOCA_ARCH_DPU
+	struct doca_argp_param *rdma_device_param;
+	result = doca_argp_param_create(&rdma_device_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(rdma_device_param, "rdma_dev");
+	doca_argp_param_set_long_name(rdma_device_param, "rdma-device");
+	doca_argp_param_set_arguments(rdma_device_param, "<RDMA DOCA device name>");
+	doca_argp_param_set_description(
+		rdma_device_param,
+		"device name that supports RDMA (optional). If not provided then a random device will be chosen");
+	doca_argp_param_set_callback(rdma_device_param, rdma_device_name_param_callback);
+	doca_argp_param_set_type(rdma_device_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(rdma_device_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+#endif
+
 	return DOCA_SUCCESS;
 }
 
 /*
- * Open DPA DOCA device
+ * Open DPA DOCA devices
  *
- * @device_name [in]: Wanted device name, can be NOT_SET and then a random DPA supported device is chosen
- * @doca_device [out]: An allocated DOCA DPA device on success and NULL otherwise
+ * When running from DPU, rdma_doca_device will be opened for SF DOCA device with RDMA capability.
+ * When running from Host, returned rdma_doca_device is equal to pf_doca_device.
+ *
+ * @pf_device_name [in]: Wanted PF device name, can be NOT_SET and then a random DPA supported device is chosen
+ * @rdma_device_name [in]: Relevant when running from DPU. Wanted RDMA device name, can be NOT_SET and then a random
+ * RDMA supported device is chosen
+ * @pf_doca_device [out]: An allocated PF DOCA device on success and NULL otherwise
+ * @rdma_doca_device [out]: An allocated RDMA DOCA device on success and NULL otherwise
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t open_dpa_device(const char *device_name, struct doca_dev **doca_device)
+static doca_error_t open_dpa_device(const char *pf_device_name,
+				    const char *rdma_device_name,
+				    struct doca_dev **pf_doca_device,
+				    struct doca_dev **rdma_doca_device)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs = 0;
-	doca_error_t result;
+	doca_error_t result, dpa_cap;
 	char ibdev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE] = {0};
 	uint32_t i = 0;
+
+	// To avoid unused compilation error when running from Host
+	(void)rdma_device_name;
 
 	result = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (result != DOCA_SUCCESS) {
@@ -104,30 +163,64 @@ static doca_error_t open_dpa_device(const char *device_name, struct doca_dev **d
 		return result;
 	}
 
-	/* Search device with same dev name*/
 	for (i = 0; i < nb_devs; i++) {
-		result = doca_dpa_cap_is_supported(dev_list[i]);
-		if (result != DOCA_SUCCESS)
+		dpa_cap = doca_dpa_cap_is_supported(dev_list[i]);
+		if (dpa_cap != DOCA_SUCCESS) {
 			continue;
-		result = doca_devinfo_get_ibdev_name(dev_list[i], ibdev_name, sizeof(ibdev_name));
-		if (result != DOCA_SUCCESS ||
-		    (strcmp(device_name, DEVICE_DEFAULT_NAME) != 0 && strcmp(device_name, ibdev_name) != 0))
-			continue;
-		result = doca_dev_open(dev_list[i], doca_device);
-		if (result != DOCA_SUCCESS) {
-			doca_devinfo_destroy_list(dev_list);
-			DOCA_LOG_ERR("Failed to open DOCA device: %s", doca_error_get_descr(result));
-			return result;
 		}
-		break;
+
+		result = doca_devinfo_get_ibdev_name(dev_list[i], ibdev_name, sizeof(ibdev_name));
+		if (result != DOCA_SUCCESS) {
+			continue;
+		}
+
+#ifdef DOCA_ARCH_DPU
+		doca_error_t rdma_cap = doca_rdma_cap_task_send_is_supported(dev_list[i]);
+		if (*rdma_doca_device == NULL && rdma_cap == DOCA_SUCCESS) {
+			if (strcmp(rdma_device_name, DEVICE_DEFAULT_NAME) == 0 ||
+			    strcmp(rdma_device_name, ibdev_name) == 0) {
+				result = doca_dev_open(dev_list[i], rdma_doca_device);
+				if (result != DOCA_SUCCESS) {
+					doca_devinfo_destroy_list(dev_list);
+					DOCA_LOG_ERR("Failed to open DOCA device %s: %s",
+						     ibdev_name,
+						     doca_error_get_descr(result));
+					return result;
+				}
+			}
+		}
+#endif
+
+		if (*pf_doca_device == NULL) {
+			if (strcmp(pf_device_name, DEVICE_DEFAULT_NAME) == 0 ||
+			    strcmp(pf_device_name, ibdev_name) == 0) {
+				result = doca_dev_open(dev_list[i], pf_doca_device);
+				if (result != DOCA_SUCCESS) {
+					doca_devinfo_destroy_list(dev_list);
+					DOCA_LOG_ERR("Failed to open DOCA device %s: %s",
+						     ibdev_name,
+						     doca_error_get_descr(result));
+					return result;
+				}
+			}
+		}
 	}
 
 	doca_devinfo_destroy_list(dev_list);
 
-	if (*doca_device == NULL) {
-		DOCA_LOG_ERR("Couldn't get DOCA device");
+	if (*pf_doca_device == NULL) {
+		DOCA_LOG_ERR("Couldn't open PF DOCA device");
 		return DOCA_ERROR_NOT_FOUND;
 	}
+
+#ifdef DOCA_ARCH_DPU
+	if (*rdma_doca_device == NULL) {
+		DOCA_LOG_ERR("Couldn't open RDMA DOCA device");
+		return DOCA_ERROR_NOT_FOUND;
+	}
+#else
+	*rdma_doca_device = *pf_doca_device;
+#endif
 
 	return result;
 }
@@ -352,40 +445,68 @@ doca_error_t allocate_dpa_resources(struct dpa_config *cfg, struct dpa_resources
 {
 	doca_error_t result;
 
-	/* open doca device */
-	result = open_dpa_device(cfg->device_name, &resources->doca_device);
+	result = open_dpa_device(cfg->pf_device_name,
+				 cfg->rdma_device_name,
+				 &resources->pf_doca_device,
+				 &resources->rdma_doca_device);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function open_dpa_device() failed");
 		goto exit_label;
 	}
 
-	/* create doca_dpa context */
-	result = doca_dpa_create(resources->doca_device, &(resources->doca_dpa));
+	result = doca_dpa_create(resources->pf_doca_device, &(resources->pf_dpa_ctx));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create DOCA DPA context: %s", doca_error_get_descr(result));
 		goto close_doca_dev;
 	}
 
-	/* set doca_dpa app */
-	result = doca_dpa_set_app(resources->doca_dpa, dpa_sample_app);
+	result = doca_dpa_set_app(resources->pf_dpa_ctx, dpa_sample_app);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set DOCA DPA app: %s", doca_error_get_descr(result));
 		goto destroy_doca_dpa;
 	}
 
-	/* start doca_dpa context */
-	result = doca_dpa_start(resources->doca_dpa);
+	result = doca_dpa_start(resources->pf_dpa_ctx);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to start DOCA DPA context: %s", doca_error_get_descr(result));
 		goto destroy_doca_dpa;
 	}
 
+#ifdef DOCA_ARCH_DPU
+	if (resources->rdma_doca_device != resources->pf_doca_device) {
+		result = doca_dpa_device_extend(resources->pf_dpa_ctx,
+						resources->rdma_doca_device,
+						&resources->rdma_dpa_ctx);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to extend DOCA DPA context: %s", doca_error_get_descr(result));
+			goto destroy_doca_dpa;
+		}
+
+		result = doca_dpa_get_dpa_handle(resources->rdma_dpa_ctx, &resources->rdma_dpa_ctx_handle);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to get DOCA DPA context handle: %s", doca_error_get_descr(result));
+			goto destroy_rdma_doca_dpa;
+		}
+	} else {
+		resources->rdma_dpa_ctx = resources->pf_dpa_ctx;
+	}
+#else
+	resources->rdma_dpa_ctx = resources->pf_dpa_ctx;
+#endif
+
 	return result;
 
+#ifdef DOCA_ARCH_DPU
+destroy_rdma_doca_dpa:
+	doca_dpa_destroy(resources->rdma_dpa_ctx);
+#endif
 destroy_doca_dpa:
-	doca_dpa_destroy(resources->doca_dpa);
+	doca_dpa_destroy(resources->pf_dpa_ctx);
 close_doca_dev:
-	doca_dev_close(resources->doca_device);
+	doca_dev_close(resources->pf_doca_device);
+#ifdef DOCA_ARCH_DPU
+	doca_dev_close(resources->rdma_doca_device);
+#endif
 exit_label:
 	return result;
 }
@@ -395,15 +516,31 @@ doca_error_t destroy_dpa_resources(struct dpa_resources *resources)
 	doca_error_t result = DOCA_SUCCESS;
 	doca_error_t tmp_result;
 
-	/* destroy doca_dpa context */
-	tmp_result = doca_dpa_destroy(resources->doca_dpa);
+#ifdef DOCA_ARCH_DPU
+	if (resources->rdma_dpa_ctx != resources->pf_dpa_ctx) {
+		tmp_result = doca_dpa_destroy(resources->rdma_dpa_ctx);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_dpa_destroy() failed: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
+#endif
+
+	tmp_result = doca_dpa_destroy(resources->pf_dpa_ctx);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function doca_dpa_destroy() failed: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 
-	/* close doca device */
-	tmp_result = doca_dev_close(resources->doca_device);
+#ifdef DOCA_ARCH_DPU
+	tmp_result = doca_dev_close(resources->rdma_doca_device);
+	if (tmp_result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
+		DOCA_ERROR_PROPAGATE(result, tmp_result);
+	}
+#endif
+
+	tmp_result = doca_dev_close(resources->pf_doca_device);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -474,11 +611,14 @@ doca_error_t dpa_completion_obj_init(struct dpa_completion_obj *dpa_completion_o
 		return doca_err;
 	}
 
-	doca_err = doca_dpa_completion_set_thread(dpa_completion_obj->dpa_comp, dpa_completion_obj->thread);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_dpa_completion_set_thread failed (%s)", doca_error_get_descr(doca_err));
-		dpa_completion_obj_destroy(dpa_completion_obj);
-		return doca_err;
+	if (dpa_completion_obj->thread) {
+		doca_err = doca_dpa_completion_set_thread(dpa_completion_obj->dpa_comp, dpa_completion_obj->thread);
+		if (doca_err != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_dpa_completion_set_thread failed (%s)",
+				     doca_error_get_descr(doca_err));
+			dpa_completion_obj_destroy(dpa_completion_obj);
+			return doca_err;
+		}
 	}
 
 	doca_err = doca_dpa_completion_start(dpa_completion_obj->dpa_comp);
@@ -558,93 +698,11 @@ doca_error_t dpa_notification_completion_obj_destroy(struct dpa_notification_com
 	return ret_err;
 }
 
-doca_error_t dpa_rdma_srq_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj)
-{
-	doca_error_t doca_err = doca_rdma_srq_create(dpa_rdma_srq_obj->doca_device, &(dpa_rdma_srq_obj->rdma_srq));
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_create failed (%s)", doca_error_get_descr(doca_err));
-		return doca_err;
-	}
-
-	dpa_rdma_srq_obj->rdma_srq_as_ctx = doca_rdma_srq_as_ctx(dpa_rdma_srq_obj->rdma_srq);
-
-	doca_err = doca_rdma_srq_set_shared_recv_queue_size(dpa_rdma_srq_obj->rdma_srq, dpa_rdma_srq_obj->srq_size);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_set_shared_recv_queue_size failed (%s)",
-			     doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	doca_err = doca_rdma_srq_task_receive_set_dst_buf_list_len(dpa_rdma_srq_obj->rdma_srq,
-								   dpa_rdma_srq_obj->buf_list_len);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_task_receive_set_dst_buf_list_len failed (%s)",
-			     doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	doca_err = doca_rdma_srq_set_type(dpa_rdma_srq_obj->rdma_srq, dpa_rdma_srq_obj->srq_type);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_set_type failed (%s)", doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	doca_err = doca_ctx_set_datapath_on_dpa(dpa_rdma_srq_obj->rdma_srq_as_ctx, dpa_rdma_srq_obj->doca_dpa);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_ctx_set_datapath_on_dpa failed (%s)", doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	doca_err = doca_ctx_start(dpa_rdma_srq_obj->rdma_srq_as_ctx);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_ctx_start failed (%s)", doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	doca_err = doca_rdma_srq_get_dpa_handle(dpa_rdma_srq_obj->rdma_srq, &(dpa_rdma_srq_obj->dpa_rdma_srq));
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_get_dpa_handle failed (%s)", doca_error_get_descr(doca_err));
-		dpa_rdma_srq_obj_destroy(dpa_rdma_srq_obj);
-		return doca_err;
-	}
-
-	return doca_err;
-}
-
-doca_error_t dpa_rdma_srq_obj_destroy(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj)
-{
-	doca_error_t doca_err = DOCA_SUCCESS, ret_err = DOCA_SUCCESS;
-
-	doca_err = doca_ctx_stop(dpa_rdma_srq_obj->rdma_srq_as_ctx);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_ctx_stop failed (%s)", doca_error_get_descr(doca_err));
-		DOCA_ERROR_PROPAGATE(ret_err, doca_err);
-	}
-
-	doca_err = doca_rdma_srq_destroy(dpa_rdma_srq_obj->rdma_srq);
-	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_rdma_srq_destroy failed (%s)", doca_error_get_descr(doca_err));
-		DOCA_ERROR_PROPAGATE(ret_err, doca_err);
-	}
-
-	return ret_err;
-}
-
-doca_error_t dpa_rdma_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj, struct dpa_rdma_obj *dpa_rdma_obj)
+doca_error_t dpa_rdma_obj_init(struct dpa_rdma_obj *dpa_rdma_obj)
 {
 	doca_error_t doca_err = DOCA_SUCCESS;
 
-	if (dpa_rdma_srq_obj != NULL)
-		doca_err = doca_rdma_create_with_srq(dpa_rdma_obj->doca_device,
-						     dpa_rdma_srq_obj->rdma_srq,
-						     &(dpa_rdma_obj->rdma));
-	else
-		doca_err = doca_rdma_create(dpa_rdma_obj->doca_device, &(dpa_rdma_obj->rdma));
+	doca_err = doca_rdma_create(dpa_rdma_obj->doca_device, &(dpa_rdma_obj->rdma));
 	if (doca_err != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("RDMA create failed (%s)", doca_error_get_descr(doca_err));
 		return doca_err;
@@ -673,9 +731,48 @@ doca_error_t dpa_rdma_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj, struct
 		return doca_err;
 	}
 
-	doca_err = doca_ctx_set_user_data(dpa_rdma_obj->rdma_as_ctx, dpa_rdma_obj->user_data);
+	if (dpa_rdma_obj->recv_queue_size) {
+		doca_err = doca_rdma_set_recv_queue_size(dpa_rdma_obj->rdma, dpa_rdma_obj->recv_queue_size);
+		if (doca_err != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_rdma_set_recv_queue_size failed (%s)\n",
+				     doca_error_get_descr(doca_err));
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
+	}
+
+	if (dpa_rdma_obj->buf_list_len) {
+		doca_err = doca_rdma_task_receive_set_dst_buf_list_len(dpa_rdma_obj->rdma, dpa_rdma_obj->buf_list_len);
+		if (doca_err != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_rdma_task_receive_set_dst_buf_list_len failed (%s)\n",
+				     doca_error_get_descr(doca_err));
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
+	}
+
+	if (dpa_rdma_obj->gid_index) {
+		doca_err = doca_rdma_set_gid_index(dpa_rdma_obj->rdma, dpa_rdma_obj->gid_index);
+		if (doca_err != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_rdma_set_gid_index failed (%s)\n", doca_error_get_descr(doca_err));
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
+	}
+
+	if (dpa_rdma_obj->max_connections_count) {
+		doca_err = doca_rdma_set_max_num_connections(dpa_rdma_obj->rdma, dpa_rdma_obj->max_connections_count);
+		if (doca_err != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Function doca_rdma_set_max_num_connections failed (%s)\n",
+				     doca_error_get_descr(doca_err));
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
+	}
+
+	doca_err = doca_rdma_dpa_completion_attach(dpa_rdma_obj->rdma, dpa_rdma_obj->dpa_comp);
 	if (doca_err != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function doca_ctx_set_user_data failed (%s)", doca_error_get_descr(doca_err));
+		DOCA_LOG_ERR("Function doca_rdma_dpa_completion_attach failed (%s)", doca_error_get_descr(doca_err));
 		dpa_rdma_obj_destroy(dpa_rdma_obj);
 		return doca_err;
 	}
@@ -685,27 +782,48 @@ doca_error_t dpa_rdma_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj, struct
 
 doca_error_t dpa_rdma_obj_start(struct dpa_rdma_obj *dpa_rdma_obj)
 {
-	/* start ctx */
 	doca_error_t doca_err = doca_ctx_start(dpa_rdma_obj->rdma_as_ctx);
 	if (doca_err != DOCA_SUCCESS) {
 		dpa_rdma_obj_destroy(dpa_rdma_obj);
 		return doca_err;
 	}
 
-	/* get dpa rdma handle */
 	doca_err = doca_rdma_get_dpa_handle(dpa_rdma_obj->rdma, &(dpa_rdma_obj->dpa_rdma));
 	if (doca_err != DOCA_SUCCESS) {
 		dpa_rdma_obj_destroy(dpa_rdma_obj);
 		return doca_err;
 	}
 
-	/* export connection details */
 	doca_err = doca_rdma_export(dpa_rdma_obj->rdma,
 				    &(dpa_rdma_obj->connection_details),
-				    &(dpa_rdma_obj->conn_det_len));
+				    &(dpa_rdma_obj->conn_det_len),
+				    &(dpa_rdma_obj->connection));
 	if (doca_err != DOCA_SUCCESS) {
 		dpa_rdma_obj_destroy(dpa_rdma_obj);
 		return doca_err;
+	}
+
+	doca_err = doca_rdma_connection_get_id(dpa_rdma_obj->connection, &(dpa_rdma_obj->connection_id));
+	if (doca_err != DOCA_SUCCESS) {
+		dpa_rdma_obj_destroy(dpa_rdma_obj);
+		return doca_err;
+	}
+
+	if (dpa_rdma_obj->second_connection_needed) {
+		doca_err = doca_rdma_export(dpa_rdma_obj->rdma,
+					    &(dpa_rdma_obj->connection2_details),
+					    &(dpa_rdma_obj->conn2_det_len),
+					    &(dpa_rdma_obj->connection2));
+		if (doca_err != DOCA_SUCCESS) {
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
+
+		doca_err = doca_rdma_connection_get_id(dpa_rdma_obj->connection2, &(dpa_rdma_obj->connection2_id));
+		if (doca_err != DOCA_SUCCESS) {
+			dpa_rdma_obj_destroy(dpa_rdma_obj);
+			return doca_err;
+		}
 	}
 
 	return doca_err;

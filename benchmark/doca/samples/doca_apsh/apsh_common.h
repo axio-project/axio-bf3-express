@@ -29,12 +29,16 @@
 #include <doca_apsh_attr.h>
 #include <doca_dev.h>
 
+#define MAX_PATH_LEN 260
+
 /* Configuration struct */
 struct apsh_config {
 	DOCA_APSH_PROCESS_PID_TYPE pid;			     /* Process Identifier */
 	char system_vuid[DOCA_DEVINFO_VUID_SIZE + 1];	     /* Virtual Unique Identifier */
 	char dma_dev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE + 1]; /* DMA device name */
 	enum doca_apsh_system_os os_type;		     /* System OS type - windows/linux */
+	char system_mem_region_path[MAX_PATH_LEN];	     /* Path to APSH's mem_regions.json file */
+	char system_os_symbol_map_path[MAX_PATH_LEN];	     /* Path to APSH's os_symbols.json file */
 };
 
 /*

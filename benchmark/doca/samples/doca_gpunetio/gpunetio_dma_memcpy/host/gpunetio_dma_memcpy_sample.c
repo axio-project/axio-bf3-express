@@ -24,8 +24,8 @@
  */
 
 #include <unistd.h>
-
-#include <rte_ethdev.h>
+#include <time.h>
+#include <stdbool.h>
 
 #include <doca_log.h>
 #include <doca_buf.h>
@@ -82,26 +82,6 @@ static void memcpy_task_common_callback(struct doca_dma_task_memcpy *dma_task,
 
 	/* Set a flag to notify upon completion of a task */
 	is_task_done = 1;
-}
-
-/*
- * Initialize DPDK
- *
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t init_dpdk(void)
-{
-	int res = 0;
-	/* The --in-memory option allows to run DPDK in non-privileged mode */
-	char *eal_param[4] = {"", "-a", "00:00.0", "--in-memory"};
-
-	res = rte_eal_init(4, eal_param);
-	if (res < 0) {
-		DOCA_LOG_ERR("Failed to init dpdk port: %s", rte_strerror(-res));
-		return DOCA_ERROR_DRIVER;
-	}
-
-	return DOCA_SUCCESS;
 }
 
 /*
@@ -647,12 +627,6 @@ doca_error_t gpunetio_dma_memcpy(struct gpu_dma_config *cfg)
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Function init_doca_device returned %s", doca_error_get_descr(status));
 		return status;
-	}
-
-	status = init_dpdk();
-	if (status != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Function init_dpdk returned %s", doca_error_get_descr(status));
-		goto gpu_dma_cleanup;
 	}
 
 	status = doca_gpu_create(cfg->gpu_pcie_addr, &state_cpu_gpu.gpu_dev);

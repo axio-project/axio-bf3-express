@@ -60,18 +60,35 @@ extern "C" {
 #define SYNC_EVENT_MASK_FFS (0xFFFFFFFFFFFFFFFF)
 
 /**
+ * @brief default RDMA device GID index
+ */
+#define RDMA_DEVICE_DEFAULT_GID_INDEX (1)
+
+/**
+ * @brief default RDMA connection receive buffer length
+ */
+#define RDMA_DEFAULT_BUF_LIST_LEN (1)
+
+/**
  * @brief A struct that includes all the resources needed for DPA
  */
 struct dpa_resources {
-	struct doca_dev *doca_device; /**< DOCA device for DPA */
-	struct doca_dpa *doca_dpa;    /**< DOCA DPA context */
+	struct doca_dev *pf_doca_device;   /**< PF DOCA device */
+	struct doca_dpa *pf_dpa_ctx;	   /**< DOCA DPA context created on PF device */
+	struct doca_dev *rdma_doca_device; /**< When running from DPU: SF DOCA device used to create RDMA context
+						 When running from Host: will be equal to pf_doca_device */
+	struct doca_dpa *rdma_dpa_ctx; /**< When running from DPU: extended DOCA DPA context created on RDMA DOCA device
+					      When running from Host: will be equal to pf_dpa_ctx */
+	doca_dpa_dev_t rdma_dpa_ctx_handle; /**< RDMA DOCA DPA context handle */
 };
 
 /**
  * @brief Configuration struct
  */
 struct dpa_config {
-	char device_name[DOCA_DEVINFO_IBDEV_NAME_SIZE]; /**< Buffer that holds the device name */
+	char pf_device_name[DOCA_DEVINFO_IBDEV_NAME_SIZE];   /**< Buffer that holds the PF device name */
+	char rdma_device_name[DOCA_DEVINFO_IBDEV_NAME_SIZE]; /**< Needed when running from DPU: Buffer that holds the
+								RDMA device name */
 };
 
 /**
@@ -110,29 +127,26 @@ struct dpa_notification_completion_obj {
  * @brief A struct that includes all the resources needed for DPA RDMA
  */
 struct dpa_rdma_obj {
-	struct doca_dev *doca_device;	/**< DOCA device for DPA */
-	struct doca_dpa *doca_dpa;	/**< DOCA DPA context */
-	uint32_t permissions;		/**< RDMA permissions */
-	union doca_data user_data;	/**< RDMA user data */
-	struct doca_rdma *rdma;		/**< Created RDMA */
-	struct doca_ctx *rdma_as_ctx;	/**< Created RDMA context */
-	doca_dpa_dev_rdma_t dpa_rdma;	/**< Created RDMA DPA device handle */
-	const void *connection_details; /**< Created RDMA connection details from export */
-	size_t conn_det_len;		/**< Created RDMA connection details length from export */
-};
-
-/**
- * @brief A struct that includes all the resources needed for DPA SRQ
- */
-struct dpa_rdma_srq_obj {
-	struct doca_dev *doca_device;	      /**< DOCA device for DPA */
-	struct doca_dpa *doca_dpa;	      /**< DOCA DPA context */
-	uint32_t srq_size;		      /**< SRQ queue size */
-	uint32_t buf_list_len;		      /**< SRQ buffer list length */
-	enum doca_rdma_srq_type srq_type;     /**< SRQ type */
-	struct doca_rdma_srq *rdma_srq;	      /**< Created SRQ */
-	struct doca_ctx *rdma_srq_as_ctx;     /**< Created SRQ context */
-	doca_dpa_dev_rdma_srq_t dpa_rdma_srq; /**< Created SRQ DPA device handle */
+	struct doca_dev *doca_device;		  /**< DOCA device */
+	struct doca_dpa *doca_dpa;		  /**< DOCA DPA context */
+	uint32_t permissions;			  /**< RDMA permissions */
+	uint32_t buf_list_len;			  /**< RDMA buffer list length */
+	uint32_t recv_queue_size;		  /**< RDMA receive queue size */
+	uint32_t max_connections_count;		  /**< RDMA max connections count */
+	uint32_t gid_index;			  /**< RDMA GID index */
+	struct doca_dpa_completion *dpa_comp;	  /**< Attached DOCA DPA completion context */
+	struct doca_rdma *rdma;			  /**< Created RDMA */
+	struct doca_ctx *rdma_as_ctx;		  /**< Created RDMA context */
+	doca_dpa_dev_rdma_t dpa_rdma;		  /**< Created RDMA DPA device handle */
+	const void *connection_details;		  /**< Created RDMA connection details from export */
+	size_t conn_det_len;			  /**< Created RDMA connection details length from export */
+	struct doca_rdma_connection *connection;  /**< RDMA Connection */
+	uint32_t connection_id;			  /**< RDMA Connection ID to be used in datapath */
+	bool second_connection_needed;		  /**< Whether second connection is needed */
+	const void *connection2_details;	  /**< Created RDMA connection details from second export */
+	size_t conn2_det_len;			  /**< Created RDMA connection details length from second export */
+	struct doca_rdma_connection *connection2; /**< Second RDMA Connection */
+	uint32_t connection2_id;		  /**<  Second RDMA Connection ID to be used in datapath */
 };
 
 /**
@@ -148,7 +162,7 @@ enum mmap_type {
  */
 struct doca_mmap_obj {
 	enum mmap_type mmap_type;	     /**< Mmap type */
-	struct doca_dev *doca_device;	     /**< DOCA device for DPA */
+	struct doca_dev *doca_device;	     /**< DOCA device */
 	struct doca_dpa *doca_dpa;	     /**< DOCA DPA context */
 	uint32_t permissions;		     /**< Mmap permissions */
 	void *memrange_addr;		     /**< Mmap address */
@@ -293,34 +307,16 @@ doca_error_t dpa_notification_completion_obj_destroy(
 	struct dpa_notification_completion_obj *notification_completion_obj);
 
 /**
- * @brief Initialize DPA RDMA SRQ
- *
- * @dpa_rdma_srq_obj [in/out]: DPA RDMA SRQ object
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-doca_error_t dpa_rdma_srq_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj);
-
-/**
- * @brief Destroy DPA RDMA SRQ
- *
- * @dpa_rdma_srq_obj [in]: DPA RDMA SRQ object
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-doca_error_t dpa_rdma_srq_obj_destroy(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj);
-
-/**
  * @brief Initialize DPA RDMA without starting it
  *
  * This function creates DPA RDMA object.
- * This function attaches RDMA to SRQ in case of DPA RDMA SRQ is provided.
  * Please note that this function doesn't start the created DPA RDMA object, this need to be done
  * using dpa_rdma_obj_start() API
  *
- * @dpa_rdma_srq_obj [in]: DPA RDMA SRQ object
  * @dpa_rdma_obj [in/out]: DPA RDMA object
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t dpa_rdma_obj_init(struct dpa_rdma_srq_obj *dpa_rdma_srq_obj, struct dpa_rdma_obj *dpa_rdma_obj);
+doca_error_t dpa_rdma_obj_init(struct dpa_rdma_obj *dpa_rdma_obj);
 
 /**
  * @brief Start DPA RDMA

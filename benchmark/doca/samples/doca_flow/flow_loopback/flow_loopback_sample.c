@@ -32,6 +32,7 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "flow_common.h"
 
@@ -142,9 +143,10 @@ static doca_error_t create_rss_tcp_ip_pipe(struct doca_flow_port *port,
 	/* RSS queue - send matched traffic to queue 0 */
 	rss_queues[0] = 0;
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP;
-	fwd.num_of_queues = 1;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP;
+	fwd.rss.nr_queues = 1;
 
 	/* In case of a miss, forward the packet to the next pipe */
 	fwd_miss.type = DOCA_FLOW_FWD_PIPE;
@@ -251,9 +253,10 @@ static doca_error_t create_rss_udp_ip_pipe(struct doca_flow_port *port, struct d
 	/* RSS queue - send matched traffic to queue 0 */
 	rss_queues[0] = 0;
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_UDP;
-	fwd.num_of_queues = 1;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_UDP;
+	fwd.rss.nr_queues = 1;
 
 	/* In case of a miss match, drop the packet */
 	fwd_miss.type = DOCA_FLOW_FWD_DROP;
@@ -286,7 +289,7 @@ static doca_error_t add_rss_rss_udp_ip_pipe_entry(struct doca_flow_pipe *pipe, s
 	match.outer.ip4.src_ip = BE_IPV4_ADDR(11, 21, 31, 41);
 
 	/* set meta value */
-	actions.meta.pkt_meta = 10;
+	actions.meta.pkt_meta = DOCA_HTOBE32(10);
 
 	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, NULL, NULL, 0, status, &entry);
 	if (result != DOCA_SUCCESS)
@@ -409,7 +412,7 @@ static doca_error_t add_loopback_pipe_entry(struct doca_flow_pipe *pipe,
 	doca_be32_t encap_dst_ip_addr = BE_IPV4_ADDR(81, 81, 81, 81);
 	doca_be32_t encap_src_ip_addr = BE_IPV4_ADDR(11, 21, 31, 41);
 	uint8_t encap_ttl = 17;
-	doca_be32_t encap_vxlan_tun_id = BUILD_VNI(0xadadad);
+	doca_be32_t encap_vxlan_tun_id = DOCA_HTOBE32(0xadadad);
 	uint8_t src_mac[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 
 	doca_be32_t dst_ip_addr = BE_IPV4_ADDR(8, 8, 8, 8);
@@ -453,6 +456,43 @@ static doca_error_t add_loopback_pipe_entry(struct doca_flow_pipe *pipe,
 	return DOCA_SUCCESS;
 }
 
+static int populate_macs(const int nb_ports, uint8_t mac_addresses[2][6])
+{
+	struct doca_devinfo **list = NULL;
+	uint32_t list_size = 0;
+	int port_id;
+	int i, j;
+	int ret;
+
+	for (i = 0; i < 2; i++)
+		for (j = 0; j < 6; j++)
+			if (mac_addresses[i][j])
+				return 0;
+
+	ret = doca_devinfo_create_list(&list, &list_size);
+	if (ret != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create devinfo list");
+		return ret;
+	}
+
+	if ((const int)list_size < nb_ports) {
+		DOCA_LOG_ERR("Failed to create devinfo list");
+		goto out;
+	}
+
+	for (port_id = 0; port_id < nb_ports; port_id++) {
+		ret = doca_devinfo_get_mac_addr(list[port_id], mac_addresses[port_id], 6);
+		if (ret != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to get mac address");
+			goto out;
+		}
+	}
+
+out:
+	doca_devinfo_destroy_list(list);
+	return ret;
+}
+
 /*
  * Run flow_loopback sample
  *
@@ -467,11 +507,16 @@ doca_error_t flow_loopback(int nb_queues, uint8_t mac_addresses[2][6])
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe, *miss_pipe;
 	struct entries_status status;
 	int num_of_entries = 3;
 	doca_error_t result;
 	int port_id;
+
+	result = populate_macs(nb_ports, mac_addresses);
+	if (result)
+		return result;
 
 	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
@@ -480,7 +525,8 @@ doca_error_t flow_loopback(int nb_queues, uint8_t mac_addresses[2][6])
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

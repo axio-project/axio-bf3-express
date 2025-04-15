@@ -28,8 +28,6 @@
 #include <unistd.h>
 #include <string.h>
 
-#include <rte_ethdev.h>
-
 #include <doca_log.h>
 #include <doca_error.h>
 #include <doca_argp.h>
@@ -39,6 +37,111 @@
 #include "common.h"
 
 DOCA_LOG_REGISTER(GPURDMA::COMMON);
+
+/*
+ * RDMA CM connect_request callback
+ *
+ * @connection [in]: RDMA Connection
+ * @ctx_user_data [in]: Context user data
+ */
+void rdma_cm_connect_request_cb(struct doca_rdma_connection *connection, union doca_data ctx_user_data)
+{
+	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
+	doca_error_t result;
+	union doca_data connection_user_data;
+
+	result = doca_rdma_connection_accept(connection, NULL, 0);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to accept rdma cm connection: %s", doca_error_get_descr(result));
+		(void)doca_ctx_stop(resource->rdma_ctx);
+		return;
+	}
+
+	connection_user_data.ptr = ctx_user_data.ptr;
+	result = doca_rdma_connection_set_user_data(connection, connection_user_data);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set server connection user data: %s", doca_error_get_descr(result));
+		(void)doca_ctx_stop(resource->rdma_ctx);
+	}
+}
+
+/*
+ * RDMA CM connect_established callback
+ *
+ * @connection [in]: RDMA Connection
+ * @connection_user_data [in]: Connection user data
+ * @ctx_user_data [in]: Context user data
+ */
+void rdma_cm_connect_established_cb(struct doca_rdma_connection *connection,
+				    union doca_data connection_user_data,
+				    union doca_data ctx_user_data)
+{
+	(void)connection_user_data;
+	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
+	static int is_first_connection_established = 0;
+
+	if (is_first_connection_established == 0) {
+		resource->connection = connection;
+		resource->connection_established = true;
+	} else {
+		resource->connection2 = connection;
+		resource->connection2_established = true;
+	}
+
+	is_first_connection_established = 1;
+}
+
+/*
+ * RDMA CM connect_failure callback
+ *
+ * @connection [in]: RDMA Connection
+ * @connection_user_data [in]: Connection user data
+ * @ctx_user_data [in]: Context user data
+ */
+void rdma_cm_connect_failure_cb(struct doca_rdma_connection *connection,
+				union doca_data connection_user_data,
+				union doca_data ctx_user_data)
+{
+	(void)connection;
+	(void)connection_user_data;
+	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
+	static int is_first_connection_failure = 0;
+
+	if (is_first_connection_failure == 0) {
+		resource->connection_established = false;
+		resource->connection_error = true;
+	} else {
+		resource->connection2_established = false;
+		resource->connection2_error = true;
+	}
+
+	is_first_connection_failure = 1;
+}
+
+/*
+ * RDMA CM disconnect callback
+ *
+ * @connection [in]: RDMA Connection
+ * @connection_user_data [in]: Connection user data
+ * @ctx_user_data [in]: Context user data
+ */
+void rdma_cm_disconnect_cb(struct doca_rdma_connection *connection,
+			   union doca_data connection_user_data,
+			   union doca_data ctx_user_data)
+{
+	(void)connection_user_data;
+	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
+	doca_error_t result;
+
+	result = doca_rdma_connection_disconnect(connection);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to disconnect rdma cm connection: %s", doca_error_get_descr(result));
+		(void)doca_ctx_stop(resource->rdma_ctx);
+		return;
+	}
+
+	resource->connection_established = false;
+}
 
 /*
  * OOB connection to exchange RDMA info - server side
@@ -61,7 +164,7 @@ int oob_connection_server_setup(int *oob_sock_fd, int *oob_client_sock)
 		DOCA_LOG_ERR("Error while creating socket %d", oob_sock_fd_);
 		return -1;
 	}
-	DOCA_LOG_ERR("Socket created successfully");
+	DOCA_LOG_INFO("Socket created successfully");
 
 	if (setsockopt(oob_sock_fd_, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable))) {
 		DOCA_LOG_ERR("Error setting socket options");
@@ -197,10 +300,8 @@ doca_error_t create_rdma_resources(struct rdma_config *cfg,
 				   const uint32_t rdma_permissions,
 				   struct rdma_resources *resources)
 {
+	union doca_data ctx_user_data = {0};
 	doca_error_t result, tmp_result;
-	int ret;
-	/* The --in-memory option allows to run DPDK in non-privileged mode */
-	char *eal_param[4] = {"", "-a", "00:00.0", "--in-memory"};
 
 	resources->cfg = cfg;
 
@@ -214,20 +315,11 @@ doca_error_t create_rdma_resources(struct rdma_config *cfg,
 		return result;
 	}
 
-	ret = rte_eal_init(4, eal_param);
-	if (ret < 0) {
-		DOCA_LOG_ERR("DPDK init failed: %d", ret);
-		return DOCA_ERROR_DRIVER;
-	}
-
-	if (strcmp(cfg->gpu_pcie_addr, "")) {
-		result = doca_gpu_create(cfg->gpu_pcie_addr, &(resources->gpudev));
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Function doca_gpu_create returned %s", doca_error_get_descr(result));
-			goto close_doca_dev;
-		}
-	} else {
-		resources->gpudev = NULL;
+	/* Create DOCA GPU */
+	result = doca_gpu_create(cfg->gpu_pcie_addr, &(resources->gpudev));
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create DOCA GPU: %s", doca_error_get_descr(result));
+		goto close_doca_dev;
 	}
 
 	/* Create DOCA RDMA instance */
@@ -262,46 +354,71 @@ doca_error_t create_rdma_resources(struct rdma_config *cfg,
 		}
 	}
 
+	/* Set send queue size to DOCA RDMA */
 	result = doca_rdma_set_send_queue_size(resources->rdma, RDMA_SEND_QUEUE_SIZE);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_rdma_set_send_queue_size on GPU: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to set send queue size to DOCA RDMA: %s", doca_error_get_descr(result));
 		goto destroy_doca_rdma;
 	}
 
-	/* setup datapath of rdma ctx on gpu */
-	if (resources->gpudev) {
-		result = doca_ctx_set_datapath_on_gpu(resources->rdma_ctx, resources->gpudev);
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to set datapath on GPU: %s", doca_error_get_descr(result));
-			goto destroy_doca_rdma;
-		}
+	/* Setup datapath of RDMA CTX on GPU */
+	result = doca_ctx_set_datapath_on_gpu(resources->rdma_ctx, resources->gpudev);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set datapath on GPU: %s", doca_error_get_descr(result));
+		goto destroy_doca_rdma;
+	}
 
-		resources->pe = NULL;
+	/* Set receive queue size to DOCA RDMA */
+	result = doca_rdma_set_recv_queue_size(resources->rdma, RDMA_RECV_QUEUE_SIZE);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set receive queue size to DOCA RDMA: %s", doca_error_get_descr(result));
+		goto destroy_doca_rdma;
+	}
 
-		result = doca_rdma_set_recv_queue_size(resources->rdma, RDMA_RECV_QUEUE_SIZE);
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to set doca_rdma_set_recv_queue_size on GPU: %s",
-				     doca_error_get_descr(result));
-			goto destroy_doca_rdma;
-		}
-	} else {
-		/* If datapath is not on GPU, DOCA imposes the creation of a PE */
+	/* Set GRH to DOCA RDMA */
+	result = doca_rdma_set_grh_enabled(resources->rdma, true);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set GRH to DOCA RDMA: %s", doca_error_get_descr(result));
+		goto destroy_doca_rdma;
+	}
+
+	if (cfg->use_rdma_cm) {
+		/* Set PE */
 		result = doca_pe_create(&(resources->pe));
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to set permissions to DOCA RDMA: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Failed to create DOCA progress engine: %s", doca_error_get_descr(result));
 			goto destroy_doca_rdma;
 		}
 
 		result = doca_pe_connect_ctx(resources->pe, resources->rdma_ctx);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Unable to set progress engine for RDMA: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Failed to connect progress engine to context: %s", doca_error_get_descr(result));
+			goto destroy_doca_rdma;
+		}
+
+		result = doca_rdma_set_max_num_connections(resources->rdma, 2);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed doca_rdma_set_max_num_connections: %s", doca_error_get_descr(result));
+			goto destroy_doca_rdma;
+		}
+
+		/* Set rdma cm connection configuration callbacks */
+		result = doca_rdma_set_connection_state_callbacks(resources->rdma,
+								  rdma_cm_connect_request_cb,
+								  rdma_cm_connect_established_cb,
+								  rdma_cm_connect_failure_cb,
+								  rdma_cm_disconnect_cb);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to set CM callbacks: %s", doca_error_get_descr(result));
 			goto destroy_doca_rdma;
 		}
 	}
 
-	result = doca_rdma_set_grh_enabled(resources->rdma, true);
+	/* Include the program's resources in user data of context to be used in callbacks */
+	ctx_user_data.ptr = resources;
+	result = doca_ctx_set_user_data(resources->rdma_ctx, ctx_user_data);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Unable to set ghr for RDMA: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to set context user data: %s", doca_error_get_descr(result));
 		goto destroy_doca_rdma;
 	}
 
@@ -323,10 +440,8 @@ destroy_doca_rdma:
 	if (resources->pe) {
 		/* Destroy DOCA progress engine */
 		tmp_result = doca_pe_destroy(resources->pe);
-		if (tmp_result != DOCA_SUCCESS) {
+		if (tmp_result != DOCA_SUCCESS)
 			DOCA_LOG_ERR("Failed to destroy DOCA progress engine: %s", doca_error_get_descr(tmp_result));
-			DOCA_ERROR_PROPAGATE(result, tmp_result);
-		}
 	}
 
 destroy_doca_gpu:
@@ -354,33 +469,92 @@ close_doca_dev:
  */
 doca_error_t destroy_rdma_resources(struct rdma_resources *resources)
 {
-	doca_error_t result;
+	doca_error_t result = DOCA_SUCCESS, tmp_result;
 
-	result = doca_ctx_stop(resources->rdma_ctx);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to stop RDMA context: %s", doca_error_get_descr(result));
+	/* Destroy CM objects */
+	if (resources->cfg->use_rdma_cm) {
+		if (resources->connection) {
+			tmp_result = doca_rdma_connection_disconnect(resources->connection);
+			if (tmp_result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to disconnect RDMA connection: %s",
+					     doca_error_get_descr(tmp_result));
+				DOCA_ERROR_PROPAGATE(result, tmp_result);
+			}
+		}
+
+		if (resources->connection2) {
+			tmp_result = doca_rdma_connection_disconnect(resources->connection2);
+			if (tmp_result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to disconnect RDMA connection: %s",
+					     doca_error_get_descr(tmp_result));
+				DOCA_ERROR_PROPAGATE(result, tmp_result);
+			}
+		}
+
+		if (resources->cfg->is_server) {
+			if (resources->server_listen_active) {
+				tmp_result = doca_rdma_stop_listen_to_port(resources->rdma, resources->cfg->cm_port);
+				if (tmp_result != DOCA_SUCCESS) {
+					DOCA_LOG_ERR("Failed to stop listen to port: %s",
+						     doca_error_get_descr(tmp_result));
+					DOCA_ERROR_PROPAGATE(result, tmp_result);
+				}
+			}
+		} else { /* Case of Client */
+			if (resources->cm_addr) {
+				tmp_result = doca_rdma_addr_destroy(resources->cm_addr);
+				if (tmp_result != DOCA_SUCCESS) {
+					DOCA_LOG_ERR("Failed to destroy CM address: %s",
+						     doca_error_get_descr(tmp_result));
+					DOCA_ERROR_PROPAGATE(result, tmp_result);
+				}
+			}
+		}
+	}
+
+	/* Stop DOCA context */
+	if (resources->rdma_ctx) {
+		tmp_result = doca_ctx_stop(resources->rdma_ctx);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to stop RDMA context: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
 
 	/* Destroy DOCA RDMA */
-	result = doca_rdma_destroy(resources->rdma);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to destroy DOCA RDMA: %s", doca_error_get_descr(result));
+	if (resources->rdma) {
+		tmp_result = doca_rdma_destroy(resources->rdma);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA RDMA: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
 
 	/* Destroy DOCA progress engine */
 	if (resources->pe) {
-		result = doca_pe_destroy(resources->pe);
-		if (result != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Failed to destroy DOCA progress engine: %s", doca_error_get_descr(result));
+		tmp_result = doca_pe_destroy(resources->pe);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA progress engine: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
 	}
 
 	/* Close DOCA device */
-	result = doca_dev_close(resources->doca_device);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(result));
+	if (resources->doca_device) {
+		tmp_result = doca_dev_close(resources->doca_device);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
 
+	/* Destroy DOCA GPU */
 	if (resources->gpudev) {
-		result = doca_gpu_destroy(resources->gpudev);
-		if (result != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(result));
+		tmp_result = doca_gpu_destroy(resources->gpudev);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA GPU: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
 	}
 
 	return result;

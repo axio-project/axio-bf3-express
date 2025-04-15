@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright (c) 2022-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+# Copyright (c) 2022-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -37,7 +37,8 @@ set -e
 
 DOCA_BUILD_DIR=$1
 DPA_KERNELS_DEVICE_SRC=$2
-
+DPACC_MCPU_FLAG=$3
+DOCA_LIB_DIR=$4
 
 # DOCA Configurations
 DOCA_DIR="/opt/mellanox/doca"
@@ -52,8 +53,8 @@ DOCA_DPACC="${DOCA_TOOLS}/dpacc"
 DPA_APP_NAME="dpa_all2all_app"
 
 # DPA Configurations
-HOST_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra"
-DEVICE_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra"
+HOST_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra -DFLEXIO_ALLOW_EXPERIMENTAL_API"
+DEVICE_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra -DFLEXIO_DEV_ALLOW_EXPERIMENTAL_API"
 
 ##################
 ## Script Start ##
@@ -68,10 +69,11 @@ mkdir -p $APPLICATION_DEVICE_BUILD_DIR
 # Compile the DPA (kernel) device source code using the DPACC
 $DOCA_DPACC $DPA_KERNELS_DEVICE_SRC \
 	-o ${APPLICATION_DEVICE_BUILD_DIR}/dpa_all_to_all_program.a \
+	-mcpu=${DPACC_MCPU_FLAG} \
 	-hostcc=gcc \
 	-hostcc-options="${HOST_CC_FLAGS}" \
 	--devicecc-options="${DEVICE_CC_FLAGS}" \
-	-device-libs="-L${DOCA_INCLUDE} -ldoca_dpa_dev_comm" \
-	-ldpa \
+	-device-libs="-L${DOCA_LIB_DIR} -ldoca_dpa_dev -ldoca_dpa_dev_comm" \
 	--app-name="${DPA_APP_NAME}" \
 	-flto \
+	-I${DOCA_INCLUDE} \

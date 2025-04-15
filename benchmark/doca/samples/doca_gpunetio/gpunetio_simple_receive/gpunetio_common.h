@@ -72,6 +72,7 @@ struct rxq_queue {
 	struct doca_gpu_eth_rxq *eth_rxq_gpu;	     /* DOCA Ethernet send queue GPU handler */
 	struct doca_mmap *pkt_buff_mmap;	     /* DOCA mmap to receive packet with DOCA Ethernet queue */
 	void *gpu_pkt_addr;			     /* DOCA mmap GPU memory address */
+	int dmabuf_fd;				     /* GPU memory dmabuf descriptor */
 	struct doca_flow_port *port;		     /* DOCA Flow port */
 	struct doca_flow_pipe *rxq_pipe;	     /* DOCA Flow receive pipe */
 	struct doca_flow_pipe *root_pipe;	     /* DOCA Flow root pipe */

@@ -72,7 +72,8 @@ static void task_recv_common_cb(struct doca_eth_rxq_task_recv *task_recv,
 	doca_error_t status, task_status;
 	struct doca_buf *pkt;
 	size_t packet_size;
-	uint32_t *inflight_tasks;
+	uint32_t *inflight_tasks, flow_tag, rx_hash;
+	const uint32_t *metadata_array;
 
 	inflight_tasks = ctx_user_data.ptr;
 	(*inflight_tasks)--;
@@ -90,6 +91,24 @@ static void task_recv_common_cb(struct doca_eth_rxq_task_recv *task_recv,
 	if (task_status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to receive a packet, err: %s", doca_error_get_name(task_status));
 	} else {
+		status = doca_eth_rxq_task_recv_get_metadata_array(task_recv, &metadata_array);
+		if (status != DOCA_SUCCESS)
+			DOCA_LOG_ERR("Failed to get metadata_array, err: %s", doca_error_get_name(status));
+		else
+			DOCA_LOG_INFO("Received a packet with metadata %u", metadata_array[0]);
+
+		status = doca_eth_rxq_task_recv_get_flow_tag(task_recv, &flow_tag);
+		if (status != DOCA_SUCCESS)
+			DOCA_LOG_ERR("Failed to get flow_tag, err: %s", doca_error_get_name(status));
+		else
+			DOCA_LOG_INFO("Received a packet with flow_tag %u", flow_tag);
+
+		status = doca_eth_rxq_task_recv_get_rx_hash(task_recv, &rx_hash);
+		if (status != DOCA_SUCCESS)
+			DOCA_LOG_ERR("Failed to get rx_hash, err: %s", doca_error_get_name(status));
+		else
+			DOCA_LOG_INFO("Received a packet with rx_hash %u", rx_hash);
+
 		status = doca_buf_get_data_len(pkt, &packet_size);
 		if (status != DOCA_SUCCESS)
 			DOCA_LOG_ERR("Failed to get receive packet size, err: %s", doca_error_get_name(status));
@@ -225,6 +244,24 @@ static doca_error_t create_eth_rxq_ctx(struct eth_rxq_sample_objects *state)
 	status = doca_eth_rxq_task_recv_set_conf(state->eth_rxq, task_recv_common_cb, task_recv_common_cb, TASKS_NUM);
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set receive task configuration, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_metadata_num(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable metadata, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_flow_tag(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable flow_tag, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_rx_hash(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable rx_hash, err: %s", doca_error_get_name(status));
 		goto destroy_eth_rxq;
 	}
 
@@ -436,7 +473,7 @@ doca_error_t eth_rxq_regular_receive(const char *ib_dev_name)
 				      .inventory_num_elements = BUFS_NUM,
 				      .check_device = check_device,
 				      .ibdev_name = ib_dev_name};
-	struct eth_rxq_flow_config flow_cfg = {.rxq_flow_queue_id = 0};
+	struct eth_rxq_flow_config flow_cfg = {};
 
 	memset(&state, 0, sizeof(state));
 
@@ -460,7 +497,8 @@ doca_error_t eth_rxq_regular_receive(const char *ib_dev_name)
 		goto rxq_cleanup;
 	}
 
-	flow_cfg.rxq_flow_queue_id = state.rxq_flow_queue_id;
+	flow_cfg.rxq_flow_queue_ids = &(state.rxq_flow_queue_id);
+	flow_cfg.nb_queues = 1;
 
 	status = allocate_eth_rxq_flow_resources(&flow_cfg, &(state.flow_resources));
 	if (status != DOCA_SUCCESS) {

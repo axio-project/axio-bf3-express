@@ -65,11 +65,11 @@ doca_error_t add_decrypt_entry(struct decrypt_rule *rule,
 /*
  * Create decrypt pipe and entries according to the parsed rules
  *
- * @port [in]: secured network port pointer
+ * @ports [in]: array of struct ipsec_security_gw_ports_map
  * @app_cfg [in]: application configuration structure
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t ipsec_security_gw_insert_decrypt_rules(struct ipsec_security_gw_ports_map *port,
+doca_error_t ipsec_security_gw_insert_decrypt_rules(struct ipsec_security_gw_ports_map *ports[],
 						    struct ipsec_security_gw_config *app_cfg);
 
 /*

@@ -27,6 +27,7 @@
 #define FLOW_COMMON_H_
 
 #include <rte_byteorder.h>
+#include <rte_common.h>
 
 #include <doca_flow.h>
 #include <doca_dev.h>
@@ -52,6 +53,31 @@
 #define DEFAULT_TIMEOUT_US (10000)				    /* default timeout for processing entries */
 #define NB_ACTIONS_ARR (1)					    /* default length for action array */
 #define SHARED_RESOURCE_NUM_VALUES (8) /* Number of doca_flow_shared_resource_type values */
+
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+#define MIN_ACTIONS_MEM_SIZE_PER_QUEUE (64) /* Minimal actions memory size required per queue */
+#define ACTIONS_MEM_SIZE(nr_queues, entries) \
+	rte_align32pow2(MAX((uint32_t)(entries * DOCA_FLOW_MAX_ENTRY_ACTIONS_MEM_SIZE), \
+			    (uint32_t)(nr_queues * MIN_ACTIONS_MEM_SIZE_PER_QUEUE))) /* Total actions memory size */
+#define ARRAY_DIM(a) (sizeof(a) / sizeof((a)[0]))
+#define ARRAY_INIT(array, val) \
+	do { \
+		for (size_t i = 0; i < ARRAY_DIM(array); i++) { \
+			array[i] = val; \
+		} \
+	} while (0)
+#define DEFS_REG_OPCODE(opcode_str, ___sname, ___field) \
+	do { \
+		int rc; \
+		int __off = offsetof(struct ___sname, ___field); \
+		int __sz = sizeof(((struct ___sname *)0)->___field); \
+\
+		rc = doca_flow_definitions_add_field(defs, opcode_str, __off, __sz); \
+		if (rc < 0) \
+			return rc; \
+	} while (0)
 
 /* user context struct that will be used in entries process callback */
 struct entries_status {
@@ -80,6 +106,22 @@ doca_error_t init_doca_flow(int nb_queues,
 			    uint32_t nr_shared_resources[]);
 
 /*
+ * Initialize DOCA Flow library with defs
+ *
+ * @nb_queues [in]: number of queues the sample will use
+ * @mode [in]: doca flow architecture mode
+ * @resource [in]: number of meters and counters to configure
+ * @nr_shared_resources [in]: total shared resource per type
+ * @defs: doca flow configured definitions to be set
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
+ */
+doca_error_t init_doca_flow_with_defs(int nb_queues,
+				      const char *mode,
+				      struct flow_resources *resource,
+				      uint32_t nr_shared_resources[],
+				      struct doca_flow_definitions *defs);
+
+/*
  * Initialize DOCA Flow library with callback
  *
  * @nb_queues [in]: number of queues the sample will use
@@ -95,7 +137,8 @@ doca_error_t init_doca_flow_cb(int nb_queues,
 			       struct flow_resources *resource,
 			       uint32_t nr_shared_resources[],
 			       doca_flow_entry_process_cb cb,
-			       doca_flow_pipe_process_cb pipe_process_cb);
+			       doca_flow_pipe_process_cb pipe_process_cb,
+			       struct doca_flow_definitions *defs);
 
 /*
  * Initialize DOCA Flow ports
@@ -104,12 +147,14 @@ doca_error_t init_doca_flow_cb(int nb_queues,
  * @ports [in]: array of ports to create
  * @is_hairpin [in]: port pair should run if is_hairpin = true
  * @dev_arr [in]: doca device array for each port
+ * @actions_mem_size[in]: array of actions memory size
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
 doca_error_t init_doca_flow_ports(int nb_ports,
 				  struct doca_flow_port *ports[],
 				  bool is_hairpin,
-				  struct doca_dev *dev_arr[]);
+				  struct doca_dev *dev_arr[],
+				  uint32_t actions_mem_size[]);
 
 /*
  * Initialize DOCA Flow ports with operation state
@@ -119,13 +164,15 @@ doca_error_t init_doca_flow_ports(int nb_ports,
  * @is_hairpin [in]: port pair should run if is_hairpin = true
  * @dev_arr [in]: doca device array for each port
  * @states [in]: operation states array for each port
+ * @actions_mem_size[in]: actions memory size
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
 doca_error_t init_doca_flow_ports_with_op_state(int nb_ports,
 						struct doca_flow_port *ports[],
 						bool is_hairpin,
 						struct doca_dev *dev_arr[],
-						enum doca_flow_port_operation_state *states);
+						enum doca_flow_port_operation_state *states,
+						uint32_t actions_mem_size[]);
 
 /*
  * Stop DOCA Flow ports

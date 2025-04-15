@@ -24,6 +24,7 @@
  */
 
 #include <doca_log.h>
+#include <doca_bitfield.h>
 
 #include <dpdk_utils.h>
 
@@ -96,7 +97,7 @@ doca_error_t flow_ct_register_params(void)
 		return result;
 	}
 	doca_argp_param_set_short_name(dev_pci_addr_param, "p");
-	doca_argp_param_set_long_name(dev_pci_addr_param, "pci-addr");
+	doca_argp_param_set_long_name(dev_pci_addr_param, "pci");
 	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Flow CT device PCI address");
 	doca_argp_param_set_callback(dev_pci_addr_param, pci_addr_callback);
 	doca_argp_param_set_type(dev_pci_addr_param, DOCA_ARGP_TYPE_STRING);
@@ -115,7 +116,7 @@ doca_error_t init_doca_flow_ct(uint32_t flags,
 			       uint32_t nb_arm_queues,
 			       uint32_t nb_ctrl_queues,
 			       uint32_t nb_user_actions,
-			       doca_flow_ct_flow_log_cb flow_log_cb,
+			       doca_flow_ct_entry_finalize_cb entry_finalize_cb,
 			       uint32_t nb_ipv4_sessions,
 			       uint32_t nb_ipv6_sessions,
 			       uint32_t dup_filter_sz,
@@ -145,7 +146,7 @@ doca_error_t init_doca_flow_ct(uint32_t flags,
 	ct_cfg.nb_ctrl_queues = nb_ctrl_queues;
 	ct_cfg.nb_user_actions = nb_user_actions;
 	ct_cfg.aging_core = nb_arm_queues + 1;
-	ct_cfg.flow_log_cb = flow_log_cb;
+	ct_cfg.entry_finalize_cb = entry_finalize_cb;
 	ct_cfg.nb_arm_sessions[DOCA_FLOW_CT_SESSION_IPV4] = nb_ipv4_sessions;
 	ct_cfg.nb_arm_sessions[DOCA_FLOW_CT_SESSION_IPV6] = nb_ipv6_sessions;
 	ct_cfg.dup_filter_sz = dup_filter_sz;
@@ -182,13 +183,13 @@ doca_error_t flow_ct_capable(struct doca_devinfo *dev_info)
 	return doca_flow_ct_cap_is_dev_supported(dev_info);
 }
 
-uint32_t flow_ct_hash_6tuple(const struct doca_flow_ct_match *match, bool is_ipv6, bool is_reply)
+uint32_t flow_ct_hash_6tuple(const struct doca_flow_ct_match *match, doca_be32_t zone_field, bool is_ipv6)
 {
 	uint32_t hash = FNV1A_32_OFFSET;
 	uint32_t zone;
 
 	if (is_ipv6) {
-		zone = doca_flow_ct_meta_get_match_zone(match->ipv6.metadata, is_reply);
+		zone = DOCA_BE32_GET(match->ipv6.metadata, zone_field);
 		hash = fnv1a_32bit_hash(match->ipv6.src_ip, 4, hash);
 		hash = fnv1a_32bit_hash(match->ipv6.dst_ip, 4, hash);
 		hash = fnv1a_32bit_hash(&match->ipv6.l4_port.dst_port, 1, hash);
@@ -196,7 +197,7 @@ uint32_t flow_ct_hash_6tuple(const struct doca_flow_ct_match *match, bool is_ipv
 		hash = fnv1a_32bit_hash(&match->ipv6.next_proto, 1, hash);
 		hash = fnv1a_32bit_hash(&zone, 1, hash);
 	} else {
-		zone = doca_flow_ct_meta_get_match_zone(match->ipv4.metadata, is_reply);
+		zone = DOCA_BE32_GET(match->ipv4.metadata, zone_field);
 		hash = fnv1a_32bit_hash(&match->ipv4.src_ip, 1, hash);
 		hash = fnv1a_32bit_hash(&match->ipv4.dst_ip, 1, hash);
 		hash = fnv1a_32bit_hash(&match->ipv4.l4_port.dst_port, 1, hash);

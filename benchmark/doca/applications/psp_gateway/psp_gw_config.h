@@ -32,6 +32,7 @@
 #include <map>
 
 #include <rte_ether.h>
+#include <rte_hash.h>
 
 #include <doca_types.h>
 #include <doca_flow.h>
@@ -49,12 +50,19 @@ static const uint32_t DEFAULT_PSP_VERSION = 1;
 // measured in 4-octet units."
 // By default, leave the inner IPv4 header in cleartext.
 // Add 2 if the 64-bit VC is enabled.
-static constexpr uint32_t DEFAULT_CRYPT_OFFSET = 5;
-static constexpr uint32_t DEFAULT_CRYPT_OFFSET_VC_ENABLED = 7;
+static constexpr uint32_t DEFAULT_CRYPT_OFFSET_IPV4 = 5;
+static constexpr uint32_t DEFAULT_CRYPT_OFFSET_VC_ENABLED_IPV4 = 7;
+
+static constexpr uint32_t DEFAULT_CRYPT_OFFSET_IPV6 = 10;
+static constexpr uint32_t DEFAULT_CRYPT_OFFSET_VC_ENABLED_IPV6 = 12;
 
 static constexpr uint16_t PSP_PERF_KEY_GEN_PRINT = 1 << 0;
 static constexpr uint16_t PSP_PERF_INSERTION_PRINT = 1 << 1;
 static constexpr uint16_t PSP_PERF_ALL = PSP_PERF_KEY_GEN_PRINT | PSP_PERF_INSERTION_PRINT;
+
+static const uint32_t PSP_MAX_PEERS = 1 << 20;	  /* Maximum number of peers supported by the PSP Gateway */
+static const uint32_t PSP_MAX_SESSIONS = 1 << 20; /* Maximum number of sessions supported by the PSP Gateway for each
+						     host */
 
 static const std::string PSP_PERF_KEY_GEN_PRINT_STR = "key-gen";
 static const std::string PSP_PERF_INSERTION_PRINT_STR = "insertion";
@@ -68,26 +76,37 @@ static const std::map<std::string, uint16_t> PSP_PERF_MAP = {
 
 static constexpr uint32_t IPV6_ADDR_LEN = 16;
 typedef uint8_t ipv6_addr_t[IPV6_ADDR_LEN];
+using session_key = std::pair<std::string, std::string> /* src_ip, dst_ip */;
 
-/**
- * @brief Describes a host which is capable of exchanging
- *        traffic flows over a PSP tunel.
- *
- * Currently, only one PF per host is supported, but this
- * could be extended to a list of PFs.
- */
-struct psp_gw_host {
-	uint32_t psp_proto_ver;	       /*!< 0 for 128-bit AES-GCM, 1 for 256-bit */
-	std::vector<doca_be32_t> vips; /*!< virtual IP addresses */
-	doca_be32_t svc_ip;	       /*!< control plane gRPC service address */
+struct ip_pair {
+	doca_flow_ip_addr src_vip; /*!< The source IP address of the traffic flow */
+	doca_flow_ip_addr dst_vip; /*!< The destination IP address of the traffic flow */
+};
+
+enum psp_gw_mode {
+	PSP_GW_MODE_TUNNEL = 0,
+	PSP_GW_MODE_TRANSPORT = 1,
 };
 
 /**
- * @brief describes a network of hosts which participate
+ * @brief Describes a peer which is capable of exchanging
+ *        traffic flows over a PSP tunel.
+ *
+ * Currently, only one PF per peer is supported, but this
+ * could be extended to a list of PFs.
+ */
+struct psp_gw_peer {
+	uint32_t psp_proto_ver;		/*!< 0 for 128-bit AES-GCM, 1 for 256-bit */
+	std::vector<ip_pair> vip_pairs; /*!< The list of traffic flows to be tunneled */
+	std::string svc_addr;		/*!< control plane gRPC service address */
+};
+
+/**
+ * @brief describes a network of peers which participate
  *        in a network of PSP tunnel connections.
  */
 struct psp_gw_net_config {
-	std::vector<psp_gw_host> hosts; //!< The list of participating hosts and their interfaces
+	std::vector<psp_gw_peer> peers; //!< The list of participating peers and their interfaces
 
 	bool vc_enabled;		//!< Whether Virtualization Cookies shall be included in the PSP headers
 	uint32_t crypt_offset;		//!< The number of words to skip when performing encryption
@@ -106,7 +125,7 @@ struct psp_gw_app_config {
 	std::string core_mask;	     //!< EAL core mask
 
 	std::string local_svc_addr; //!< The IPv4 addr (and optional port number) of the locally running gRPC service.
-	std::string local_vf_addr;  //!< The IPv4 IP address of the VF; required for create_tunnels_at_startup
+	std::string json_path;	    //!< The path to the JSON file containing the sessions configuration
 
 	rte_ether_addr dcap_dmac; //!< The dst mac to apply on decap
 
@@ -115,7 +134,7 @@ struct psp_gw_app_config {
 
 	uint32_t max_tunnels; //!< The maximum number of outgoing tunnel connections supported on this host
 
-	struct psp_gw_net_config net_config; //!< List of remote hosts supporting PSP connections
+	struct psp_gw_net_config net_config; //!< List of remote peers supporting PSP connections
 
 	/**
 	 * The rate of sampling user packets is controlled by a uint16_t mask.
@@ -144,6 +163,9 @@ struct psp_gw_app_config {
 	bool maintain_order;		//!< maintain packet ordering when sampling enabled
 	uint16_t print_perf_flags;	//!< Print performance information to the console
 	enum doca_flow_l3_type outer;	//!< Indicate outer tunnel IP type
+	enum doca_flow_l3_type inner;	//!< Indicate inner tunnel IP type
+	struct rte_hash *ip6_table;	//!< Hash table with ipv6 addressess
+	enum psp_gw_mode mode;		//!< Indicate PSP mode
 };
 
 #endif // _PSP_GW_CONFIG_H_

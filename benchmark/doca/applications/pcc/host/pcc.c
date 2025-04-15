@@ -94,7 +94,6 @@ int main(int argc, char **argv)
 	cfg.gns_ignore_value = IFA2_GNS_IGNORE_DEFAULT_VALUE;
 	cfg.gns_ignore_mask = IFA2_GNS_IGNORE_DEFAULT_MASK;
 	strcpy(cfg.coredump_file, PCC_COREDUMP_FILE_DEFAULT_PATH);
-	cfg.port_id = PCC_PHYSICAL_PORT_DEFAULT_ID;
 	log_level = LOG_LEVEL_INFO;
 
 	/* Add SIGINT signal handler for graceful exit */

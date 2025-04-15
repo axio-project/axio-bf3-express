@@ -31,6 +31,7 @@
 #include <rte_ethdev.h>
 
 #include <doca_argp.h>
+#include <doca_flow_tune_server.h>
 #include <doca_log.h>
 
 #include <dpdk_utils.h>
@@ -75,6 +76,7 @@ int main(int argc, char **argv)
 		.port_config.nb_ports = 2,
 		.port_config.nb_queues = 4,
 		.port_config.nb_hairpin_q = 4,
+		.port_config.enable_mbuf_metadata = 1,
 		.reserve_main_thread = true,
 	};
 	struct simple_fwd_config app_cfg = {
@@ -87,6 +89,7 @@ int main(int argc, char **argv)
 	};
 	struct app_vnf *vnf;
 	struct simple_fwd_process_pkts_params process_pkts_params = {.cfg = &app_cfg};
+	struct doca_flow_tune_server_cfg *server_cfg;
 
 	/* Register a logger backend */
 	result = doca_log_backend_create_standard();
@@ -154,6 +157,24 @@ int main(int argc, char **argv)
 		goto exit_app;
 	}
 
+	/* Init DOCA Flow Tune Server */
+	result = doca_flow_tune_server_cfg_create(&server_cfg);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create flow tune server configuration");
+		return result;
+	}
+	result = doca_flow_tune_server_init(server_cfg);
+	if (result != DOCA_SUCCESS) {
+		if (result == DOCA_ERROR_NOT_SUPPORTED) {
+			DOCA_LOG_DBG("DOCA Flow Tune Server isn't supported in this runtime version");
+		} else {
+			DOCA_LOG_ERR("Failed to initialize the flow tune server");
+			doca_flow_tune_server_cfg_destroy(server_cfg);
+			return result;
+		}
+	}
+	doca_flow_tune_server_cfg_destroy(server_cfg);
+
 	simple_fwd_map_queue(dpdk_config.port_config.nb_queues);
 	process_pkts_params.vnf = vnf;
 	rte_eal_mp_remote_launch(simple_fwd_process_pkts, &process_pkts_params, CALL_MAIN);
@@ -161,6 +182,7 @@ int main(int argc, char **argv)
 exit_app:
 	/* cleanup app resources */
 	simple_fwd_destroy(vnf);
+	doca_flow_tune_server_destroy();
 
 	/* DPDK cleanup resources */
 	dpdk_queues_and_ports_fini(&dpdk_config);

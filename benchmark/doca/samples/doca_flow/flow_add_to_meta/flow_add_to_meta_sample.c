@@ -28,6 +28,7 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "flow_common.h"
 
@@ -113,7 +114,7 @@ static doca_error_t add_match_meta_pipe_entry(struct doca_flow_pipe *pipe, struc
 	memset(&actions, 0, sizeof(actions));
 
 	/* setting match on meta */
-	match.meta.u32[0] = 0x02040608;
+	match.meta.u32[0] = DOCA_HTOBE32(0x02040608);
 
 	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, NULL, NULL, 0, status, &entry);
 	if (result != DOCA_SUCCESS)
@@ -259,6 +260,7 @@ doca_error_t flow_add_to_meta(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct doca_flow_pipe *match_meta_pipe;
 	struct entries_status status;
@@ -273,7 +275,8 @@ doca_error_t flow_add_to_meta(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

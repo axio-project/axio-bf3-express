@@ -29,11 +29,6 @@
 #include "../common/dpa_initiator_target_common_defs.h"
 
 /**
- * @brief Number of expected receive completions
- */
-#define EXPECTED_NUM_RECEIVES (4)
-
-/**
  * @brief Array used to mark received data when completion is received.
  *
  * Expected received data are 1, 2, 3, 4.
@@ -67,9 +62,10 @@ __dpa_global__ void thread1_kernel(uint64_t arg)
 	int found = 0;
 	uint64_t received_val = 0;
 	uint32_t user_data;
-	doca_dpa_dev_rdma_t rdma;
-	doca_dpa_dev_mmap_t mmap_handle;
-	uint64_t addr;
+
+	if (thread_arg->dpa_ctx_handle) {
+		doca_dpa_dev_device_set(thread_arg->dpa_ctx_handle);
+	}
 
 	DOCA_DPA_DEV_LOG_INFO("%s: Read completion info\n", __func__);
 	found = doca_dpa_dev_get_completion(thread_arg->dpa_comp_handle, &comp_element);
@@ -87,13 +83,7 @@ __dpa_global__ void thread1_kernel(uint64_t arg)
 	user_data = doca_dpa_dev_get_completion_user_data(comp_element);
 	DOCA_DPA_DEV_LOG_INFO("%s: doca_dpa_dev_get_completion_user_data() returned %u\n", __func__, user_data);
 
-	rdma = (user_data == TARGET_RDMA1_USER_DATA) ? thread_arg->target_rdma1_handle :
-						       thread_arg->target_rdma2_handle;
-	mmap_handle = (user_data == TARGET_RDMA1_USER_DATA) ? thread_arg->dpa_mmap1_handle :
-							      thread_arg->dpa_mmap2_handle;
-	addr = (user_data == TARGET_RDMA1_USER_DATA) ? thread_arg->local_buf1_addr : thread_arg->local_buf2_addr;
-
-	received_val = *((uint64_t *)(addr));
+	received_val = *((uint64_t *)(thread_arg->local_buf_addr));
 	DOCA_DPA_DEV_LOG_INFO("%s: Value of DPA received buffer is %lu\n", __func__, received_val);
 	received_values[received_val - 1] = 1;
 
@@ -117,10 +107,13 @@ __dpa_global__ void thread1_kernel(uint64_t arg)
 
 	DOCA_DPA_DEV_LOG_INFO("%s: Repost RDMA receive on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
 			      __func__,
-			      mmap_handle,
-			      addr,
+			      thread_arg->dpa_mmap_handle,
+			      thread_arg->local_buf_addr,
 			      thread_arg->length);
-	doca_dpa_dev_rdma_post_receive(rdma, mmap_handle, addr, thread_arg->length);
+	doca_dpa_dev_rdma_post_receive(thread_arg->target_rdma_handle,
+				       thread_arg->dpa_mmap_handle,
+				       thread_arg->local_buf_addr,
+				       thread_arg->length);
 
 	DOCA_DPA_DEV_LOG_INFO("%s: Acknowledge and request another notification\n", __func__);
 	doca_dpa_dev_completion_ack(thread_arg->dpa_comp_handle, 1);
@@ -152,41 +145,34 @@ __dpa_global__ void thread2_kernel(uint64_t arg)
 }
 
 /**
- * @brief RPC function to post first RDMA receive operations on target RDMAs
+ * @brief RPC function to post first RDMA receive operation on target RDMA
  *
- * This RPC is used by target host application to post the first RDMA receive operations on DPA local buffers.
- * These buffers will be reused again after each completion
+ * This RPC is used by target host application to post the first RDMA receive operation on DPA local buffer.
+ * This buffer will be reused again after each completion
  *
- * @rdma1 [in]: Target RDMA #1 DPA handle
- * @local_buf1_addr [in]: address of received buffer used for Target RDMA #1
- * @dpa_mmap1_handle [in]: DOCA Mmap handle for local_buf1_addr
- * @rdma2 [in]: Target RDMA #2 DPA handle
- * @local_buf2_addr [in]: address of received buffer used for Target RDMA #2
- * @dpa_mmap2_handle [in]: DOCA Mmap handle for local_buf2_addr
+ * @rdma_dpa_ctx_handle [in]: DPA context handle used for RDMA DOCA device. Needed when running from DPU
+ * @target_rdma [in]: Target RDMA DPA handle
+ * @local_buf_addr [in]: address of received buffer used for Target RDMA
+ * @dpa_mmap_handle [in]: DOCA Mmap handle for local_buf_addr
  * @length [in]: length of received buffer
  * @return: RPC function always succeed and returns 0
  */
-__dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_rdma_t rdma1,
-					   doca_dpa_dev_uintptr_t local_buf1_addr,
-					   doca_dpa_dev_mmap_t dpa_mmap1_handle,
-					   doca_dpa_dev_rdma_t rdma2,
-					   doca_dpa_dev_uintptr_t local_buf2_addr,
-					   doca_dpa_dev_mmap_t dpa_mmap2_handle,
+__dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_t rdma_dpa_ctx_handle,
+					   doca_dpa_dev_rdma_t target_rdma,
+					   doca_dpa_dev_uintptr_t local_buf_addr,
+					   doca_dpa_dev_mmap_t dpa_mmap_handle,
 					   size_t length)
 {
-	DOCA_DPA_DEV_LOG_INFO("%s: Target RDMA #1 post receive on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
+	DOCA_DPA_DEV_LOG_INFO("%s: Target RDMA post receive on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
 			      __func__,
-			      dpa_mmap1_handle,
-			      local_buf1_addr,
+			      dpa_mmap_handle,
+			      local_buf_addr,
 			      length);
-	doca_dpa_dev_rdma_post_receive(rdma1, dpa_mmap1_handle, local_buf1_addr, length);
+	if (rdma_dpa_ctx_handle) {
+		doca_dpa_dev_device_set(rdma_dpa_ctx_handle);
+	}
+	doca_dpa_dev_rdma_post_receive(target_rdma, dpa_mmap_handle, local_buf_addr, length);
 
-	DOCA_DPA_DEV_LOG_INFO("%s: Target RDMA #2 post receive on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
-			      __func__,
-			      dpa_mmap2_handle,
-			      local_buf2_addr,
-			      length);
-	doca_dpa_dev_rdma_post_receive(rdma2, dpa_mmap2_handle, local_buf2_addr, length);
 	return 0;
 }
 
@@ -195,27 +181,41 @@ __dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_rdma_t rdma1,
  *
  * This RPC is used by initiator host application to post RDMA send with immediate operation on host local buffer
  *
+ * @rdma_dpa_ctx_handle [in]: DPA context handle used for RDMA DOCA device. Needed when running from DPU
  * @rdma [in]: RDMA DPA handle
+ * @connection_id [in]: RDMA connection ID
  * @local_buf_addr [in]: address of send buffer
  * @dpa_mmap_handle [in]: send DOCA Mmap handle
  * @length [in]: length of send buffer
  * @immediate [in]: immediate data
  * @return: RPC function always succeed and returns 0
  */
-__dpa_rpc__ uint64_t rdma_post_send_imm_rpc(doca_dpa_dev_rdma_t rdma,
+__dpa_rpc__ uint64_t rdma_post_send_imm_rpc(doca_dpa_dev_t rdma_dpa_ctx_handle,
+					    doca_dpa_dev_rdma_t rdma,
+					    uint32_t connection_id,
 					    uintptr_t local_buf_addr,
 					    doca_dpa_dev_mmap_t dpa_mmap_handle,
 					    size_t length,
 					    uint32_t immediate)
 {
 	DOCA_DPA_DEV_LOG_INFO(
-		"%s: Post RDMA send with immediate %u on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
+		"%s: Post RDMA send with connection_id %u, immediate %u on DPA Mmap handle 0x%x, address 0x%lx, length %lu\n",
 		__func__,
+		connection_id,
 		immediate,
 		dpa_mmap_handle,
 		local_buf_addr,
 		length);
-	doca_dpa_dev_rdma_post_send_imm(rdma, dpa_mmap_handle, local_buf_addr, length, immediate, 0);
+	if (rdma_dpa_ctx_handle) {
+		doca_dpa_dev_device_set(rdma_dpa_ctx_handle);
+	}
+	doca_dpa_dev_rdma_post_send_imm(rdma,
+					connection_id,
+					dpa_mmap_handle,
+					local_buf_addr,
+					length,
+					immediate,
+					DOCA_DPA_DEV_SUBMIT_FLAG_FLUSH | DOCA_DPA_DEV_SUBMIT_FLAG_OPTIMIZE_REPORTS);
 
 	return 0;
 }

@@ -62,28 +62,39 @@ struct eth_rxq_sample_objects {
 /*
  * ETH RXQ managed receive event batch successful callback
  *
+ * @event_batch_managed_recv [in]: The managed receive event batch
  * @events_number [in]: Number of retrieved events, each representing a received packet
  * @event_batch_user_data [in]: User provided data, used to associate with a specific type of event batch
  * @status [in]: Status of retrieved event batch (DOCA_SUCCESS in case of success callback)
  * @pkt_array [in]: Array of doca_bufs containing the received packets (NULL in case of error callback)
- * @l3_ok_array [in]: Array indicators for whether L3 checksum is ok or not per packet
- * @l4_ok_array [in]: Array indicators for whether L4 checksum is ok or not per packet
  */
-static void event_batch_managed_rcv_success_cb(uint16_t events_number,
+static void event_batch_managed_rcv_success_cb(struct doca_eth_rxq_event_batch_managed_recv *event_batch_managed_recv,
+					       uint16_t events_number,
 					       union doca_data event_batch_user_data,
 					       doca_error_t status,
-					       struct doca_buf **pkt_array,
-					       uint8_t *l3_ok_array,
-					       uint8_t *l4_ok_array)
+					       struct doca_buf **pkt_array)
 {
 	doca_error_t ret;
 	struct eth_rxq_sample_objects *state;
+	const uint32_t *metadata_array = NULL, *flow_tag_array = NULL, *rx_hash_array = NULL;
 	size_t packet_size;
 
 	state = event_batch_user_data.ptr;
 	state->total_received_packets += events_number;
 
 	DOCA_LOG_INFO("Received %u packets successfully", events_number);
+
+	ret = doca_eth_rxq_event_batch_managed_recv_get_metadata_array(event_batch_managed_recv, &metadata_array);
+	if (ret != DOCA_SUCCESS)
+		DOCA_LOG_ERR("Failed to get metadata_array, err: %s", doca_error_get_name(ret));
+
+	ret = doca_eth_rxq_event_batch_managed_recv_get_flow_tag_array(event_batch_managed_recv, &flow_tag_array);
+	if (ret != DOCA_SUCCESS)
+		DOCA_LOG_ERR("Failed to get flow_tag_arrat, err: %s", doca_error_get_name(ret));
+
+	ret = doca_eth_rxq_event_batch_managed_recv_get_rx_hash_array(event_batch_managed_recv, &rx_hash_array);
+	if (ret != DOCA_SUCCESS)
+		DOCA_LOG_ERR("Failed to get rx_hash_array, err: %s", doca_error_get_name(ret));
 
 	for (uint16_t i = 0; i < events_number; i++) {
 		ret = doca_buf_get_data_len(pkt_array[i], &packet_size);
@@ -93,6 +104,20 @@ static void event_batch_managed_rcv_success_cb(uint16_t events_number,
 				     doca_error_get_name(ret));
 		else
 			DOCA_LOG_INFO("Packet#%u: received a packet of size %lu successfully", i, packet_size);
+
+		if (metadata_array != NULL)
+			DOCA_LOG_INFO("Packet#%u: metadata associated with the packet is %u",
+				      i,
+				      doca_eth_rxq_event_batch_managed_recv_metadata_array_get_metadata(metadata_array,
+													1,
+													i,
+													0));
+
+		if (flow_tag_array != NULL)
+			DOCA_LOG_INFO("Packet#%u: flow_tag associated with the packet is %u", i, flow_tag_array[i]);
+
+		if (rx_hash_array != NULL)
+			DOCA_LOG_INFO("Packet#%u: rx_hash associated with the packet is %u", i, rx_hash_array[i]);
 	}
 
 	doca_eth_rxq_event_batch_managed_recv_pkt_array_free(pkt_array);
@@ -101,19 +126,17 @@ static void event_batch_managed_rcv_success_cb(uint16_t events_number,
 /*
  * ETH RXQ managed receive event batch error callback
  *
+ * @event_batch_managed_recv [in]: The managed receive event batch
  * @events_number [in]: Number of retrieved events, each representing a received packet
  * @event_batch_user_data [in]: User provided data, used to associate with a specific type of event batch
  * @status [in]: Status of retrieved event batch (DOCA_SUCCESS in case of success callback)
  * @pkt_array [in]: Array of doca_bufs containing the received packets (NULL in case of error callback)
- * @l3_ok_array [in]: Array indicators for whether L3 checksum is ok or not per packet
- * @l4_ok_array [in]: Array indicators for whether L4 checksum is ok or not per packet
  */
-static void event_batch_managed_rcv_error_cb(uint16_t events_number,
+static void event_batch_managed_rcv_error_cb(struct doca_eth_rxq_event_batch_managed_recv *event_batch_managed_recv,
+					     uint16_t events_number,
 					     union doca_data event_batch_user_data,
 					     doca_error_t status,
-					     struct doca_buf **pkt_array,
-					     uint8_t *l3_ok_array,
-					     uint8_t *l4_ok_array)
+					     struct doca_buf **pkt_array)
 {
 	DOCA_LOG_ERR("Failed to receive packets, err: %s", doca_error_get_name(status));
 }
@@ -213,6 +236,24 @@ static doca_error_t create_eth_rxq_ctx(struct eth_rxq_sample_objects *state)
 								event_batch_managed_rcv_error_cb);
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register managed receive event batch, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_metadata_num(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable metadata, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_flow_tag(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable flow_tag, err: %s", doca_error_get_name(status));
+		goto destroy_eth_rxq;
+	}
+
+	status = doca_eth_rxq_set_rx_hash(state->eth_rxq, 1);
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to enable rx_hash, err: %s", doca_error_get_name(status));
 		goto destroy_eth_rxq;
 	}
 
@@ -347,12 +388,12 @@ static doca_error_t check_device(struct doca_devinfo *devinfo)
 doca_error_t eth_rxq_batch_managed_mempool_receive(const char *ib_dev_name)
 {
 	doca_error_t status;
-	struct eth_rxq_sample_objects state;
+	struct eth_rxq_sample_objects state = {.total_received_packets = 0};
 	struct eth_core_config cfg = {.mmap_size = 0,
 				      .inventory_num_elements = 0,
 				      .check_device = check_device,
 				      .ibdev_name = ib_dev_name};
-	struct eth_rxq_flow_config flow_cfg = {.rxq_flow_queue_id = 0};
+	struct eth_rxq_flow_config flow_cfg = {};
 
 	status = doca_eth_rxq_estimate_packet_buf_size(DOCA_ETH_RXQ_TYPE_MANAGED_MEMPOOL,
 						       RATE,
@@ -386,7 +427,8 @@ doca_error_t eth_rxq_batch_managed_mempool_receive(const char *ib_dev_name)
 		goto rxq_cleanup;
 	}
 
-	flow_cfg.rxq_flow_queue_id = state.rxq_flow_queue_id;
+	flow_cfg.rxq_flow_queue_ids = &(state.rxq_flow_queue_id);
+	flow_cfg.nb_queues = 1;
 
 	status = allocate_eth_rxq_flow_resources(&flow_cfg, &(state.flow_resources));
 	if (status != DOCA_SUCCESS) {

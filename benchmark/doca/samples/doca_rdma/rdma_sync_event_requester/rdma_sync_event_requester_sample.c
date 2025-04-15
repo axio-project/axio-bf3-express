@@ -55,6 +55,7 @@ static doca_error_t sync_event_tasks_supported(const struct doca_devinfo *devinf
 /*
  * Write the connection details for the responder to read,
  * and read the connection details and the remote sync event details of the responder
+ * In DC transport mode it is only needed to read the remote connection details
  *
  * @cfg [in]: Configuration parameters
  * @resources [in/out]: DOCA RDMA resources
@@ -64,16 +65,19 @@ static doca_error_t write_read_connection(struct rdma_config *cfg, struct rdma_r
 {
 	doca_error_t result = DOCA_SUCCESS;
 
-	/* Write the RDMA connection details */
-	result = write_file(cfg->local_connection_desc_path,
-			    (char *)resources->rdma_conn_descriptor,
-			    resources->rdma_conn_descriptor_size);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to write the RDMA connection details: %s", doca_error_get_descr(result));
-		return result;
+	if (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_RC) {
+		/* Write the RDMA connection details */
+		result = write_file(cfg->local_connection_desc_path,
+				    (char *)resources->rdma_conn_descriptor,
+				    resources->rdma_conn_descriptor_size);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to write the RDMA connection details: %s", doca_error_get_descr(result));
+			return result;
+		}
+
+		DOCA_LOG_INFO("You can now copy %s to the responder", cfg->local_connection_desc_path);
 	}
 
-	DOCA_LOG_INFO("You can now copy %s to the responder", cfg->local_connection_desc_path);
 	DOCA_LOG_INFO(
 		"Please copy %s and %s from the responder and then press enter after pressing enter in the responder side",
 		cfg->remote_connection_desc_path,
@@ -431,6 +435,7 @@ static doca_error_t rdma_sync_event_requestor_prepare_and_submit_tasks(struct rd
 
 	/* Allocate and construct RDMA sync event set task */
 	result = doca_rdma_task_remote_net_sync_event_notify_set_allocate_init(resources->rdma,
+									       resources->connections[0],
 									       resources->remote_se,
 									       resources->src_buf,
 									       task_user_data,
@@ -476,6 +481,7 @@ static doca_error_t rdma_sync_event_requestor_prepare_and_submit_tasks(struct rd
 
 	/* Allocate and construct RDMA sync event get task */
 	result = doca_rdma_task_remote_net_sync_event_get_allocate_init(resources->rdma,
+									resources->connections[0],
 									resources->remote_se,
 									resources->dst_buf,
 									task_user_data,
@@ -536,7 +542,8 @@ static doca_error_t rdma_sync_event_requestor_export_and_connect(struct rdma_res
 	/* Export DOCA RDMA */
 	result = doca_rdma_export(resources->rdma,
 				  &(resources->rdma_conn_descriptor),
-				  &(resources->rdma_conn_descriptor_size));
+				  &(resources->rdma_conn_descriptor_size),
+				  &(resources->connections[0]));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to export DOCA RDMA: %s", doca_error_get_descr(result));
 		return result;
@@ -553,7 +560,8 @@ static doca_error_t rdma_sync_event_requestor_export_and_connect(struct rdma_res
 	/* Connect RDMA */
 	result = doca_rdma_connect(resources->rdma,
 				   resources->remote_rdma_conn_descriptor,
-				   resources->remote_rdma_conn_descriptor_size);
+				   resources->remote_rdma_conn_descriptor_size,
+				   resources->connections[0]);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to connect the requester's DOCA RDMA to the responder's DOCA RDMA: %s",
 			     doca_error_get_descr(result));
@@ -624,10 +632,11 @@ static void rdma_sync_event_requestor_state_change_callback(const union doca_dat
 		DOCA_LOG_INFO("RDMA context is running");
 
 		result = rdma_sync_event_requestor_export_and_connect(resources);
-		if (result != DOCA_SUCCESS)
+		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("rdma_sync_event_requestor_export_and_connect() failed: %s",
 				     doca_error_get_descr(result));
-		else
+			break;
+		} else
 			DOCA_LOG_INFO("RDMA context finished initialization");
 
 		if (resources->cfg->use_rdma_cm == true)

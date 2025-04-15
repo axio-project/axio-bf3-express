@@ -64,6 +64,7 @@ echo "Using kernel object: $KERNEL_DIR/dpa_kernel.dpa.o"
 # Compile the DPA (kernel) device source code using the DPACC
 ${DPACC} ${SOURCE_FILE} -o "${BUILD_DIR}/${OUTPUT_NAME}.a" \
         -hostcc=gcc \
+        -mcpu=nv-dpa-bf3 \
         -hostcc-options="${HOST_OPTIONS}" \
         --devicecc-options=${DEVICE_OPTIONS} \
         --app-name=${APP_NAME} \

@@ -75,7 +75,7 @@ static doca_error_t create_rss_pipe(struct doca_flow_port *port, struct doca_flo
 		return result;
 	}
 
-	result = set_flow_pipe_cfg(pipe_cfg, "RSS_META_PIPE", DOCA_FLOW_PIPE_BASIC, true);
+	result = set_flow_pipe_cfg(pipe_cfg, "RSS_META_PIPE", DOCA_FLOW_PIPE_BASIC, false);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
@@ -94,9 +94,10 @@ static doca_error_t create_rss_pipe(struct doca_flow_port *port, struct doca_flo
 	/* RSS queue - send matched traffic to queue 0  */
 	rss_queues[0] = 0;
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP;
-	fwd.num_of_queues = 1;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.inner_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP;
+	fwd.rss.nr_queues = 1;
 
 	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
 destroy_pipe_cfg:
@@ -134,10 +135,11 @@ static doca_error_t add_rss_pipe_entry(struct doca_flow_pipe *pipe, struct entri
 /*
  * Create DOCA Flow pipe with to_kernel match that forwards the matched traffic to kernel
  *
+ * @miss_pipe [in]: miss pipe for forward miss
  * @pipe [out]: created pipe pointer
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t create_to_kernel_pipe(struct doca_flow_pipe **pipe)
+static doca_error_t create_to_kernel_pipe(struct doca_flow_pipe *miss_pipe, struct doca_flow_pipe **pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_monitor monitor;
@@ -159,6 +161,7 @@ static doca_error_t create_to_kernel_pipe(struct doca_flow_pipe **pipe)
 	memset(&fwd_miss, 0, sizeof(fwd_miss));
 
 	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
+	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_UDP;
 
 	monitor.counter_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
 
@@ -193,8 +196,9 @@ static doca_error_t create_to_kernel_pipe(struct doca_flow_pipe **pipe)
 	fwd.type = DOCA_FLOW_FWD_TARGET;
 	fwd.target = kernel_target;
 
-	/* dropping unknown traffic */
-	fwd_miss.type = DOCA_FLOW_FWD_DROP;
+	/* Unmatched packets will be forwarded to miss_pipe */
+	fwd_miss.type = DOCA_FLOW_FWD_PIPE;
+	fwd_miss.next_pipe = miss_pipe;
 
 	result = doca_flow_pipe_create(pipe_cfg, &fwd, &fwd_miss, pipe);
 destroy_pipe_cfg:
@@ -381,6 +385,7 @@ doca_error_t flow_switch(int nb_queues, int nb_ports, struct flow_switch_ctx *ct
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct doca_flow_pipe *to_kernel_pipe;
 	struct doca_flow_resource_query query_stats;
@@ -399,7 +404,8 @@ doca_error_t flow_switch(int nb_queues, int nb_ports, struct flow_switch_ctx *ct
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
 	dev_arr[0] = ctx->doca_dev[0];
-	result = init_doca_flow_ports(nb_ports, ports, false /* is_hairpin */, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, TOTAL_ENTRIES));
+	result = init_doca_flow_ports(nb_ports, ports, false /* is_hairpin */, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -423,7 +429,7 @@ doca_error_t flow_switch(int nb_queues, int nb_ports, struct flow_switch_ctx *ct
 		return result;
 	}
 
-	result = create_to_kernel_pipe(&to_kernel_pipe);
+	result = create_to_kernel_pipe(pipe_rss, &to_kernel_pipe);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create to_kernel pipe: %s", doca_error_get_descr(result));
 		stop_doca_flow_ports(nb_ports, ports);

@@ -244,17 +244,16 @@ static doca_error_t enable_hairpin_queues(uint8_t nb_ports)
  * Creates a new mempool in memory to hold the mbufs
  *
  * @total_nb_mbufs [in]: the number of elements in the mbuf pool
+ * @mbuf_size [in]: the size of each mbuf, including headroom
  * @mbuf_pool [out]: the allocated pool
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t allocate_mempool(const uint32_t total_nb_mbufs, struct rte_mempool **mbuf_pool)
+static doca_error_t allocate_mempool(const uint32_t total_nb_mbufs,
+				     const uint32_t mbuf_size,
+				     struct rte_mempool **mbuf_pool)
 {
-	*mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
-					     total_nb_mbufs,
-					     MBUF_CACHE_SIZE,
-					     0,
-					     RTE_MBUF_DEFAULT_BUF_SIZE,
-					     rte_socket_id());
+	*mbuf_pool =
+		rte_pktmbuf_pool_create("MBUF_POOL", total_nb_mbufs, MBUF_CACHE_SIZE, 0, mbuf_size, rte_socket_id());
 	if (*mbuf_pool == NULL) {
 		DOCA_LOG_ERR("Cannot allocate mbuf pool");
 		return DOCA_ERROR_DRIVER;
@@ -477,9 +476,11 @@ static doca_error_t dpdk_ports_init(struct application_dpdk_config *app_config)
 	uint16_t n;
 	const uint16_t nb_ports = app_config->port_config.nb_ports;
 	const uint32_t total_nb_mbufs = app_config->port_config.nb_queues * nb_ports * NUM_MBUFS;
+	const uint32_t mbuf_size = app_config->port_config.mbuf_size ? app_config->port_config.mbuf_size :
+								       RTE_MBUF_DEFAULT_BUF_SIZE;
 
 	/* Initialize mbufs mempool */
-	result = allocate_mempool(total_nb_mbufs, &app_config->mbuf_pool);
+	result = allocate_mempool(total_nb_mbufs, mbuf_size, &app_config->mbuf_pool);
 	if (result != DOCA_SUCCESS)
 		return result;
 

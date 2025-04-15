@@ -31,6 +31,7 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "doca_error.h"
 #include "flow_common.h"
@@ -239,7 +240,7 @@ static doca_error_t add_random_sampling_pipe_entry(struct doca_flow_pipe *pipe,
 	 * The immediate value to compare with random field is provided in the match structure.
 	 * Match mask structure is not relevant here since it is masked in argument using offset + width.
 	 */
-	match.parser_meta.random = get_random_value(percentage);
+	match.parser_meta.random = DOCA_HTOBE16(get_random_value(percentage));
 
 	/* Add counter to see how many packet are sampled */
 	monitor.counter_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
@@ -321,12 +322,13 @@ static doca_error_t random_sampling_results(struct doca_flow_pipe_entry *root_en
  */
 doca_error_t flow_sampling(int nb_queues, struct flow_switch_ctx *ctx)
 {
-	int nb_ports = 1;
+	int nb_ports = 3;
 	struct flow_resources resource = {0};
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_flow_port *switch_port;
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *root_pipe;
 	struct doca_flow_pipe *sampling_pipe;
 	struct doca_flow_pipe_entry *root_entry;
@@ -347,7 +349,8 @@ doca_error_t flow_sampling(int nb_queues, struct flow_switch_ctx *ctx)
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
 	dev_arr[0] = ctx->doca_dev[0];
-	result = init_doca_flow_ports(nb_ports, ports, false, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, false, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

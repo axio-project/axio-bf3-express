@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -52,7 +52,7 @@ struct flow_hot_upgrade_ctx {
 /*
  * Get DOCA Flow Hot Upgrade directory path.
  *
- * @param [in]: input paramete
+ * @param [in]: input parameter
  * @config [out]: configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */

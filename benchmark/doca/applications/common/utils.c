@@ -32,6 +32,7 @@
 
 #include <doca_version.h>
 #include <doca_log.h>
+#include <doca_argp.h>
 
 #include "utils.h"
 
@@ -44,6 +45,10 @@ noreturn doca_error_t sdk_version_callback(void *param, void *doca_config)
 
 	printf("DOCA SDK     Version (Compilation): %s\n", doca_version());
 	printf("DOCA Runtime Version (Runtime):     %s\n", doca_version_runtime());
+
+	/* Cleanup after ARGP initialization */
+	doca_argp_destroy();
+
 	/* We assume that when printing DOCA's versions there is no need to continue the program's execution */
 	exit(EXIT_SUCCESS);
 }

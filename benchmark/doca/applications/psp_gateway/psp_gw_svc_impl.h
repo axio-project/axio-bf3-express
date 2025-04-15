@@ -39,7 +39,7 @@
 struct psp_pf_dev;
 struct doca_flow_crypto_psp_spi_key_bulk;
 
-typedef std::pair<psp_session_t *, void *> psp_session_and_key_t;
+using psp_session_and_key_t = std::pair<psp_session_t *, void *>;
 
 /**
  * @brief Implementation of the PSP_Gateway service.
@@ -110,15 +110,14 @@ public:
 	doca_error_t show_flow_counts(void);
 
 	/**
-	 * @brief Attempt to establish tunnels to each of the passed hosts.
-	 * On success, a given host is removed from the list so that this
+	 * @brief Attempt to establish tunnels to each of the passed peers.
+	 * On success, a given peer is removed from the list so that this
 	 * method can be called repeatedly with the same list.
 	 *
-	 * @hosts [in/out]: the list of tunnels to try to establish
-	 * @local_vf_addrs [in]: the IP address of the local VF netdev
-	 * @return: the number of hosts successfully connected and removed from 'hosts'
+	 * @peers [in/out]: the list of tunnels to try to establish
+	 * @return: the number of peers successfully connected and removed from 'peers'
 	 */
-	size_t try_connect(std::vector<psp_gw_host> &hosts, rte_be32_t local_vf_addr);
+	size_t try_connect(std::vector<psp_gw_peer> &peers);
 
 private:
 	/**
@@ -134,15 +133,14 @@ private:
 	}
 
 	/**
-	 * @brief Sends a request to the given remote host
+	 * @brief Sends a request to the given peer
 	 * The request includes the parameters required for
 	 * traffic in the reverse direction (remote to local).
 	 * An ACL is also provided for return traffic, if the
 	 * local/remote virtual addresses are provided.
 	 *
-	 * @remote_host [in]: The remote host to which we will create a tunnel
-	 * @local_virt_ip [in]: The destination virtual IP address for the return traffic
-	 * @remote_virt_ip [in]: The destination virtual IP address for the outgoing traffic
+	 * @peer [in]: The peer to which we will create a tunnel
+	 * @vip_pair [in]: The source and destination IP addresses of the traffic flow
 	 * @supply_reverse_params [in]: Whether to include tunnel parameters for traffic
 	 * returning to the sender of the request.
 	 * @suppress_failure_msg [in]: Indicates we are okay with a failure to connect, such
@@ -151,29 +149,28 @@ private:
 	 * when true, generate one pair of SPI and key and insert one rule
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
-	doca_error_t request_tunnel_to_host(struct psp_gw_host *remote_host,
-					    doca_be32_t local_virt_ip,
-					    doca_be32_t remote_virt_ip,
+	doca_error_t request_tunnel_to_host(struct psp_gw_peer *peer,
+					    ip_pair *vip_pair,
 					    bool supply_reverse_params,
 					    bool suppress_failure_msg,
 					    bool has_remote);
 
 	/**
-	 * @brief Returns a gRPC client for a given remote host
-	 * Note: this assumes only a single PSP app instance per remote host
+	 * @brief Returns a gRPC client for a given peer
+	 * Note: this assumes only a single PSP app instance per peer
 	 *
 	 * @return: the gRPC stub associated with the given address
 	 */
-	::psp_gateway::PSP_Gateway::Stub *get_stub(const std::string &remote_host_ip);
+	::psp_gateway::PSP_Gateway::Stub *get_stub(const std::string &peer_ip);
 
 	/**
-	 * @brief Checks whether a remote host has been configured to receive
-	 * traffic to the given destination virtual IP address
+	 * @brief Checks whether a peer has been configured to receive
+	 * traffic to the given vip_pair
 	 *
-	 * @dst_vip [in]: the desired destination IP address
+	 * @vip_pair [in]: The source and destination IP addresses of the traffic flow
 	 * @return: the remote gateway host, if one exists
 	 */
-	psp_gw_host *lookup_remote_host(rte_be32_t dst_vip);
+	psp_gw_peer *lookup_vip_pair(ip_pair &vip_pair);
 
 	/**
 	 * @brief Checks the list of supported versions in the request
@@ -220,22 +217,22 @@ private:
 	 * @brief Adds encryption entries to pipeline according to sessions
 	 *
 	 * @new_sessions_keys [in]: The new sessions to create entries for
-	 * @remote_host_svc_ip [in]: The remote host to which we will create a tunnel
+	 * @peer_svc_addr [in]: The peer to which we will create a tunnel
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
 	doca_error_t add_encrypt_entries(std::vector<psp_session_and_key_t> &new_sessions_keys,
-					 std::string remote_host_svc_ip);
+					 std::string peer_svc_addr);
 	/**
-	 * @brief Prepares the session for the given remote host virtual IP
+	 * @brief Prepares the session for the given peer virtual IP
 	 *
-	 * @remote_host_svc_ip [in]: The remote host to which we will create a tunnel
-	 * @remote_vip [in]: The destination virtual IP address for the return traffic
+	 * @peer_svc_addr [in]: The peer to which we will create a tunnel
+	 * @vip_pair [in]: The source and destination IP addresses of the traffic flow
 	 * @params [in]: The parameters for the tunnel
 	 * @sessions_keys_prepared [out]: The session will be added to this vector
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
-	doca_error_t prepare_session(std::string remote_host_svc_ip,
-				     doca_be32_t remote_vip,
+	doca_error_t prepare_session(std::string peer_svc_addr,
+				     ip_pair &vip_pair,
 				     const psp_gateway::TunnelParameters &params,
 				     std::vector<psp_session_and_key_t> &sessions_keys_prepared);
 
@@ -270,11 +267,11 @@ private:
 	// This flag will cause encryption keys to be logged to stderr, etc.
 	const bool DEBUG_KEYS{false};
 
-	// map each svc_ip to an RPC object
+	// map each svc_addr to an RPC object
 	std::map<std::string, std::unique_ptr<::psp_gateway::PSP_Gateway::Stub>> stubs;
 
-	// map each dst vip to an active session object
-	std::map<std::string, psp_session_t> sessions;
+	// map tuple of (src vip, dst vip) to an active session object
+	std::map<session_key, psp_session_t> sessions;
 
 	// Used to assign a unique shared-resource ID to each encryption flow.
 	uint32_t next_crypto_id_ = 1;

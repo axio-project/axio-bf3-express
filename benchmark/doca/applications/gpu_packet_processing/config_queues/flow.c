@@ -179,7 +179,6 @@ doca_error_t create_udp_pipe(struct rxq_udp_queues *udp_queues, struct doca_flow
 {
 	doca_error_t result;
 	struct doca_flow_match match = {0};
-	struct doca_flow_match match_mask = {0};
 	struct doca_flow_fwd fwd = {0};
 	struct doca_flow_fwd miss_fwd = {0};
 	struct doca_flow_pipe_cfg *pipe_cfg;
@@ -194,8 +193,8 @@ doca_error_t create_udp_pipe(struct rxq_udp_queues *udp_queues, struct doca_flow
 	if (udp_queues == NULL || port == NULL || udp_queues->numq > MAX_QUEUES)
 		return DOCA_ERROR_INVALID_VALUE;
 
-	match.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	match.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP;
+	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
+	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_UDP;
 
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
 	if (result != DOCA_SUCCESS) {
@@ -208,12 +207,6 @@ doca_error_t create_udp_pipe(struct rxq_udp_queues *udp_queues, struct doca_flow
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
@@ -224,7 +217,7 @@ doca_error_t create_udp_pipe(struct rxq_udp_queues *udp_queues, struct doca_flow
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
@@ -241,9 +234,10 @@ doca_error_t create_udp_pipe(struct rxq_udp_queues *udp_queues, struct doca_flow
 	}
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_UDP;
-	fwd.num_of_queues = udp_queues->numq;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_UDP;
+	fwd.rss.nr_queues = udp_queues->numq;
 
 	miss_fwd.type = DOCA_FLOW_FWD_DROP;
 
@@ -289,7 +283,7 @@ doca_error_t create_tcp_cpu_pipe(struct rxq_tcp_queues *tcp_queues, struct doca_
 {
 	doca_error_t result;
 	uint16_t rss_queues[MAX_QUEUES];
-	struct doca_flow_match match_mask = {0};
+	struct doca_flow_match match = {0};
 
 	/*
 	 * Setup the TCP pipe 'rxq_pipe_cpu' which forwards unrecognized flows and
@@ -303,19 +297,21 @@ doca_error_t create_tcp_cpu_pipe(struct rxq_tcp_queues *tcp_queues, struct doca_
 	/* Init TCP session table */
 	tcp_session_table = rte_hash_create(&tcp_session_ht_params);
 
-	struct doca_flow_match match = {.outer = {
-						.l3_type = DOCA_FLOW_L3_TYPE_IP4,
-						.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP,
-					}};
+	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
+	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_TCP;
 
 	for (int idx = 0; idx < tcp_queues->numq_cpu_rss; idx++)
 		rss_queues[idx] = idx;
 
 	struct doca_flow_fwd fwd = {
 		.type = DOCA_FLOW_FWD_RSS,
-		.rss_outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP,
-		.rss_queues = rss_queues,
-		.num_of_queues = tcp_queues->numq_cpu_rss,
+		.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED,
+		.rss =
+			{
+				.outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP,
+				.queues_array = rss_queues,
+				.nr_queues = tcp_queues->numq_cpu_rss,
+			},
 	};
 
 	struct doca_flow_fwd miss_fwd = {
@@ -340,12 +336,6 @@ doca_error_t create_tcp_cpu_pipe(struct rxq_tcp_queues *tcp_queues, struct doca_
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
@@ -356,7 +346,7 @@ doca_error_t create_tcp_cpu_pipe(struct rxq_tcp_queues *tcp_queues, struct doca_
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
@@ -423,7 +413,6 @@ doca_error_t create_tcp_gpu_pipe(struct rxq_tcp_queues *tcp_queues,
 			{
 				.l3_type = DOCA_FLOW_L3_TYPE_IP4,
 				.ip4.next_proto = IPPROTO_TCP,
-				.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP,
 			},
 	};
 
@@ -432,6 +421,7 @@ doca_error_t create_tcp_gpu_pipe(struct rxq_tcp_queues *tcp_queues,
 		match.outer.ip4.dst_ip = 0xffffffff;
 		match.outer.tcp.l4_port.src_port = 0xffff;
 		match.outer.tcp.l4_port.dst_port = 0xffff;
+		match.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP;
 	};
 
 	for (int idx = 0; idx < tcp_queues->numq; idx++) {
@@ -441,9 +431,13 @@ doca_error_t create_tcp_gpu_pipe(struct rxq_tcp_queues *tcp_queues,
 
 	struct doca_flow_fwd fwd = {
 		.type = DOCA_FLOW_FWD_RSS,
-		.rss_outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP,
-		.rss_queues = rss_queues,
-		.num_of_queues = tcp_queues->numq,
+		.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED,
+		.rss =
+			{
+				.outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_TCP,
+				.queues_array = rss_queues,
+				.nr_queues = tcp_queues->numq,
+			},
 	};
 
 	struct doca_flow_fwd miss_fwd = {
@@ -466,12 +460,6 @@ doca_error_t create_tcp_gpu_pipe(struct rxq_tcp_queues *tcp_queues,
 	result = doca_flow_pipe_cfg_set_name(pipe_cfg, pipe_name);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
@@ -541,7 +529,6 @@ doca_error_t create_icmp_gpu_pipe(struct rxq_icmp_queues *icmp_queues, struct do
 {
 	doca_error_t result;
 	struct doca_flow_match match = {0};
-	struct doca_flow_match match_mask = {0};
 	struct doca_flow_fwd fwd = {0};
 	struct doca_flow_fwd miss_fwd = {0};
 	struct doca_flow_pipe_cfg *pipe_cfg;
@@ -556,8 +543,8 @@ doca_error_t create_icmp_gpu_pipe(struct rxq_icmp_queues *icmp_queues, struct do
 	if (icmp_queues == NULL || port == NULL || icmp_queues->numq > MAX_QUEUES)
 		return DOCA_ERROR_INVALID_VALUE;
 
-	match.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4;
-	match.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_ICMP;
+	match.parser_meta.outer_l3_type = DOCA_FLOW_L3_META_IPV4;
+	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_ICMP;
 
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
 	if (result != DOCA_SUCCESS) {
@@ -570,12 +557,6 @@ doca_error_t create_icmp_gpu_pipe(struct rxq_icmp_queues *icmp_queues, struct do
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
@@ -586,11 +567,13 @@ doca_error_t create_icmp_gpu_pipe(struct rxq_icmp_queues *icmp_queues, struct do
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, &match_mask);
+
+	result = doca_flow_pipe_cfg_set_match(pipe_cfg, &match, NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
+
 	result = doca_flow_pipe_cfg_set_monitor(pipe_cfg, &monitor);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg monitor: %s", doca_error_get_descr(result));
@@ -603,9 +586,10 @@ doca_error_t create_icmp_gpu_pipe(struct rxq_icmp_queues *icmp_queues, struct do
 	}
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_outer_flags = DOCA_FLOW_RSS_IPV4;
-	fwd.num_of_queues = icmp_queues->numq;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.outer_flags = DOCA_FLOW_RSS_IPV4;
+	fwd.rss.nr_queues = icmp_queues->numq;
 
 	miss_fwd.type = DOCA_FLOW_FWD_DROP;
 
@@ -655,7 +639,6 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 	uint32_t priority_high = 1;
 	uint32_t priority_low = 3;
 	doca_error_t result;
-	struct doca_flow_match match_mask = {0};
 	struct doca_flow_monitor monitor = {
 		.counter_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED,
 	};
@@ -678,13 +661,6 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 		doca_flow_pipe_cfg_destroy(pipe_cfg);
 		return result;
 	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		doca_flow_pipe_cfg_destroy(pipe_cfg);
-		return result;
-	}
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_CONTROL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
@@ -694,12 +670,6 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, true);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
-		doca_flow_pipe_cfg_destroy(pipe_cfg);
-		return result;
-	}
-	result = doca_flow_pipe_cfg_set_match(pipe_cfg, NULL, &match_mask);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match: %s", doca_error_get_descr(result));
 		doca_flow_pipe_cfg_destroy(pipe_cfg);
 		return result;
 	}
@@ -719,8 +689,9 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 	doca_flow_pipe_cfg_destroy(pipe_cfg);
 
 	struct doca_flow_match udp_match = {
+		.outer.eth.type = htons(DOCA_FLOW_ETHER_TYPE_IPV4),
 		.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4,
-		.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_UDP,
+		.outer.ip4.next_proto = IPPROTO_UDP,
 	};
 
 	struct doca_flow_fwd udp_fwd = {
@@ -748,11 +719,9 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 
 	if (icmp_queues->rxq_pipe) {
 		struct doca_flow_match icmp_match_gpu = {
-			.outer =
-				{
-					.l3_type = DOCA_FLOW_L3_TYPE_IP4,
-					.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_ICMP,
-				},
+			.outer.eth.type = htons(DOCA_FLOW_ETHER_TYPE_IPV4),
+			.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4,
+			.outer.ip4.next_proto = IPPROTO_ICMP,
 		};
 
 		struct doca_flow_fwd icmp_fwd_gpu = {
@@ -774,18 +743,16 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 							  NULL,
 							  &udp_queues->root_icmp_entry_gpu);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Root pipe UDP entry creation failed with: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Root pipe ICMP entry creation failed with: %s", doca_error_get_descr(result));
 			return result;
 		}
 	}
 
 	if (tcp_queues->rxq_pipe_gpu) {
 		struct doca_flow_match tcp_match_gpu = {
-			.outer =
-				{
-					.l3_type = DOCA_FLOW_L3_TYPE_IP4,
-					.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP,
-				},
+			.outer.eth.type = htons(DOCA_FLOW_ETHER_TYPE_IPV4),
+			.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4,
+			.outer.ip4.next_proto = IPPROTO_TCP,
 		};
 
 		struct doca_flow_fwd tcp_fwd_gpu = {
@@ -807,19 +774,19 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 							  NULL,
 							  &udp_queues->root_tcp_entry_gpu);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Root pipe UDP entry creation failed with: %s", doca_error_get_descr(result));
+			DOCA_LOG_ERR("Root pipe TCP GPU entry creation failed with: %s", doca_error_get_descr(result));
 			return result;
 		}
 	}
 
 	if (tcp_queues->rxq_pipe_cpu) {
 		struct doca_flow_match tcp_match_cpu = {
-			.outer =
-				{
-					.l3_type = DOCA_FLOW_L3_TYPE_IP4,
-					.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP,
-				},
+			.outer.eth.type = htons(DOCA_FLOW_ETHER_TYPE_IPV4),
+			.outer.l3_type = DOCA_FLOW_L3_TYPE_IP4,
+			.outer.ip4.next_proto = IPPROTO_TCP,
+			.outer.l4_type_ext = DOCA_FLOW_L4_TYPE_EXT_TCP,
 		};
+
 		struct doca_flow_fwd tcp_fwd_cpu = {
 			.type = DOCA_FLOW_FWD_PIPE,
 			.next_pipe = tcp_queues->rxq_pipe_cpu,
@@ -831,13 +798,20 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 			DOCA_FLOW_MATCH_TCP_FLAG_FIN,
 		};
 
+		/* Note: not strictly necessary */
+		struct doca_flow_match tcp_match_cpu_mask = {
+			.outer.eth.type = 0xFFFF,
+			.outer.ip4.next_proto = 0xFF,
+		};
+
 		for (int i = 0; i < 3; i++) {
 			tcp_match_cpu.outer.tcp.flags = individual_tcp_flags[i];
+			tcp_match_cpu_mask.outer.tcp.flags = individual_tcp_flags[i];
 			result = doca_flow_pipe_control_add_entry(0,
 								  priority_high,
 								  udp_queues->root_pipe,
 								  &tcp_match_cpu,
-								  &tcp_match_cpu,
+								  &tcp_match_cpu_mask,
 								  NULL,
 								  NULL,
 								  NULL,
@@ -847,7 +821,8 @@ doca_error_t create_root_pipe(struct rxq_udp_queues *udp_queues,
 								  NULL,
 								  &udp_queues->root_tcp_entry_cpu[i]);
 			if (result != DOCA_SUCCESS) {
-				DOCA_LOG_ERR("Root pipe TCP entry creation failed with: %s",
+				DOCA_LOG_ERR("Root pipe TCP CPU %d entry creation failed with: %s",
+					     i,
 					     doca_error_get_descr(result));
 				return result;
 			}

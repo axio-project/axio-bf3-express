@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2022-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -30,7 +30,7 @@
 #include <doca_flow.h>
 
 #include "dpdk_utils.h"
-#include "utils.h"
+#include "flow_switch_common.h"
 
 #include "switch_core.h"
 
@@ -46,39 +46,53 @@ DOCA_LOG_REGISTER(SWITCH);
 int main(int argc, char **argv)
 {
 	doca_error_t result;
-	int exit_status = EXIT_SUCCESS;
+	int exit_status = EXIT_FAILURE;
 	struct doca_log_backend *sdk_log;
+	struct flow_switch_ctx ctx = {0};
 	struct application_dpdk_config dpdk_config = {0};
 
 	/* Register a logger backend */
 	result = doca_log_backend_create_standard();
 	if (result != DOCA_SUCCESS)
-		return EXIT_FAILURE;
+		return exit_status;
 
 	/* Register a logger backend for internal SDK errors and warnings */
 	result = doca_log_backend_create_with_file_sdk(stderr, &sdk_log);
 	if (result != DOCA_SUCCESS)
-		return EXIT_FAILURE;
+		return exit_status;
 	result = doca_log_backend_set_sdk_level(sdk_log, DOCA_LOG_LEVEL_WARNING);
 	if (result != DOCA_SUCCESS)
-		return EXIT_FAILURE;
+		return exit_status;
 
 	/* Parse cmdline/json arguments */
-	result = doca_argp_init("doca_switch", NULL);
+	result = doca_argp_init("doca_switch", &ctx);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init ARGP resources: %s", doca_error_get_descr(result));
-		return EXIT_FAILURE;
+		return exit_status;
 	}
-	doca_argp_set_dpdk_program(dpdk_init);
+
+	result = register_doca_flow_switch_param();
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register application param: %s", doca_error_get_descr(result));
+		goto argp_cleanup;
+	}
+
+	doca_argp_set_dpdk_program(init_flow_switch_dpdk);
 	result = doca_argp_start(argc, argv);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to parse application input: %s", doca_error_get_descr(result));
-		doca_argp_destroy();
-		return EXIT_FAILURE;
+		goto argp_cleanup;
 	}
 
-	/* Initialize ports */
-	switch_ports_count(&dpdk_config);
+	result = init_doca_flow_switch_common(&ctx);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to init application param: %s", doca_error_get_descr(result));
+		goto dpdk_destroy;
+	}
+
+	dpdk_config.port_config.nb_ports = ctx.nb_ports + ctx.nb_reps;
+	dpdk_config.port_config.switch_mode = 1;
+	dpdk_config.port_config.isolated_mode = 1;
 
 	/* Update queues and ports */
 	result = dpdk_queues_and_ports_init(&dpdk_config);
@@ -89,7 +103,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Init switch */
-	result = switch_init(&dpdk_config);
+	result = switch_init(&dpdk_config, &ctx);
 	if (result != DOCA_SUCCESS) {
 		exit_status = EXIT_FAILURE;
 		goto dpdk_cleanup;
@@ -102,23 +116,22 @@ int main(int argc, char **argv)
 		goto switch_cleanup;
 	}
 
+	exit_status = EXIT_SUCCESS;
+
 	/* Clean Flow Parser structures */
 	flow_parser_cleanup();
 
 switch_cleanup:
 	/* Closing and releasing switch resources */
 	switch_destroy();
-
-	/* Closing and releasing resources */
-	doca_flow_destroy();
-
 dpdk_cleanup:
-	/* DPDK cleanup */
+	/* DPDK ports cleanup */
 	dpdk_queues_and_ports_fini(&dpdk_config);
 dpdk_destroy:
+	/* DPDK cleanup + device closure */
 	dpdk_fini();
-
-	/* ARGP cleanup */
+	destroy_doca_flow_switch_common(&ctx);
+argp_cleanup:
 	doca_argp_destroy();
 
 	return exit_status;

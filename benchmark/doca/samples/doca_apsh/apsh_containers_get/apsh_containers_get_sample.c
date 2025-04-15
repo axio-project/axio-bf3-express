@@ -39,7 +39,11 @@ DOCA_LOG_REGISTER(CONTAINERS_GET);
  * @pid [in]: PID of the target process
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t containers_get(const char *dma_device_name, const char *pci_vuid, enum doca_apsh_system_os os_type)
+doca_error_t containers_get(const char *dma_device_name,
+			    const char *pci_vuid,
+			    enum doca_apsh_system_os os_type,
+			    const char *mem_region,
+			    const char *os_symbols)
 {
 	doca_error_t result;
 	int i;
@@ -48,9 +52,6 @@ doca_error_t containers_get(const char *dma_device_name, const char *pci_vuid, e
 	struct doca_apsh_process **processes;
 	int num_containers, num_processes;
 	struct doca_apsh_container **containers_list;
-	/* Hardcoded paths to the files created by doca_apsh_config tool */
-	const char *os_symbols = "/tmp/symbols.json";
-	const char *mem_region = "/tmp/mem_regions.json";
 
 	/* Init */
 	result = init_doca_apsh(dma_device_name, &apsh_ctx);

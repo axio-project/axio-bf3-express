@@ -128,7 +128,7 @@ static doca_error_t file_callback(void *param, void *config)
 	int len;
 
 	len = strnlen(file, MAX_FILE_NAME);
-	if (len == MAX_FILE_NAME) {
+	if (len >= MAX_FILE_NAME) {
 		DOCA_LOG_ERR("Invalid file name length, max %d", USER_MAX_FILE_NAME);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
@@ -150,7 +150,7 @@ static doca_error_t output_callback(void *param, void *config)
 	int len;
 
 	len = strnlen(file, MAX_FILE_NAME);
-	if (len == MAX_FILE_NAME) {
+	if (len >= MAX_FILE_NAME) {
 		DOCA_LOG_ERR("Invalid file name length, max %d", USER_MAX_FILE_NAME);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
@@ -515,7 +515,11 @@ doca_error_t allocate_aes_gcm_resources(const char *pci_addr, uint32_t max_bufs,
 
 	/* Include resources in user data of context to be used in callbacks */
 	ctx_user_data.ptr = resources;
-	doca_ctx_set_user_data(state->ctx, ctx_user_data);
+	result = doca_ctx_set_user_data(state->ctx, ctx_user_data);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Unable to set user data for AES-GCM ctx: %s", doca_error_get_descr(result));
+		goto destroy_core_objects;
+	}
 
 	return result;
 

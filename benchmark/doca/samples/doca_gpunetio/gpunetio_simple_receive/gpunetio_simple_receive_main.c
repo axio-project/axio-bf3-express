@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -123,12 +123,6 @@ static doca_error_t register_sample_params(void)
 	result = doca_argp_register_param(nic_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register ARGP param: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	result = doca_argp_param_create(&nic_param);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
 		return result;
 	}
 

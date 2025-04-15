@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <doca_bitfield.h>
 #include <doca_log.h>
 #include <doca_flow.h>
 
@@ -35,6 +36,8 @@
 DOCA_LOG_REGISTER(ETH::RXQ::COMMON);
 
 #define COUNTERS_NUM (1 << 19)
+#define DEFAULT_METADATA 1234
+#define DEFAULT_FLOW_TAG 5678
 
 static bool is_flow_initialized = false;
 
@@ -127,27 +130,42 @@ destroy_port_cfg:
  * Create root pipe and add an entry into desired RXQ queue
  *
  * @df_port [in]: DOCA Flow port to create root pipe in
- * @rxq_flow_queue_id [in]: Pointer to RXQ queue ID
+ * @rxq_flow_queue_ids [in]: Pointer to RXQ queue ID
+ * @nb_queues [in]: Number of flow queues supplied
  * @root_pipe [out]: DOCA Flow pipe to create
  * @root_entry [out]: DOCA Flow port entry to create
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 static doca_error_t create_root_pipe(struct doca_flow_port *df_port,
-				     uint16_t *rxq_flow_queue_id,
+				     uint16_t *rxq_flow_queue_ids,
+				     uint16_t nb_queues,
 				     struct doca_flow_pipe **root_pipe,
 				     struct doca_flow_pipe_entry **root_entry)
 {
 	doca_error_t status;
-	struct doca_flow_match match_mask;
-	struct doca_flow_monitor monitor;
+	struct doca_flow_actions actions, *actions_arr[1];
+	struct doca_flow_match all_match;
 	struct doca_flow_pipe_cfg *pipe_cfg;
 	const char *pipe_name = "ROOT_PIPE";
-	struct doca_flow_match all_match;
-	struct doca_flow_fwd all_fwd = {.type = DOCA_FLOW_FWD_RSS, .rss_queues = rxq_flow_queue_id, .num_of_queues = 1};
+	struct doca_flow_fwd all_fwd = {
+		.type = DOCA_FLOW_FWD_RSS,
+		.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED,
+		.rss =
+			{
+				.queues_array = rxq_flow_queue_ids,
+				.nr_queues = nb_queues,
+				.outer_flags = DOCA_FLOW_RSS_IPV4 | DOCA_FLOW_RSS_UDP,
+			},
+	};
+	struct doca_flow_fwd fwd_miss = {
+		.type = DOCA_FLOW_FWD_DROP,
+	};
 
-	memset(&monitor, 0, sizeof(monitor));
-	monitor.counter_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
-	memset(&match_mask, 0, sizeof(match_mask));
+	memset(&all_match, 0, sizeof(all_match));
+	memset(&actions, 0, sizeof(actions));
+	actions.meta.pkt_meta = DOCA_HTOBE32(DEFAULT_METADATA);
+	actions.meta.mark = DOCA_HTOBE32(DEFAULT_FLOW_TAG);
+	actions_arr[0] = &actions;
 
 	status = doca_flow_pipe_cfg_create(&pipe_cfg, df_port);
 	if (status != DOCA_SUCCESS) {
@@ -160,7 +178,7 @@ static doca_error_t create_root_pipe(struct doca_flow_port *df_port,
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg name, err: %s", doca_error_get_name(status));
 		goto destroy_pipe_cfg;
 	}
-	status = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_CONTROL);
+	status = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type, err: %s", doca_error_get_name(status));
 		goto destroy_pipe_cfg;
@@ -170,39 +188,25 @@ static doca_error_t create_root_pipe(struct doca_flow_port *df_port,
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root, err: %s", doca_error_get_name(status));
 		goto destroy_pipe_cfg;
 	}
-	status = doca_flow_pipe_cfg_set_match(pipe_cfg, NULL, &match_mask);
+	status = doca_flow_pipe_cfg_set_match(pipe_cfg, &all_match, NULL);
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg match, err: %s", doca_error_get_name(status));
 		goto destroy_pipe_cfg;
 	}
-	status = doca_flow_pipe_cfg_set_monitor(pipe_cfg, &monitor);
+	status = doca_flow_pipe_cfg_set_actions(pipe_cfg, actions_arr, NULL, NULL, 1);
 	if (status != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg monitor, err: %s", doca_error_get_name(status));
+		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg actions: %s", doca_error_get_descr(status));
 		goto destroy_pipe_cfg;
 	}
 
-	status = doca_flow_pipe_create(pipe_cfg, NULL, NULL, root_pipe);
+	status = doca_flow_pipe_create(pipe_cfg, &all_fwd, &fwd_miss, root_pipe);
 	if (status != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create doca flow pipe, err: %s", doca_error_get_name(status));
 		goto destroy_pipe_cfg;
 	}
 	doca_flow_pipe_cfg_destroy(pipe_cfg);
 
-	memset(&all_match, 0, sizeof(all_match));
-
-	status = doca_flow_pipe_control_add_entry(0,
-						  0,
-						  *root_pipe,
-						  &all_match,
-						  NULL,
-						  NULL,
-						  NULL,
-						  NULL,
-						  NULL,
-						  NULL,
-						  &all_fwd,
-						  NULL,
-						  root_entry);
+	status = doca_flow_pipe_add_entry(0, *root_pipe, &all_match, &actions, NULL, NULL, 0, NULL, root_entry);
 	if (status != DOCA_SUCCESS) {
 		doca_flow_pipe_destroy(*root_pipe);
 		DOCA_LOG_ERR("Failed to add doca flow entry, err: %s", doca_error_get_name(status));
@@ -264,7 +268,8 @@ doca_error_t allocate_eth_rxq_flow_resources(struct eth_rxq_flow_config *cfg, st
 	doca_error_t status, clean_status;
 
 	status = create_root_pipe(resources->df_port,
-				  &(cfg->rxq_flow_queue_id),
+				  cfg->rxq_flow_queue_ids,
+				  cfg->nb_queues,
 				  &(resources->root_pipe),
 				  &(resources->root_entry));
 	if (status != DOCA_SUCCESS) {

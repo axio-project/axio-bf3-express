@@ -116,20 +116,6 @@ doca_error_t create_icmp_queues(struct rxq_icmp_queues *icmp_queues,
 					    icmp_queues->gpu_pkt_addr[idx],
 					    cyclic_buffer_size,
 					    &(icmp_queues->dmabuf_fd[idx]));
-
-		if (result == DOCA_SUCCESS) {
-			DOCA_LOG_INFO("Mapping receive queue buffer (0x%p size %dB dmabuf fd %d) with dmabuf mode",
-				      icmp_queues->gpu_pkt_addr[idx],
-				      cyclic_buffer_size,
-				      icmp_queues->dmabuf_fd[idx]);
-
-			result = doca_mmap_set_dmabuf_memrange(icmp_queues->pkt_buff_mmap[idx],
-							       icmp_queues->dmabuf_fd[idx],
-							       icmp_queues->gpu_pkt_addr[idx],
-							       0,
-							       cyclic_buffer_size);
-		}
-
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_INFO("Mapping receive queue buffer (0x%p size %dB) with nvidia-peermem mode",
 				      icmp_queues->gpu_pkt_addr[idx],
@@ -141,6 +127,22 @@ doca_error_t create_icmp_queues(struct rxq_icmp_queues *icmp_queues,
 							cyclic_buffer_size);
 			if (result != DOCA_SUCCESS) {
 				DOCA_LOG_ERR("Failed to set memrange for mmap %s", doca_error_get_descr(result));
+				destroy_icmp_queues(icmp_queues);
+				return DOCA_ERROR_BAD_STATE;
+			}
+		} else {
+			DOCA_LOG_INFO("Mapping receive queue buffer (0x%p size %dB dmabuf fd %d) with dmabuf mode",
+				      icmp_queues->gpu_pkt_addr[idx],
+				      cyclic_buffer_size,
+				      icmp_queues->dmabuf_fd[idx]);
+
+			result = doca_mmap_set_dmabuf_memrange(icmp_queues->pkt_buff_mmap[idx],
+							       icmp_queues->dmabuf_fd[idx],
+							       icmp_queues->gpu_pkt_addr[idx],
+							       0,
+							       cyclic_buffer_size);
+			if (result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to set dmabuf memrange for mmap %s", doca_error_get_descr(result));
 				destroy_icmp_queues(icmp_queues);
 				return DOCA_ERROR_BAD_STATE;
 			}

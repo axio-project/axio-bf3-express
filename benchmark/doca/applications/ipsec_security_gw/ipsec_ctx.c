@@ -232,19 +232,19 @@ doca_error_t ipsec_security_gw_init_devices(struct ipsec_security_gw_config *app
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to open DOCA device for the unsecured port: %s",
 				     doca_error_get_descr(result));
-			return result;
+			goto close_secured;
 		}
 		/* probe the opened doca devices with 'dv_flow_en=2' for HWS mode */
 		result = doca_dpdk_port_probe(app_cfg->objects.secured_dev.doca_dev, "dv_flow_en=2,dv_xmeta_en=4");
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to probe dpdk port for secured port: %s", doca_error_get_descr(result));
-			return result;
+			goto close_unsecured;
 		}
 
 		result = doca_dpdk_port_probe(app_cfg->objects.unsecured_dev.doca_dev, "dv_flow_en=2,dv_xmeta_en=4");
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to probe dpdk port for unsecured port: %s", doca_error_get_descr(result));
-			return result;
+			goto close_unsecured;
 		}
 	} else {
 		result = doca_dpdk_port_probe(
@@ -252,9 +252,14 @@ doca_error_t ipsec_security_gw_init_devices(struct ipsec_security_gw_config *app
 			"dv_flow_en=2,dv_xmeta_en=4,fdb_def_rule_en=0,vport_match=1,repr_matching_en=0,representor=pf[0-1]");
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to probe dpdk port for secured port: %s", doca_error_get_descr(result));
-			return result;
+			goto close_secured;
 		}
 	}
 
 	return DOCA_SUCCESS;
+close_unsecured:
+	doca_dev_close(app_cfg->objects.unsecured_dev.doca_dev);
+close_secured:
+	doca_dev_close(app_cfg->objects.secured_dev.doca_dev);
+	return result;
 }

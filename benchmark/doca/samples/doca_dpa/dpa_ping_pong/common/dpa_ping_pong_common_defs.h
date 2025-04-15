@@ -50,6 +50,8 @@ struct dpa_ping_pong_tls {
  * @brief DPA Thread device argument struct
  */
 struct dpa_thread_arg {
+	doca_dpa_dev_t dpa_ctx_handle;	 /**< Extended DPA context handle. Relevant when running from DPU to set device
+					    for SF DOCA device */
 	uint64_t dpa_comp_handle;	 /**< Handle of DPA Completion Context which is attached to DPA Thread */
 	uint64_t rdma_handle;		 /**< Handle of RDMA context which is attached to  DPA Completion Context */
 	uint64_t recv_addr;		 /**< Receive buffer address (DPA heap memory) */

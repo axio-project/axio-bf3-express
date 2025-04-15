@@ -1,0 +1,155 @@
+FlexIO SDK samples
+==================
+
+Table of context:
+1. Introduction
+2. Minimal requirements
+3. Samples structure
+4. Build script
+5. dpacc and linking
+6. DOCA DPACC build script
+7. Documentation
+
+1. Introduction
+---------------
+The FlexIO SDK samples serve as a reference for building and running
+FlexIO-based DPA applications. They provide a collection of out-of-the-box
+working DPA applications that encompass the basic functionality of the
+FlexIO SDK.
+
+2. Minimal requirements
+-----------------------
+2.1 The user should have installed:
+1. DOCA DPACC package
+2. DOCA RDMA package
+3. pkg-config package
+4. python3 package
+5. gcc with version not less than 7.0 or clang with version not less than 7.0
+6. meson package with version not less than 0.60.0
+7. ninja package
+8. DOCA FlexIO SDK
+
+2.2 Device should be configured in ETH mode.
+
+2.3 The user also should understand and work with:
+1. C programming
+2. ConnectX architecture
+3. DPA
+
+3. Samples structure
+--------------------
+
+Each sample is situated in its own directory and is accompanied by a corresponding
+description in README files. Every sample comprises two applications: the first,
+located in the 'device' directory, is designed for DPA, while the second, found
+in the 'host' directory, is intended for execution on DPU or on the host in a
+Linux OS environment.
+Additionally, there is a 'common' directory housing libraries for the examples.
+These libraries are further categorized into 'device' and 'host' directories,
+facilitating linking with similar applications. Beyond containing functions and
+macros, these libraries also serve as illustrative examples for working with them.
+
+The list of the samples:
+3.1 flexio_rpc - the sample that demonstrate how to run RPC function from DPA.
+3.2 packet_processor - the sample that demonstrate how work processing of package.
+
+4. Build script
+---------------
+Build script build.sh used for build the samples system.
+Usage:
+build.sh [--clean] [--rebuild] [--allow-warnings] [-j JOBS] [-v] [-O level]
+         [--check-compatibility] [--build-dir BUILD] [--cpu CPU] [--clang]
+By default - build the samples system.
+Parameters:
+  --clean - remove output directory.
+  --rebuild - remove output directory and start build the sample system.
+  --allow-warnings - by default build stop if the warning exist. This flag is allow
+       build with warnings.
+  --j JOBS - allow multijob build. JOBS is number of the jobs.
+  -v - print commands from ninja run.
+  -O level - level of optimization and debug from 0 to 2.
+        0 - optimization 0 with debug.
+        1 - optimization 2 with debug and lto - default.
+        2 - optimization 3 with no debug and with lto.
+  --check-compatibility - run in the start the independent script check_compat
+        that will check if the system is ready for build samples.
+  --build-dir BUILD - set alternative path for build directory. By default - build.
+  --cpu CPU - indicates which types of DPA CPU are going to be used
+     for the build. user may specify a CSV list of values. Possible
+     values of CPU must be cx7, bf3 or cx8. bf3 is default.
+  --clang - build host application with clang. By default - with gcc.
+
+5. dpacc and linking
+--------------------
+The "dpacc" application is utilized for compiling, building, or archiving DPA code.
+
+In archive mode, two libraries are generated — one for the device and one for
+the host. Typically, for samples, only the device library is used, which is
+linked with the DPA application.
+
+In build mode, a library is created for the host, which contains an DPA application
+in ELF format along with a special constructor. This library (which may be more than
+one) needs to be linked with the relevant host application. During construction,
+before the main function begins, the constructor of the library sets correct values
+for extern struct flexio_app and extern flexio_func_t variables declared in the
+host application.
+
+The functions in DPA that can be called from host applications (entry point
+functions) should have attributes __dpa_rpc__ or __dpa_global__. The distinction
+between these attributes is that __dpa_rpc__ functions can return a 64-bit value
+and are used for Remote Procedure Calls (RPC), while __dpa_global__ functions
+do not return values and are employed as event handlers.
+
+For example:
+DPA application includes two global functions, one is declared with __dpa_rpc__
+prefix and the other with __dpa_global__ prefix and the name of the application
+should be example1.
+__dpa_rpc__ uint64_t func_1(uint64_t arg1)
+__dpa_global__ void func_2(uint64_t arg1)
+The DPA application build with flag --app_name example1.
+So, the corresponding host application should have the code:
+extern struct flexio_app *example1;
+extern flexio_func_t func_1;
+extern flexio_func_t func_2;
+These pointers is initialized in run-time before the main function is called.
+Pointer to example1 used for create process:
+flexio_process_create(ibv_ctx, example1, &process_attr, &process);
+Pointer to func_1 used for RPC function:
+flexio_process_call(process, &func_1, &func_ret, arg1);
+Pointer to func_2 used for create event handler:
+struct flexio_event_handler_attr eh_attr = {0};
+...
+eh_attr.host_stub_func = func_2;
+...
+flexio_event_handler_create(process, &eh_attr, &event_handler);
+
+6. DOCA DPACC build script
+--------------------------
+DOCA DPACC build script doca_build_dpacc.sh used for build DPA applications and
+archives. The script serves as a shell for running the dpacc application..
+Usage:
+    doca_build_dpacc.sh build_mode parameters
+build_mode:
+    --application - for compile DPA-device code and build host stub library.
+    --library - to create archive for DPA-device code
+Parameters:
+    --app_name APP_NAME - A name of application - the archive and the application inside the
+        archive. Used only for application build mode.
+    --archive_name OUT_FILE - Name of archive. Used only for library build mode.
+    --srcs SRCS - A full path to device sources,
+    --dpacc_build_dir DPACC_BUILD_DIR - A output directory.
+    --external_cc_options EXTERNAL_CC_OPTIONS - Additional options for clang compiler.
+    --hostcc_args HOSTCC_ARGS - Additional options for gcc compiler.
+    --additional_include_directories ADDITIONAL_INCLUDE_DIRECTORIES - Additional
+        include directories.
+    --additional_ld_libs ADDITIONAL_LD_LIBS - Additional ld libs (only name, without
+        lib prefix and .a suffix). Same as -l option for gcc.
+    --additional_lib_paths ADDITIONAL_LIB_PATHS - Additional lib paths for ADDITIONAL_LD_LIBS.
+        Same as -L option for gcc.
+    --additional_dpacc_options ADDITIONAL_DPACC_OPTIONS - Additional options for dpacc tool.
+    --allow-experimental-api [yes|no] - support for experimental API.
+
+7. Documentation
+----------------
+[DPA Subsystem Programming Guide](https://docs.nvidia.com/doca/sdk/dpa-subsystem-programming-guide/index.html)
+[NVIDIA DOCA DPACC Compiler](https://docs.nvidia.com/doca/sdk/dpacc-compiler/index.html)

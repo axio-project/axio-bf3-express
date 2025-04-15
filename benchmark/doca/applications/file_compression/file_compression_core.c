@@ -434,7 +434,7 @@ static doca_error_t compress_file(char *file_data,
 }
 
 /*
- * Send the input file with comm channel to the server in segments of max_comch_msg length
+ * Send the input file with comch to the server in segments of max_comch_msg length
  *
  * @compress_cfg [in]: compression configuration information
  * @comch_cfg [in]: comch configuration object for sending file across
@@ -812,7 +812,7 @@ static doca_error_t file_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -833,7 +833,7 @@ static doca_error_t dev_pci_addr_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device representor PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device representor PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -911,7 +911,7 @@ doca_error_t register_file_compression_params(void)
 	}
 	doca_argp_param_set_short_name(dev_pci_addr_param, "p");
 	doca_argp_param_set_long_name(dev_pci_addr_param, "pci-addr");
-	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comm Channel device PCI address");
+	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comch device PCI address");
 	doca_argp_param_set_callback(dev_pci_addr_param, dev_pci_addr_callback);
 	doca_argp_param_set_type(dev_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	doca_argp_param_set_mandatory(dev_pci_addr_param);
@@ -929,7 +929,7 @@ doca_error_t register_file_compression_params(void)
 	}
 	doca_argp_param_set_short_name(rep_pci_addr_param, "r");
 	doca_argp_param_set_long_name(rep_pci_addr_param, "rep-pci");
-	doca_argp_param_set_description(rep_pci_addr_param, "DOCA Comm Channel device representor PCI address");
+	doca_argp_param_set_description(rep_pci_addr_param, "DOCA Comch device representor PCI address");
 	doca_argp_param_set_callback(rep_pci_addr_param, rep_pci_addr_callback);
 	doca_argp_param_set_type(rep_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(rep_pci_addr_param);

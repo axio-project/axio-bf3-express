@@ -37,6 +37,7 @@ DOCA_LOG_REGISTER(RDMA_WRITE_IMMEDIATE_RESPONDER::SAMPLE);
 /*
  * Write the connection details and the mmap details for the requester to read,
  * and read the connection details of the requester
+ * In DC transport mode it is only needed to read the remote connection details
  *
  * @cfg [in]: Configuration parameters
  * @resources [in/out]: RDMA resources
@@ -67,6 +68,10 @@ static doca_error_t write_read_connection(struct rdma_config *cfg, struct rdma_r
 	DOCA_LOG_INFO("You can now copy %s and %s to the requester",
 		      cfg->local_connection_desc_path,
 		      cfg->remote_resource_desc_path);
+
+	if (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
+		return result;
+	}
 	DOCA_LOG_INFO("Please copy %s from the receiver and then press enter", cfg->remote_connection_desc_path);
 
 	/* Wait for enter */
@@ -198,7 +203,8 @@ static doca_error_t rdma_write_immediate_export_and_connect(struct rdma_resource
 
 	result = doca_rdma_export(resources->rdma,
 				  &(resources->rdma_conn_descriptor),
-				  &(resources->rdma_conn_descriptor_size));
+				  &(resources->rdma_conn_descriptor_size),
+				  &(resources->connections[0]));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to export RDMA: %s", doca_error_get_descr(result));
 		return result;
@@ -222,10 +228,14 @@ static doca_error_t rdma_write_immediate_export_and_connect(struct rdma_resource
 		return result;
 	}
 
+	if (resources->cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
+		return result;
+	}
 	/* Connect RDMA */
 	result = doca_rdma_connect(resources->rdma,
 				   resources->remote_rdma_conn_descriptor,
-				   resources->remote_rdma_conn_descriptor_size);
+				   resources->remote_rdma_conn_descriptor_size,
+				   resources->connections[0]);
 	if (result != DOCA_SUCCESS)
 		DOCA_LOG_ERR("Failed to connect the responder's RDMA to the requester's RDMA: %s",
 			     doca_error_get_descr(result));
@@ -302,10 +312,11 @@ static void rdma_write_imm_responder_state_change_callback(const union doca_data
 		DOCA_LOG_INFO("RDMA context is running");
 
 		result = rdma_write_immediate_export_and_connect(resources);
-		if (result != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Rdma_write_immediate_export_and_connect() failed: %s",
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("rdma_write_immediate_export_and_connect() failed: %s",
 				     doca_error_get_descr(result));
-		else
+			break;
+		} else
 			DOCA_LOG_INFO("RDMA context finished initialization");
 
 		if (cfg->use_rdma_cm == true)

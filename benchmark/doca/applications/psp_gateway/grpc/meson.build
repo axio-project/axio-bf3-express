@@ -47,6 +47,7 @@ lib_psp_gateway_grpc = static_library('psp_gateway_grpc',
     psp_gateway_generated_proto_src,
     psp_gateway_generated_grpc_src,
     cpp_args: grpc_cpp_args,
+    override_options: ['cpp_std=c++17'],
     dependencies : grpc_dependencies)
 
 dependency_psp_gateway_grpc = declare_dependency(

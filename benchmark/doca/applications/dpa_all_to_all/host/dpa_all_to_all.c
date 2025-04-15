@@ -54,15 +54,15 @@ static doca_error_t msgsize_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle IB device name parameter
+ * ARGP Callback - Handle RDMA device names parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t devices_name_callback(void *param, void *config)
+static doca_error_t pf_devices_name_callback(void *param, void *config)
 {
-	struct a2a_config *a2a_cgf = (struct a2a_config *)config;
+	struct a2a_config *a2a_cfg = (struct a2a_config *)config;
 	char *devices_names = (char *)param;
 	char *devices_names_list;
 	int len;
@@ -76,20 +76,21 @@ static doca_error_t devices_name_callback(void *param, void *config)
 
 	/* Split the devices names by space */
 	devices_names_list = strtok(devices_names, ",");
-	strncpy(a2a_cgf->device1_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
+	strncpy(a2a_cfg->pf_device1_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
 
-	if (!dpa_device_exists_check(a2a_cgf->device1_name)) {
-		DOCA_LOG_ERR("Entered IB device name: %s doesn't exist or doesn't support DPA", a2a_cgf->device1_name);
+	if (!dpa_device_exists_check(a2a_cfg->pf_device1_name)) {
+		DOCA_LOG_ERR("Entered IB device name: %s doesn't exist or doesn't support DPA",
+			     a2a_cfg->pf_device1_name);
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
 	/* If another name was provided then get it as well */
 	devices_names_list = strtok(NULL, ",");
 	if (devices_names_list != NULL) {
-		strncpy(a2a_cgf->device2_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
-		if (!dpa_device_exists_check(a2a_cgf->device2_name)) {
+		strncpy(a2a_cfg->pf_device2_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
+		if (!dpa_device_exists_check(a2a_cfg->pf_device2_name)) {
 			DOCA_LOG_ERR("Entered IB device name: %s doesn't exist or doesn't support DPA",
-				     a2a_cgf->device2_name);
+				     a2a_cfg->pf_device2_name);
 			return DOCA_ERROR_INVALID_VALUE;
 		}
 		/* Max two devices, so check if a third device was added */
@@ -103,6 +104,59 @@ static doca_error_t devices_name_callback(void *param, void *config)
 	return DOCA_SUCCESS;
 }
 
+#ifdef DOCA_ARCH_DPU
+/*
+ * ARGP Callback - Handle RDMA device names parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t rdma_devices_name_callback(void *param, void *config)
+{
+	struct a2a_config *a2a_cfg = (struct a2a_config *)config;
+	char *devices_names = (char *)param;
+	char *devices_names_list;
+	int len;
+
+	len = strnlen(devices_names, MAX_IB_DEVICE_NAME_LEN);
+	if (len == MAX_IB_DEVICE_NAME_LEN) {
+		DOCA_LOG_ERR("Entered IB device name exceeding the maximum size of %d",
+			     MAX_USER_IB_DEVICE_NAME_LEN * MAX_DEVICES + 1);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	/* Split the devices names by space */
+	devices_names_list = strtok(devices_names, ",");
+	strncpy(a2a_cfg->rdma_device1_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
+
+	if (!rdma_device_exists_check(a2a_cfg->rdma_device1_name)) {
+		DOCA_LOG_ERR("Entered IB device name: %s doesn't exist or doesn't support RDMA",
+			     a2a_cfg->rdma_device1_name);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	/* If another name was provided then get it as well */
+	devices_names_list = strtok(NULL, ",");
+	if (devices_names_list != NULL) {
+		strncpy(a2a_cfg->rdma_device2_name, devices_names_list, MAX_USER_IB_DEVICE_NAME_LEN);
+		if (!rdma_device_exists_check(a2a_cfg->rdma_device2_name)) {
+			DOCA_LOG_ERR("Entered IB device name: %s doesn't exist or doesn't support RDMA",
+				     a2a_cfg->rdma_device2_name);
+			return DOCA_ERROR_INVALID_VALUE;
+		}
+		/* Max two devices, so check if a third device was added */
+		devices_names_list = strtok(NULL, ",");
+		if (devices_names_list != NULL) {
+			DOCA_LOG_ERR("Entered more than two IB devices");
+			return DOCA_ERROR_INVALID_VALUE;
+		}
+	}
+
+	return DOCA_SUCCESS;
+}
+#endif
+
 /*
  * Register the command line parameters for the All to All application.
  *
@@ -112,7 +166,7 @@ static doca_error_t register_all_to_all_params(void)
 {
 	doca_error_t result;
 	struct doca_argp_param *msgsize_param;
-	struct doca_argp_param *devices_param;
+	struct doca_argp_param *pf_devices_param;
 
 	result = doca_argp_param_create(&msgsize_param);
 	if (result != DOCA_SUCCESS) {
@@ -133,24 +187,46 @@ static doca_error_t register_all_to_all_params(void)
 		return result;
 	}
 
-	result = doca_argp_param_create(&devices_param);
+	result = doca_argp_param_create(&pf_devices_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
 		return result;
 	}
-	doca_argp_param_set_short_name(devices_param, "d");
-	doca_argp_param_set_long_name(devices_param, "devices");
-	doca_argp_param_set_arguments(devices_param, "<IB device names>");
+	doca_argp_param_set_short_name(pf_devices_param, "pf_devs");
+	doca_argp_param_set_long_name(pf_devices_param, "pf-devices");
+	doca_argp_param_set_arguments(pf_devices_param, "<PF device name>");
 	doca_argp_param_set_description(
-		devices_param,
-		"IB devices names that supports DPA, separated by comma without spaces (max of two devices). If not provided then a random IB device will be chosen.");
-	doca_argp_param_set_callback(devices_param, devices_name_callback);
-	doca_argp_param_set_type(devices_param, DOCA_ARGP_TYPE_STRING);
-	result = doca_argp_register_param(devices_param);
+		pf_devices_param,
+		"PF devices names that supports DPA, separated by comma without spaces (max of two devices). If not provided then a random device will be chosen.");
+	doca_argp_param_set_callback(pf_devices_param, pf_devices_name_callback);
+	doca_argp_param_set_type(pf_devices_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(pf_devices_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
 		return result;
 	}
+
+#ifdef DOCA_ARCH_DPU
+	struct doca_argp_param *rdma_devices_param;
+	result = doca_argp_param_create(&rdma_devices_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(rdma_devices_param, "rdma_devs");
+	doca_argp_param_set_long_name(rdma_devices_param, "rdma-devices");
+	doca_argp_param_set_arguments(rdma_devices_param, "<RDMA device names>");
+	doca_argp_param_set_description(
+		rdma_devices_param,
+		"devices names that supports RDMA, separated by comma without spaces (max of two devices). If not provided then a random device will be chosen.");
+	doca_argp_param_set_callback(rdma_devices_param, rdma_devices_name_callback);
+	doca_argp_param_set_type(rdma_devices_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(rdma_devices_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+#endif
 
 	return DOCA_SUCCESS;
 }
@@ -226,8 +302,10 @@ int main(int argc, char **argv)
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
 	/* Set default value for devices names */
-	strcpy(cfg.device1_name, IB_DEVICE_DEFAULT_NAME);
-	strcpy(cfg.device2_name, IB_DEVICE_DEFAULT_NAME);
+	strcpy(cfg.pf_device1_name, IB_DEVICE_DEFAULT_NAME);
+	strcpy(cfg.rdma_device1_name, IB_DEVICE_DEFAULT_NAME);
+	strcpy(cfg.pf_device2_name, IB_DEVICE_DEFAULT_NAME);
+	strcpy(cfg.rdma_device2_name, IB_DEVICE_DEFAULT_NAME);
 
 	/* Set default value of message size */
 	cfg.msgsize = MESSAGE_SIZE_DEFAULT_LEN;

@@ -36,6 +36,7 @@ extern "C" {
  * @brief DPA thread device argument struct
  */
 struct dpa_thread_arg {
+	doca_dpa_dev_t dpa_ctx_handle;
 	uint64_t dpa_comp_handle;
 	uint64_t local_buf_addr;
 	uint64_t sync_event_handle;

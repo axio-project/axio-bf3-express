@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2022-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,7 @@
 #include "dpdk_utils.h"
 #include "flow_pipes_manager.h"
 #include "switch_core.h"
+#include "flow_common.h"
 
 DOCA_LOG_REGISTER(SWITCH::Core);
 
@@ -38,42 +39,9 @@ DOCA_LOG_REGISTER(SWITCH::Core);
 #define DEFAULT_TIMEOUT_US (10000) /* Timeout for processing pipe entries */
 
 static struct flow_pipes_manager *pipes_manager;
-
-/* user context struct that will be used in entries process callback */
-struct entries_status {
-	bool failure;	  /* will be set to true if some entry status will not be success */
-	int nb_processed; /* will hold the number of entries that was already processed */
-};
-
-/*
- * Entry processing callback
- *
- * @entry [in]: DOCA Flow entry
- * @pipe_queue [in]: queue identifier
- * @status [in]: DOCA Flow entry status
- * @op [in]: DOCA Flow entry operation
- * @user_ctx [out]: user context
- */
-static void check_for_valid_entry(struct doca_flow_pipe_entry *entry,
-				  uint16_t pipe_queue,
-				  enum doca_flow_entry_status status,
-				  enum doca_flow_entry_op op,
-				  void *user_ctx)
-{
-	(void)entry;
-	(void)op;
-	(void)pipe_queue;
-
-	struct entries_status *entry_status = (struct entries_status *)user_ctx;
-
-	if (entry_status == NULL || op != DOCA_FLOW_ENTRY_OP_ADD)
-		return;
-	if (status != DOCA_FLOW_ENTRY_STATUS_SUCCESS) {
-		DOCA_LOG_ERR("Entry processing failed. entry_op=%d", op);
-		entry_status->failure = true; /* Set is_failure to true if processing failed */
-	}
-	entry_status->nb_processed++;
-}
+static struct doca_flow_port *ports[FLOW_SWITCH_PORTS_MAX];
+static uint32_t actions_mem_size[FLOW_SWITCH_PORTS_MAX];
+static int nr_ports;
 
 /*
  * Create DOCA Flow pipe
@@ -100,13 +68,6 @@ static void pipe_create(struct doca_flow_pipe_cfg *cfg,
 	doca_error_t result;
 
 	DOCA_LOG_DBG("Create pipe is being called");
-
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		return;
-	}
 
 	if (fwd != NULL && fwd->type == DOCA_FLOW_FWD_PIPE) {
 		result = pipes_manager_get_pipe(pipes_manager, fw_pipe_id, &fwd->next_pipe);
@@ -418,166 +379,49 @@ static void register_actions_on_flow_parser(void)
 	set_port_pipes_dump(port_pipes_dump);
 }
 
-/*
- * Stop application's ports
- *
- * @nb_ports [in]: Number of ports to stop
- * @ports [in]: Port array
- */
-static void ports_stop(int nb_ports, struct doca_flow_port **ports)
+doca_error_t switch_init(struct application_dpdk_config *app_dpdk_config, struct flow_switch_ctx *ctx)
 {
-	int portid;
-	struct doca_flow_port *port;
-
-	for (portid = 0; portid < nb_ports; portid++) {
-		port = ports[portid];
-		if (port != NULL)
-			doca_flow_port_stop(port);
-	}
-}
-
-/*
- * Create application port
- *
- * @portid [in]: Port ID
- * @port [out]: port handler on success
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t port_create(uint8_t portid, struct doca_flow_port **port)
-{
-	struct doca_flow_port_cfg *port_cfg;
-	char port_id_str[MAX_PORT_STR_LEN];
-	doca_error_t result, tmp_result;
-
-	result = doca_flow_port_cfg_create(&port_cfg);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to create doca_flow_port_cfg: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	snprintf(port_id_str, MAX_PORT_STR_LEN, "%d", portid);
-	result = doca_flow_port_cfg_set_devargs(port_cfg, port_id_str);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg devargs: %s", doca_error_get_descr(result));
-		goto destroy_port_cfg;
-	}
-
-	result = doca_flow_port_start(port_cfg, port);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to start doca_flow port: %s", doca_error_get_descr(result));
-		goto destroy_port_cfg;
-	}
-
-destroy_port_cfg:
-	tmp_result = doca_flow_port_cfg_destroy(port_cfg);
-	if (tmp_result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to destroy doca_flow port: %s", doca_error_get_descr(tmp_result));
-		DOCA_ERROR_PROPAGATE(result, tmp_result);
-	}
-
-	return result;
-}
-
-/*
- * Initialize application's ports
- *
- * @nb_ports [in]: Number of ports to init
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t init_ports(int nb_ports)
-{
-	int portid;
-	struct doca_flow_port *ports[nb_ports];
+	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
+	struct flow_resources resource = {0};
+	int nr_switch_manager_ports = 1;
+	int nr_representors = ctx->nb_reps;
+	int nr_entries = 10000;
+	const char *start_str;
 	doca_error_t result;
 
-	for (portid = 0; portid < nb_ports; portid++) {
-		result = port_create(portid, &ports[portid]);
-		if (result != DOCA_SUCCESS) {
-			ports_stop(portid, ports);
-			return result;
-		}
+	nr_ports = nr_switch_manager_ports + nr_representors;
+
+	memset(&ports, 0, sizeof(ports));
+	memset(&actions_mem_size, 0, sizeof(actions_mem_size));
+
+	if (ctx->nb_ports != nr_switch_manager_ports) {
+		DOCA_LOG_ERR("Switch is allowed to run with one PF only");
+		return DOCA_ERROR_INVALID_VALUE;
 	}
 
-	return DOCA_SUCCESS;
-}
+	if (ctx->is_expert)
+		start_str = "switch,isolated,hws,expert";
+	else
+		start_str = "switch,isolated,hws";
 
-void switch_ports_count(struct application_dpdk_config *app_dpdk_config)
-{
-	int nb_ports;
-
-	nb_ports = rte_eth_dev_count_avail();
-	app_dpdk_config->port_config.nb_ports = nb_ports;
-	DOCA_LOG_DBG("Initialize Switch with %d ports", nb_ports);
-}
-
-doca_error_t switch_init(struct application_dpdk_config *app_dpdk_config)
-{
-	struct doca_flow_cfg *flow_cfg;
-	uint16_t rss_queues[app_dpdk_config->port_config.nb_queues];
-	struct doca_flow_resource_rss_cfg rss = {0};
-	doca_error_t result;
-
-	/* Initialize doca flow framework */
-	/* Initialize doca flow framework */
-	result = doca_flow_cfg_create(&flow_cfg);
+	result = init_doca_flow(app_dpdk_config->port_config.nb_queues, start_str, &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to create doca_flow_cfg: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = doca_flow_cfg_set_pipe_queues(flow_cfg, app_dpdk_config->port_config.nb_queues);
+	/* Doca_dev is opened for proxy_port only */
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(app_dpdk_config->port_config.nb_queues, nr_entries));
+	result = init_doca_flow_ports(nr_ports, ports, false /* is_hairpin */, ctx->doca_dev, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_cfg pipe_queues: %s", doca_error_get_descr(result));
-		doca_flow_cfg_destroy(flow_cfg);
-		return result;
-	}
-
-	result = doca_flow_cfg_set_mode_args(flow_cfg, "switch,hws");
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_cfg mode_args: %s", doca_error_get_descr(result));
-		doca_flow_cfg_destroy(flow_cfg);
-		return result;
-	}
-
-	result = doca_flow_cfg_set_cb_entry_process(flow_cfg, check_for_valid_entry);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_cfg doca_flow_entry_process_cb: %s",
-			     doca_error_get_descr(result));
-		doca_flow_cfg_destroy(flow_cfg);
-		return result;
-	}
-
-	rss.nr_queues = app_dpdk_config->port_config.nb_queues;
-	linear_array_init_u16(rss_queues, rss.nr_queues);
-	rss.queues_array = rss_queues;
-	result = doca_flow_cfg_set_default_rss(flow_cfg, &rss);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_cfg rss: %s", doca_error_get_descr(result));
-		doca_flow_cfg_destroy(flow_cfg);
-		return result;
-	}
-
-	result = doca_flow_init(flow_cfg);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to init doca: %s", doca_error_get_descr(result));
-		return DOCA_ERROR_INITIALIZATION;
-	}
-
-	result = doca_flow_cfg_destroy(flow_cfg);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to destroy doca_flow_cfg: %s", doca_error_get_descr(result));
-		return DOCA_ERROR_INITIALIZATION;
-	}
-
-	result = init_ports(app_dpdk_config->port_config.nb_ports);
-	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
-		DOCA_LOG_ERR("Failed to init ports: %s", doca_error_get_descr(result));
-		return DOCA_ERROR_INITIALIZATION;
+		return result;
 	}
 
 	result = create_pipes_manager(&pipes_manager);
 	if (result != DOCA_SUCCESS) {
+		stop_doca_flow_ports(nr_ports, ports);
 		doca_flow_destroy();
 		DOCA_LOG_ERR("Failed to create pipes manager: %s", doca_error_get_descr(result));
 		return DOCA_ERROR_INITIALIZATION;
@@ -589,5 +433,7 @@ doca_error_t switch_init(struct application_dpdk_config *app_dpdk_config)
 
 void switch_destroy(void)
 {
+	stop_doca_flow_ports(nr_ports, ports);
+	doca_flow_destroy();
 	destroy_pipes_manager(pipes_manager);
 }

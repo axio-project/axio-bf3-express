@@ -52,7 +52,5 @@
 		"global-namespace-ignore-value": 0,
 		// PCC device coredump file
 		"coredump-file": "/tmp/doca_pcc_coredump.txt",
-		// Physical port ID
-		"port-id": 0,
 	}
 }

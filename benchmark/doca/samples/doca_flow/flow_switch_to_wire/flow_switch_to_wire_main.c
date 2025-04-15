@@ -47,13 +47,11 @@
  * Entry 0: IP dst 8.8.8.8 / TCP src 1234 dst 80 -> port 0
  * Entry 1: IP dst 8.8.8.9 / TCP src 1234 dst 80 -> port 1
  * Entry 2: IP dst 8.8.8.10 / TCP src 1234 dst 80 -> port 2
- * Entry 3: IP dst 8.8.8.11 / TCP src 1234 dst 80 -> port 3
  *
  * Vport pipe(test ingress direct to vport):
  * Entry 0: IP dst 8.8.8.8 / TCP src 1234 -> port 0
  * Entry 1: IP dst 8.8.8.9 / TCP src 1234 -> port 1
  * Entry 2: IP dst 8.8.8.10 / TCP src 1234-> port 2
- * Entry 3: IP dst 8.8.8.11 / TCP src 1234-> port 3
  *
  * RSS pipe(test miss traffic port_id get and dst port_id set):
  * Entry 0: IPv4 / TCP -> port 0
@@ -76,7 +74,7 @@
 
 DOCA_LOG_REGISTER(FLOW_SWITCH_TO_WIRE::MAIN);
 
-#define SWITCH_TO_WIRE_PORTS 4
+#define SWITCH_TO_WIRE_PORTS 3
 
 /* Sample's Logic */
 doca_error_t flow_switch_to_wire(int nb_queues, int nb_ports, struct flow_switch_ctx *ctx);

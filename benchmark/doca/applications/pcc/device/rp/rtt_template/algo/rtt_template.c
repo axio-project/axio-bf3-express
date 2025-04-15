@@ -303,7 +303,12 @@ static inline void rtt_template_handle_roce_rtt(doca_pcc_dev_event_t *event,
 	ccctx->abort_cnt = 0;
 
 	/* RTT calculation */
+#ifdef DOCA_PCC_NP_RX_RATE
+	unsigned char *rtt_raw_data = doca_pcc_dev_get_rtt_raw_data(event);
+	uint32_t start_rtt = *((uint32_t *)(rtt_raw_data));
+#else
 	uint32_t start_rtt = doca_pcc_dev_get_rtt_req_send_timestamp(event);
+#endif
 #ifdef TIME_SYNC
 	/* if there is a time sync between the nodes we can get one way delay */
 	uint32_t end_rtt = doca_pcc_dev_get_rtt_req_recv_timestamp(event);
@@ -327,9 +332,6 @@ static inline void rtt_template_handle_roce_rtt(doca_pcc_dev_event_t *event,
 
 #ifdef DOCA_PCC_NP_RX_RATE
 	uint32_t norm_np_rx_rate = (1 << 16);
-
-	unsigned char *rtt_raw_data = doca_pcc_dev_get_rtt_raw_data(event);
-
 	uint32_t np_rx_bytes = *((uint32_t *)(rtt_raw_data + 4));
 	uint32_t delta_np_rx_bytes = np_rx_bytes - ccctx->last_np_rx_bytes;
 	if (ccctx->last_np_rx_bytes > np_rx_bytes) {

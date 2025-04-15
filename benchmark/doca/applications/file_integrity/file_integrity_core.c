@@ -266,7 +266,7 @@ static doca_error_t calculate_sha(struct program_core_objects *state,
 }
 
 /*
- * Send the input file over comm channel to the server in segments of that can be handled by SHA
+ * Send the input file over comch to the server in segments of that can be handled by SHA
  *
  * @comch_cfg [in]: comch configuration object to send file across
  * @app_cfg [in]: app configuration
@@ -1137,7 +1137,7 @@ static doca_error_t file_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -1158,7 +1158,7 @@ static doca_error_t dev_pci_addr_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device representor PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device representor PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -1228,7 +1228,7 @@ doca_error_t register_file_integrity_params(void)
 
 	struct doca_argp_param *dev_pci_addr_param, *rep_pci_addr_param, *file_param, *timeout_param;
 
-	/* Create and register Comm Channel DOCA device PCI address */
+	/* Create and register DOCA Comch device PCI address */
 	result = doca_argp_param_create(&dev_pci_addr_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
@@ -1236,7 +1236,7 @@ doca_error_t register_file_integrity_params(void)
 	}
 	doca_argp_param_set_short_name(dev_pci_addr_param, "p");
 	doca_argp_param_set_long_name(dev_pci_addr_param, "pci-addr");
-	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comm Channel device PCI address");
+	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comch device PCI address");
 	doca_argp_param_set_callback(dev_pci_addr_param, dev_pci_addr_callback);
 	doca_argp_param_set_type(dev_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	doca_argp_param_set_mandatory(dev_pci_addr_param);
@@ -1246,7 +1246,7 @@ doca_error_t register_file_integrity_params(void)
 		return result;
 	}
 
-	/* Create and register Comm Channel DOCA device representor PCI address */
+	/* Create and register DOCA Comch device representor PCI address */
 	result = doca_argp_param_create(&rep_pci_addr_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
@@ -1254,7 +1254,7 @@ doca_error_t register_file_integrity_params(void)
 	}
 	doca_argp_param_set_short_name(rep_pci_addr_param, "r");
 	doca_argp_param_set_long_name(rep_pci_addr_param, "rep-pci");
-	doca_argp_param_set_description(rep_pci_addr_param, "DOCA Comm Channel device representor PCI address");
+	doca_argp_param_set_description(rep_pci_addr_param, "DOCA Comch device representor PCI address");
 	doca_argp_param_set_callback(rep_pci_addr_param, rep_pci_addr_callback);
 	doca_argp_param_set_type(rep_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(rep_pci_addr_param);

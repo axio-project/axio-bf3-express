@@ -229,14 +229,10 @@ static doca_error_t se_communicate_async(const struct sync_event_config *se_cfg,
 
 	DOCA_LOG_INFO("Waiting for sync event to be signaled from remote side");
 	result = sync_event_async_task_submit(se_rt_objs, doca_sync_event_task_wait_eq_as_doca_task(wait_eq_task));
-	if (result != DOCA_SUCCESS)
-		return result;
-
-	DOCA_LOG_INFO("Done");
 
 	doca_task_free(doca_sync_event_task_wait_eq_as_doca_task(wait_eq_task));
 
-	return DOCA_SUCCESS;
+	return result;
 }
 
 /*
@@ -331,12 +327,7 @@ doca_error_t sync_event_run(const struct sync_event_config *se_cfg, struct sync_
 	else
 		result = se_communicate_sync(se_cfg, se_rt_objs);
 
-	if (result != DOCA_SUCCESS) {
-		sync_event_tear_down(se_rt_objs);
-		return result;
-	}
-
 	sync_event_tear_down(se_rt_objs);
 
-	return DOCA_SUCCESS;
+	return result;
 }

@@ -64,7 +64,16 @@ doca_error_t init_doca_flow(int nb_queues,
 			    struct flow_resources *resource,
 			    uint32_t nr_shared_resources[])
 {
-	return init_doca_flow_cb(nb_queues, mode, resource, nr_shared_resources, check_for_valid_entry, NULL);
+	return init_doca_flow_cb(nb_queues, mode, resource, nr_shared_resources, check_for_valid_entry, NULL, NULL);
+}
+
+doca_error_t init_doca_flow_with_defs(int nb_queues,
+				      const char *mode,
+				      struct flow_resources *resource,
+				      uint32_t nr_shared_resources[],
+				      struct doca_flow_definitions *defs)
+{
+	return init_doca_flow_cb(nb_queues, mode, resource, nr_shared_resources, check_for_valid_entry, NULL, defs);
 }
 
 doca_error_t init_doca_flow_cb(int nb_queues,
@@ -72,7 +81,8 @@ doca_error_t init_doca_flow_cb(int nb_queues,
 			       struct flow_resources *resource,
 			       uint32_t nr_shared_resources[],
 			       doca_flow_entry_process_cb cb,
-			       doca_flow_pipe_process_cb pipe_process_cb)
+			       doca_flow_pipe_process_cb pipe_process_cb,
+			       struct doca_flow_definitions *defs)
 {
 	struct doca_flow_cfg *flow_cfg;
 	uint16_t qidx, rss_queues[nb_queues];
@@ -141,6 +151,15 @@ doca_error_t init_doca_flow_cb(int nb_queues,
 		}
 	}
 
+	if (defs) {
+		result = doca_flow_cfg_set_definitions(flow_cfg, defs);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to set doca_flow_cfg defs: %s", doca_error_get_descr(result));
+			goto destroy_cfg;
+		}
+	}
+
+	/* creating doca flow with defs */
 	result = doca_flow_init(flow_cfg);
 	if (result != DOCA_SUCCESS)
 		DOCA_LOG_ERR("Failed to initialize DOCA Flow: %s", doca_error_get_descr(result));
@@ -166,7 +185,8 @@ destroy_cfg:
 static doca_error_t create_doca_flow_port(int port_id,
 					  struct doca_dev *dev,
 					  enum doca_flow_port_operation_state state,
-					  struct doca_flow_port **port)
+					  struct doca_flow_port **port,
+					  uint32_t actions_mem_size)
 {
 	int max_port_str_len = 128;
 	struct doca_flow_port_cfg *port_cfg;
@@ -195,6 +215,12 @@ static doca_error_t create_doca_flow_port(int port_id,
 	result = doca_flow_port_cfg_set_operation_state(port_cfg, state);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg operation state: %s", doca_error_get_descr(result));
+		goto destroy_port_cfg;
+	}
+
+	result = doca_flow_port_cfg_set_actions_mem_size(port_cfg, actions_mem_size);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set actions memory size: %s", doca_error_get_descr(result));
 		goto destroy_port_cfg;
 	}
 
@@ -238,7 +264,8 @@ doca_error_t init_doca_flow_ports_with_op_state(int nb_ports,
 						struct doca_flow_port *ports[],
 						bool is_hairpin,
 						struct doca_dev *dev_arr[],
-						enum doca_flow_port_operation_state *states)
+						enum doca_flow_port_operation_state *states,
+						uint32_t actions_mem_size[])
 {
 	int portid;
 	doca_error_t result;
@@ -247,7 +274,8 @@ doca_error_t init_doca_flow_ports_with_op_state(int nb_ports,
 	for (portid = 0; portid < nb_ports; portid++) {
 		state = states ? states[portid] : DOCA_FLOW_PORT_OPERATION_STATE_ACTIVE;
 		/* Create doca flow port */
-		result = create_doca_flow_port(portid, dev_arr[portid], state, &ports[portid]);
+		result =
+			create_doca_flow_port(portid, dev_arr[portid], state, &ports[portid], actions_mem_size[portid]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to start port: %s", doca_error_get_descr(result));
 			if (portid != 0)
@@ -271,9 +299,10 @@ doca_error_t init_doca_flow_ports_with_op_state(int nb_ports,
 doca_error_t init_doca_flow_ports(int nb_ports,
 				  struct doca_flow_port *ports[],
 				  bool is_hairpin,
-				  struct doca_dev *dev_arr[])
+				  struct doca_dev *dev_arr[],
+				  uint32_t actions_mem_size[])
 {
-	return init_doca_flow_ports_with_op_state(nb_ports, ports, is_hairpin, dev_arr, NULL);
+	return init_doca_flow_ports_with_op_state(nb_ports, ports, is_hairpin, dev_arr, NULL, actions_mem_size);
 }
 
 doca_error_t set_flow_pipe_cfg(struct doca_flow_pipe_cfg *cfg,

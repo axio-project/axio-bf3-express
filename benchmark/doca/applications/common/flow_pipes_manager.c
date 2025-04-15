@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2022-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -138,7 +138,12 @@ doca_error_t create_pipes_manager(struct flow_pipes_manager **pipes_manager)
 	}
 
 	table_params.name = "Port id to Pipe Entries Table";
-	table_params.key_len = sizeof(uint16_t);
+	/**
+	 * RTE Hash may access memory after our key if the key length isn't divisible by 4.
+	 * Hence, we will use uint32_t instead of uint16_t, and use temp variables of correct
+	 * type so to ensure we don't read out of bounds of the original (uint16_t) variable.
+	 */
+	table_params.key_len = sizeof(uint32_t);
 
 	(*pipes_manager)->port_id_to_pipes_id_table = rte_hash_create(&table_params);
 	if ((*pipes_manager)->port_id_to_pipes_id_table == NULL) {
@@ -159,7 +164,7 @@ void destroy_pipes_manager(struct flow_pipes_manager *manager)
 	struct pipe_info *pipe_info;
 	uint64_t *pipe_id, *generated_entry_id;
 	uint32_t pipe_itr = 0, entry_itr;
-	uint16_t *port_id;
+	uint32_t *port_id;
 
 	while (rte_hash_iterate(manager->pipe_id_to_pipe_info_table,
 				(const void **)&pipe_id,
@@ -202,7 +207,12 @@ doca_error_t pipes_manager_pipe_create(struct flow_pipes_manager *manager,
 						   .hash_func = rte_jhash,
 						   .hash_func_init_val = 0};
 	uint64_t *generated_pipe_id;
-	uint16_t *port_id_key;
+	/**
+	 * RTE Hash may access memory after our key if the key length isn't divisible by 4.
+	 * Use this temp variable to ensure we don't read out of bounds of the original variable.
+	 */
+	uint32_t temp_port_id = (uint32_t)port_id;
+	uint32_t *port_id_key;
 	int32_t result;
 	bool is_new_table = false;
 
@@ -212,14 +222,15 @@ doca_error_t pipes_manager_pipe_create(struct flow_pipes_manager *manager,
 		return DOCA_ERROR_INVALID_VALUE;
 	}
 
-	result =
-		rte_hash_lookup_data(manager->port_id_to_pipes_id_table, (const void *)&port_id, (void **)&pipes_table);
+	result = rte_hash_lookup_data(manager->port_id_to_pipes_id_table,
+				      (const void *)&temp_port_id,
+				      (void **)&pipes_table);
 	if (result < 0) {
 		is_new_table = true;
 
 		/* allocate new port id key */
-		port_id_key = (uint16_t *)rte_malloc(NULL, sizeof(uint16_t), 0);
-		*port_id_key = port_id;
+		port_id_key = (uint32_t *)rte_malloc(NULL, sizeof(uint32_t), 0);
+		*port_id_key = temp_port_id;
 
 		pipes_table = rte_hash_create(&table_params);
 		if (pipes_table == NULL) {
@@ -464,12 +475,18 @@ doca_error_t pipes_manager_pipes_flush(struct flow_pipes_manager *manager, uint1
 	uint64_t *pipe_id, *generated_entry_id, *data;
 	uint32_t pipe_itr = 0;
 	uint32_t entry_itr;
-	uint16_t *port_id_key;
+	/**
+	 * RTE Hash may access memory after our key if the key length isn't divisible by 4.
+	 * Use this temp variable to ensure we don't read out of bounds of the original variable.
+	 */
+	uint32_t temp_port_id = (uint32_t)port_id;
+	uint32_t *port_id_key;
 	int key_offset;
 	int result;
 
-	key_offset =
-		rte_hash_lookup_data(manager->port_id_to_pipes_id_table, (const void *)&port_id, (void **)&pipes_table);
+	key_offset = rte_hash_lookup_data(manager->port_id_to_pipes_id_table,
+					  (const void *)&temp_port_id,
+					  (void **)&pipes_table);
 
 	if (key_offset < 0) {
 		DOCA_LOG_ERR("Could not find port with id=%" PRIu16 ", aborting flush", port_id);
@@ -503,7 +520,7 @@ doca_error_t pipes_manager_pipes_flush(struct flow_pipes_manager *manager, uint1
 	}
 
 	rte_hash_free(pipes_table);
-	rte_hash_del_key(manager->port_id_to_pipes_id_table, (const void **)&port_id);
+	rte_hash_del_key(manager->port_id_to_pipes_id_table, (const void **)&temp_port_id);
 
 	return DOCA_SUCCESS;
 }

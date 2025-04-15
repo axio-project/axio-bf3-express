@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+# Copyright (c) 2023-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -57,28 +57,28 @@ endif
 pcc_app_name = 'pcc_rp_rtt_template_app'
 pcc_dev_stubs_keep_dir_path = app_device_build_dir + '/' + pcc_app_name
 run_command(app_builds, pcc_app_dev_src_dir, app_device_build_dir, doca_lib_dir, pcc_app_name,
-	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, check: true)
+	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, dpacc_mcpu_flag, check: true)
 pcc_rp_rtt_template_app = meson.get_compiler('c').find_library(pcc_app_name, dirs : pcc_dev_stubs_keep_dir_path, static: true)
 
 # Compile DOCA PCC Reaction Point Switch Telemetry DPA program
 pcc_app_name = 'pcc_rp_switch_telemetry_app'
 pcc_dev_stubs_keep_dir_path = app_device_build_dir + '/' + pcc_app_name
 run_command(app_builds, pcc_app_dev_src_dir, app_device_build_dir, doca_lib_dir, pcc_app_name,
-	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, check: true)
+	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, dpacc_mcpu_flag, check: true)
 pcc_rp_switch_telemetry_app = meson.get_compiler('c').find_library(pcc_app_name, dirs : pcc_dev_stubs_keep_dir_path, static: true)
 
 # Compile DOCA PCC Notification Point NIC Telemetry DPA program
 pcc_app_name = 'pcc_np_nic_telemetry_app'
 pcc_dev_stubs_keep_dir_path = app_device_build_dir + '/' + pcc_app_name
 run_command(app_builds, pcc_app_dev_src_dir, app_device_build_dir, doca_lib_dir, pcc_app_name,
-	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, check: true)
+	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, dpacc_mcpu_flag, check: true)
 pcc_np_nic_telemetry_app = meson.get_compiler('c').find_library(pcc_app_name, dirs : pcc_dev_stubs_keep_dir_path, static: true)
 
 # Compile DOCA PCC Notification Point Switch Telemetry DPA program
 pcc_app_name = 'pcc_np_switch_telemetry_app'
 pcc_dev_stubs_keep_dir_path = app_device_build_dir + '/' + pcc_app_name
 run_command(app_builds, pcc_app_dev_src_dir, app_device_build_dir, doca_lib_dir, pcc_app_name,
-	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, check: true)
+	pcc_dev_stubs_keep_dir_path, enable_tx_counter_sampling, enable_np_rx_rate, dpacc_mcpu_flag, check: true)
 pcc_np_switch_telemetry_app = meson.get_compiler('c').find_library(pcc_app_name, dirs : pcc_dev_stubs_keep_dir_path, static: true)
 
 # Build executable

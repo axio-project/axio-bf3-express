@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2022-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+# Copyright (c) 2022-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -52,7 +52,9 @@ endif
 
 build_script = meson.current_source_dir() / 'build_dpa_all_to_all.sh'
 app_builds = find_program(build_script)
-command = [app_builds, meson.project_build_root(), address_sanitizer, debug_mode]
+doca_dep = dependency('doca-dpa')
+doca_lib_dir = doca_dep.get_variable(pkgconfig : 'libdir')
+command = [app_builds, meson.current_source_dir(), meson.project_build_root(), address_sanitizer, debug_mode, dpacc_mcpu_flag, doca_lib_dir]
 
 custom_target(DOCA_PREFIX + APP_NAME,
 		command: command,

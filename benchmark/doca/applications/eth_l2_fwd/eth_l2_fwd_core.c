@@ -282,25 +282,22 @@ static doca_error_t create_mmap(struct doca_dev *dev1, struct doca_dev *dev2, st
 /*
  * ETH RXQ managed receive event batch successful completion callback for device 1
  *
+ * @event_batch_managed_recv [in]: The managed receive event batch
  * @events_number [in]: Number of retrieved events, each representing a single received packet
  * @event_batch_user_data [in]: User provided data, holding a pointer to the ETH TXQ context to forward the packets
  * with
  * @status [in]: Status of retrieved event batch
  * @pkt_array [in]: Array of doca_bufs containing the received packets
- * @l3_ok_array [in]: Array indicators for whether L3 checksum is ok or not per packet
- * @l4_ok_array [in]: Array indicators for whether L4 checksum is ok or not per packet
  */
-static void rx_success_cb1(uint16_t events_number,
+static void rx_success_cb1(struct doca_eth_rxq_event_batch_managed_recv *event_batch_managed_recv,
+			   uint16_t events_number,
 			   union doca_data event_batch_user_data,
 			   doca_error_t status,
-			   struct doca_buf **pkt_array,
-			   uint8_t *l3_ok_array,
-			   uint8_t *l4_ok_array)
+			   struct doca_buf **pkt_array)
 {
 	/* Unused parameters */
 	(void)status;
-	(void)l3_ok_array;
-	(void)l4_ok_array;
+	(void)event_batch_managed_recv;
 
 	doca_error_t result;
 	struct doca_eth_txq *eth_txq = (struct doca_eth_txq *)(event_batch_user_data.ptr);
@@ -335,25 +332,22 @@ static void rx_success_cb1(uint16_t events_number,
 /*
  * ETH RXQ managed receive event batch successful completion callback for device 2
  *
+ * @event_batch_managed_recv [in]: The managed receive event batch
  * @events_number [in]: Number of retrieved events, each representing a single received packet
  * @event_batch_user_data [in]: User provided data, holding a pointer to the ETH TXQ context to forward the packets
  * with
  * @status [in]: Status of retrieved event batch
  * @pkt_array [in]: Array of doca_bufs containing the received packets
- * @l3_ok_array [in]: Array indicators for whether L3 checksum is ok or not per packet
- * @l4_ok_array [in]: Array indicators for whether L4 checksum is ok or not per packet
  */
-static void rx_success_cb2(uint16_t events_number,
+static void rx_success_cb2(struct doca_eth_rxq_event_batch_managed_recv *event_batch_managed_recv,
+			   uint16_t events_number,
 			   union doca_data event_batch_user_data,
 			   doca_error_t status,
-			   struct doca_buf **pkt_array,
-			   uint8_t *l3_ok_array,
-			   uint8_t *l4_ok_array)
+			   struct doca_buf **pkt_array)
 {
 	/* Unused parameters */
 	(void)status;
-	(void)l3_ok_array;
-	(void)l4_ok_array;
+	(void)event_batch_managed_recv;
 
 	doca_error_t result;
 	struct doca_eth_txq *eth_txq = (struct doca_eth_txq *)(event_batch_user_data.ptr);
@@ -388,26 +382,23 @@ static void rx_success_cb2(uint16_t events_number,
 /*
  * A common ETH RXQ managed receive event batch error completion callback
  *
+ * @event_batch_managed_recv [in]: The managed receive event batch
  * @events_number [in]: Number of retrieved events, each representing a single received packet
  * @event_batch_user_data [in]: User provided data, holding a pointer to the ETH TXQ context to forward the packets
  * with
  * @status [in]: Status of retrieved event batch
  * @pkt_array [in]: Array of doca_bufs containing the received packets
- * @l3_ok_array [in]: Array indicators for whether L3 checksum is ok or not per packet
- * @l4_ok_array [in]: Array indicators for whether L4 checksum is ok or not per packet
  */
-static void rx_error_cb(uint16_t events_number,
+static void rx_error_cb(struct doca_eth_rxq_event_batch_managed_recv *event_batch_managed_recv,
+			uint16_t events_number,
 			union doca_data event_batch_user_data,
 			doca_error_t status,
-			struct doca_buf **pkt_array,
-			uint8_t *l3_ok_array,
-			uint8_t *l4_ok_array)
+			struct doca_buf **pkt_array)
 {
 	/* Unused parameters */
 	(void)events_number;
 	(void)pkt_array;
-	(void)l3_ok_array;
-	(void)l4_ok_array;
+	(void)event_batch_managed_recv;
 
 	struct doca_eth_txq *eth_txq = (struct doca_eth_txq *)(event_batch_user_data.ptr);
 	struct doca_ctx *eth_txq_ctx = doca_eth_txq_as_doca_ctx(eth_txq);
@@ -821,7 +812,9 @@ doca_error_t eth_l2_fwd_execute(struct eth_l2_fwd_cfg *cfg, struct eth_l2_fwd_re
 		}
 
 		flow_cfg.dev = state->dev_resrc1.mlxdev;
-		flow_cfg.rxq_flow_queue_id = state->dev_resrc1.rxq_flow_queue_id;
+		flow_cfg.rxq_flow_queue_ids = &(state->dev_resrc1.rxq_flow_queue_id);
+		flow_cfg.nb_queues = 1;
+
 		result = allocate_eth_rxq_flow_resources(&flow_cfg, &state->dev_resrc1.flow_resrc);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to allocate ETH RXQ flow resources for device 1: %s",
@@ -867,7 +860,9 @@ doca_error_t eth_l2_fwd_execute(struct eth_l2_fwd_cfg *cfg, struct eth_l2_fwd_re
 		}
 
 		flow_cfg.dev = state->dev_resrc2.mlxdev;
-		flow_cfg.rxq_flow_queue_id = state->dev_resrc2.rxq_flow_queue_id;
+		flow_cfg.rxq_flow_queue_ids = &(state->dev_resrc2.rxq_flow_queue_id);
+		flow_cfg.nb_queues = 1;
+
 		result = allocate_eth_rxq_flow_resources(&flow_cfg, &state->dev_resrc2.flow_resrc);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to allocate ETH RXQ flow resources for device 2: %s",

@@ -964,8 +964,38 @@ void sync_event_tear_down(struct sync_event_runtime_objects *se_rt_objs)
 
 	if (se_rt_objs->se_ctx != NULL) {
 		status = doca_ctx_stop(se_rt_objs->se_ctx);
-		if (status != DOCA_SUCCESS)
-			DOCA_LOG_ERR("Failed to stop se ctx: %s", doca_error_get_descr(status));
+		if (status == DOCA_ERROR_IN_PROGRESS) {
+			size_t inflight_tasks;
+			enum doca_ctx_states ctx_state;
+			int timeout = TIMEOUT_IN_NANOS;
+			struct timespec ts = {
+				.tv_sec = 0,
+				.tv_nsec = SLEEP_IN_NANOS,
+			};
+			do {
+				(void)doca_pe_progress(se_rt_objs->se_pe);
+				status = doca_ctx_get_num_inflight_tasks(se_rt_objs->se_ctx, &inflight_tasks);
+				if (status != DOCA_SUCCESS) {
+					DOCA_LOG_ERR("Failed to get num inflight tasks: %s",
+						     doca_error_get_descr(status));
+					return;
+				}
+				nanosleep(&ts, &ts);
+				timeout -= SLEEP_IN_NANOS;
+			} while (inflight_tasks != 0 && timeout > 0);
+
+			status = doca_ctx_get_state(se_rt_objs->se_ctx, &ctx_state);
+			if (status != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed get status of context, err: %s", doca_error_get_name(status));
+				return;
+			}
+			status = ctx_state == DOCA_CTX_STATE_IDLE ? DOCA_SUCCESS : DOCA_ERROR_BAD_STATE;
+		}
+
+		if (status != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to stop DOCA context, err: %s", doca_error_get_name(status));
+			return;
+		}
 	}
 
 	if (se_rt_objs->se != NULL) {

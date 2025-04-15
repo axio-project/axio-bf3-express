@@ -25,8 +25,8 @@
 project('DOCA_SAMPLE', 'C', 'CPP',
 	# Get version number from file.
 	version: run_command(find_program('cat'),
-		files('/opt/mellanox/doca/applications/VERSION'), check: true).stdout().strip(),
-	license: 'Proprietary',
+		files('../../../VERSION'), check: true).stdout().strip(),
+	license: 'BSD-3',
 	default_options: ['buildtype=debug'],
 	meson_version: '>= 0.61.2'
 )
@@ -39,8 +39,10 @@ add_project_arguments('-D DOCA_ALLOW_EXPERIMENTAL_API', language: ['c', 'cpp'])
 sample_dependencies = []
 # The DOCA library of the sample itself (Required for all DOCA programs)
 sample_dependencies += dependency('doca-common')
-# Additional DOCA library that is relevant for this sample
+# Additional DOCA libraries that is relevant for this sample
 sample_dependencies += dependency('doca-dma')
+# Utility DOCA library for executables
+sample_dependencies += dependency('doca-argp')
 
 sample_srcs = [
 	# The sample itself

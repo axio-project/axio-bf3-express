@@ -32,7 +32,11 @@
 DOCA_LOG_REGISTER(ENVARS_GET::MAIN);
 
 /* Sample's Logic */
-doca_error_t envars_get(const char *dma_device_name, const char *pci_vuid, DOCA_APSH_PROCESS_PID_TYPE pid);
+doca_error_t envars_get(const char *dma_device_name,
+			const char *pci_vuid,
+			DOCA_APSH_PROCESS_PID_TYPE pid,
+			const char *mem_region,
+			const char *os_symbols);
 
 /*
  * Sample main function
@@ -54,6 +58,8 @@ int main(int argc, char *argv[])
 	strcpy(apsh_conf.dma_dev_name, "mlx5_0");
 	strcpy(apsh_conf.system_vuid, "MT2125X03335MLNXS0D0F0VF1");
 	apsh_conf.pid = 1;
+	strcpy(apsh_conf.system_os_symbol_map_path, "/tmp/symbols.json");
+	strcpy(apsh_conf.system_mem_region_path, "/tmp/mem_regions.json");
 
 	/* Register a logger backend */
 	result = doca_log_backend_create_standard();
@@ -90,7 +96,11 @@ int main(int argc, char *argv[])
 	}
 
 	/* Invoke the sample's logic */
-	result = envars_get(apsh_conf.dma_dev_name, apsh_conf.system_vuid, apsh_conf.pid);
+	result = envars_get(apsh_conf.dma_dev_name,
+			    apsh_conf.system_vuid,
+			    apsh_conf.pid,
+			    apsh_conf.system_mem_region_path,
+			    apsh_conf.system_os_symbol_map_path);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("envars_get() encountered an error %s", doca_error_get_descr(result));
 		goto argp_cleanup;

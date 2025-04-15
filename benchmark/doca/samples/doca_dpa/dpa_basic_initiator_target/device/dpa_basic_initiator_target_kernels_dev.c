@@ -45,6 +45,10 @@ __dpa_global__ void thread_kernel(uint64_t arg)
 
 	struct dpa_thread_arg *thread_arg = (struct dpa_thread_arg *)arg;
 
+	if (thread_arg->dpa_ctx_handle) {
+		doca_dpa_dev_device_set(thread_arg->dpa_ctx_handle);
+	}
+
 	DOCA_DPA_DEV_LOG_INFO("%s: Read completion info\n", __func__);
 	doca_dpa_dev_completion_element_t comp_element;
 	int found = doca_dpa_dev_get_completion(thread_arg->dpa_comp_handle, &comp_element);
@@ -75,13 +79,15 @@ __dpa_global__ void thread_kernel(uint64_t arg)
  *
  * This RPC is used by target host application to post RDMA receive operation on DPA local buffer
  *
+ * @rdma_dpa_ctx_handle [in]: DPA context handle used for RDMA DOCA device. Needed when running from DPU
  * @rdma [in]: RDMA DPA handle
  * @local_buf_addr [in]: address of received buffer
  * @dpa_mmap_handle [in]: received DOCA Mmap handle
  * @length [in]: length of received buffer
  * @return: RPC function always succeed and returns 0
  */
-__dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_rdma_t rdma,
+__dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_t rdma_dpa_ctx_handle,
+					   doca_dpa_dev_rdma_t rdma,
 					   doca_dpa_dev_uintptr_t local_buf_addr,
 					   doca_dpa_dev_mmap_t dpa_mmap_handle,
 					   size_t length)
@@ -91,6 +97,9 @@ __dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_rdma_t rdma,
 			      dpa_mmap_handle,
 			      local_buf_addr,
 			      length);
+	if (rdma_dpa_ctx_handle) {
+		doca_dpa_dev_device_set(rdma_dpa_ctx_handle);
+	}
 	doca_dpa_dev_rdma_post_receive(rdma, dpa_mmap_handle, local_buf_addr, length);
 
 	return 0;
@@ -101,13 +110,15 @@ __dpa_rpc__ uint64_t rdma_post_receive_rpc(doca_dpa_dev_rdma_t rdma,
  *
  * This RPC is used by initiator host application to post RDMA send operation on host local buffer
  *
+ * @rdma_dpa_ctx_handle [in]: DPA context handle used for RDMA DOCA device. Needed when running from DPU
  * @rdma [in]: RDMA DPA handle
  * @local_buf_addr [in]: address of send buffer
  * @dpa_mmap_handle [in]: send DOCA Mmap handle
  * @length [in]: length of send buffer
  * @return: RPC function always succeed and returns 0
  */
-__dpa_rpc__ uint64_t rdma_post_send_rpc(doca_dpa_dev_rdma_t rdma,
+__dpa_rpc__ uint64_t rdma_post_send_rpc(doca_dpa_dev_t rdma_dpa_ctx_handle,
+					doca_dpa_dev_rdma_t rdma,
 					uintptr_t local_buf_addr,
 					doca_dpa_dev_mmap_t dpa_mmap_handle,
 					size_t length)
@@ -117,7 +128,15 @@ __dpa_rpc__ uint64_t rdma_post_send_rpc(doca_dpa_dev_rdma_t rdma,
 			      dpa_mmap_handle,
 			      local_buf_addr,
 			      length);
-	doca_dpa_dev_rdma_post_send(rdma, dpa_mmap_handle, local_buf_addr, length, 0);
+	if (rdma_dpa_ctx_handle) {
+		doca_dpa_dev_device_set(rdma_dpa_ctx_handle);
+	}
+	doca_dpa_dev_rdma_post_send(rdma,
+				    0,
+				    dpa_mmap_handle,
+				    local_buf_addr,
+				    length,
+				    DOCA_DPA_DEV_SUBMIT_FLAG_FLUSH | DOCA_DPA_DEV_SUBMIT_FLAG_OPTIMIZE_REPORTS);
 
 	return 0;
 }

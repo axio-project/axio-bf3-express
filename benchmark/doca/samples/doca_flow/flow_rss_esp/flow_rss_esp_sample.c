@@ -38,9 +38,6 @@ DOCA_LOG_REGISTER(FLOW_RSS_ESP);
 /* The number of packets in the rx queue */
 #define PACKET_BURST 256
 
-/* The maximal number of queues in RSS forward */
-#define MAX_RSS_QUEUES 8
-
 /* Get the percentage according to part and total */
 #define GET_PERCENTAGE(part, total) (((double)part / (double)total) * 100)
 
@@ -67,7 +64,7 @@ static doca_error_t create_rss_esp_pipe(struct doca_flow_port *port,
 	struct doca_flow_fwd fwd;
 	struct doca_flow_fwd fwd_miss;
 	struct doca_flow_pipe_cfg *pipe_cfg;
-	uint16_t rss_queues[MAX_RSS_QUEUES];
+	uint16_t *rss_queues;
 	doca_error_t result;
 	uint32_t i;
 
@@ -77,9 +74,16 @@ static doca_error_t create_rss_esp_pipe(struct doca_flow_port *port,
 	memset(&fwd, 0, sizeof(fwd));
 	memset(&fwd_miss, 0, sizeof(fwd_miss));
 
+	rss_queues = calloc(nb_rss_queues, sizeof(*rss_queues));
+	if (rss_queues == NULL) {
+		DOCA_LOG_ERR("Failed to allocate RSS queues array memory");
+		return DOCA_ERROR_NO_MEMORY;
+	}
+
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create doca_flow_pipe_cfg: %s", doca_error_get_descr(result));
+		free(rss_queues);
 		return result;
 	}
 
@@ -127,15 +131,17 @@ static doca_error_t create_rss_esp_pipe(struct doca_flow_port *port,
 		rss_queues[i] = i + 1;
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = rss_queues;
-	fwd.rss_outer_flags = DOCA_FLOW_RSS_ESP;
-	fwd.num_of_queues = nb_rss_queues;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.outer_flags = DOCA_FLOW_RSS_ESP;
+	fwd.rss.nr_queues = nb_rss_queues;
 
 	fwd_miss.type = DOCA_FLOW_FWD_DROP;
 
 	result = doca_flow_pipe_create(pipe_cfg, &fwd, &fwd_miss, pipe);
 destroy_pipe_cfg:
 	doca_flow_pipe_cfg_destroy(pipe_cfg);
+	free(rss_queues);
 	return result;
 }
 
@@ -144,27 +150,28 @@ destroy_pipe_cfg:
  *
  * @pipe [in]: pipe of the entry.
  * @port [in]: port of the entry.
+ * @status [in]: user context for adding entry
  * @entry [out]: created entry pointer.
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 static doca_error_t add_rss_esp_pipe_entry(struct doca_flow_pipe *pipe,
 					   struct doca_flow_port *port,
+					   struct entries_status *status,
 					   struct doca_flow_pipe_entry **entry)
 {
 	struct doca_flow_match match;
-	struct entries_status status;
 	doca_error_t result;
 
 	memset(&match, 0, sizeof(match));
-	memset(&status, 0, sizeof(status));
+	memset(status, 0, sizeof(*status));
 
-	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, NULL, 0, &status, entry);
+	result = doca_flow_pipe_add_entry(0, pipe, &match, NULL, NULL, NULL, 0, status, entry);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to insert ESP RSS entry: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = flow_process_entries(port, &status, 1);
+	result = flow_process_entries(port, status, 1);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to process ESP RSS entry: %s", doca_error_get_descr(result));
 		return result;
@@ -244,9 +251,11 @@ doca_error_t flow_rss_esp(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe_entry *entries[nb_ports];
 	struct doca_flow_pipe *pipe;
 	int nb_rss_queues = nb_queues - 1;
+	struct entries_status status;
 	doca_error_t result;
 	int port_id;
 
@@ -257,7 +266,8 @@ doca_error_t flow_rss_esp(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, 1));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -273,7 +283,7 @@ doca_error_t flow_rss_esp(int nb_queues)
 			return result;
 		}
 
-		result = add_rss_esp_pipe_entry(pipe, ports[port_id], &entries[port_id]);
+		result = add_rss_esp_pipe_entry(pipe, ports[port_id], &status, &entries[port_id]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Port %d failed to add entry: %s", port_id, doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);

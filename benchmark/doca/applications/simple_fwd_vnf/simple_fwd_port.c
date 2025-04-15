@@ -70,6 +70,7 @@ static int simple_fwd_port_stats_display(uint16_t port, FILE *f)
 	struct rte_eth_stats ethernet_stats;
 	struct rte_eth_dev_info dev_info;
 	static const char *nic_stats_border = "########################";
+	uint32_t max_rx_queues, max_tx_queues;
 
 	result = rte_eth_stats_get(port, &ethernet_stats);
 	if (result != 0)
@@ -77,6 +78,11 @@ static int simple_fwd_port_stats_display(uint16_t port, FILE *f)
 	result = rte_eth_dev_info_get(port, &dev_info);
 	if (result != 0)
 		return result;
+
+	max_rx_queues = dev_info.nb_rx_queues < RTE_ETHDEV_QUEUE_STAT_CNTRS ? dev_info.nb_rx_queues :
+									      RTE_ETHDEV_QUEUE_STAT_CNTRS;
+	max_tx_queues = dev_info.nb_tx_queues < RTE_ETHDEV_QUEUE_STAT_CNTRS ? dev_info.nb_tx_queues :
+									      RTE_ETHDEV_QUEUE_STAT_CNTRS;
 	fprintf(f, "\n  %s NIC statistics for port %-2d %s\n", nic_stats_border, port, nic_stats_border);
 
 	fprintf(f,
@@ -93,7 +99,8 @@ static int simple_fwd_port_stats_display(uint16_t port, FILE *f)
 		ethernet_stats.obytes);
 
 	fprintf(f, "\n");
-	for (i = 0; i < dev_info.nb_rx_queues; i++) {
+
+	for (i = 0; i < max_rx_queues; i++) {
 		printf("  ethernet_stats reg %2d RX-packets: %-10" PRIu64 "  RX-errors: %-10" PRIu64
 		       "  RX-bytes: %-10" PRIu64 "\n",
 		       i,
@@ -103,7 +110,7 @@ static int simple_fwd_port_stats_display(uint16_t port, FILE *f)
 	}
 
 	fprintf(f, "\n");
-	for (i = 0; i < dev_info.nb_tx_queues; i++) {
+	for (i = 0; i < max_tx_queues; i++) {
 		fprintf(stdout,
 			"  ethernet_stats reg %2d TX-packets: %-10" PRIu64 "  TX-bytes: %-10" PRIu64 "\n",
 			i,

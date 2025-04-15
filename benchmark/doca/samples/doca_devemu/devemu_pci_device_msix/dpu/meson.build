@@ -25,8 +25,8 @@
 project('DOCA_SAMPLE', 'C', 'CPP',
 	# Get version number from file.
 	version: run_command(find_program('cat'),
-		files('/opt/mellanox/doca/applications/VERSION'), check: true).stdout().strip(),
-	license: 'Proprietary',
+		files('../../../../VERSION'), check: true).stdout().strip(),
+	license: 'BSD-3',
 	default_options: ['buildtype=debug'],
 	meson_version: '>= 0.61.2'
 )
@@ -80,9 +80,11 @@ sample_device_src = meson.project_source_root() + '/device/' +  SAMPLE_NAME + '_
 dpa_lib_dir = dependency_dpa.get_variable(pkgconfig : 'libdir')
 dpa_include_dir = dependency_dpa.get_variable(pkgconfig : 'includedir')
 
+dpacc_mcpu_flag = 'nv-dpa-bf3'
+
 # Run DPA compiler
 run_command(dpacc_build_script, meson.project_build_root(), dpa_lib_dir, dpa_include_dir, sample_device_src, SAMPLE_NAME,
-	    sample_program_name, check: true)
+	    sample_program_name, dpacc_mcpu_flag, check: true)
 
 # Dependencies
 sample_device_build_dir = meson.project_build_root() + '/' + SAMPLE_NAME + '/dpu/device/build_dpacc'

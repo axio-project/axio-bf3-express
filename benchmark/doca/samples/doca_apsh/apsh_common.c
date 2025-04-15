@@ -23,6 +23,7 @@
  *
  */
 #include <string.h>
+#include <unistd.h>
 
 #include <doca_argp.h>
 #include <doca_log.h>
@@ -115,10 +116,60 @@ static doca_error_t os_type_callback(void *param, void *config)
 	return DOCA_SUCCESS;
 }
 
+/*
+ * ARGP Callback - Handle mem_regions.json path parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t memr_callback(void *param, void *config)
+{
+	struct apsh_config *conf = (struct apsh_config *)config;
+	size_t size = sizeof(conf->system_mem_region_path);
+
+	if (strnlen(param, size) >= size) {
+		DOCA_LOG_ERR("System memory regions map argument too long, must be <=%zu long", size - 1);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+	strcpy(conf->system_mem_region_path, param);
+
+	if (access(conf->system_mem_region_path, F_OK) == -1) {
+		DOCA_LOG_ERR("System memory regions map json file not found %s", conf->system_mem_region_path);
+		return DOCA_ERROR_NOT_FOUND;
+	}
+	return DOCA_SUCCESS;
+}
+
+/*
+ * ARGP Callback - Handle os_symbols.json path parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t os_syms_callback(void *param, void *config)
+{
+	struct apsh_config *conf = (struct apsh_config *)config;
+	size_t size = sizeof(conf->system_os_symbol_map_path);
+
+	if (strnlen(param, size) >= size) {
+		DOCA_LOG_ERR("System os symbols map argument too long, must be <=%zu long", size - 1);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+	strcpy(conf->system_os_symbol_map_path, param);
+
+	if (access(conf->system_os_symbol_map_path, F_OK) == -1) {
+		DOCA_LOG_ERR("System os symbols map json file not found %s", conf->system_os_symbol_map_path);
+		return DOCA_ERROR_NOT_FOUND;
+	}
+	return DOCA_SUCCESS;
+}
+
 doca_error_t register_apsh_params(bool add_os_arg, bool add_pid_arg)
 {
 	doca_error_t result;
-	struct doca_argp_param *pid_param, *vuid_param, *dma_param, *os_type_param;
+	struct doca_argp_param *pid_param, *vuid_param, *dma_param, *os_type_param, *memr_param, *os_syms_param;
 
 	/* Create and register pid param */
 	if (!add_pid_arg)
@@ -189,6 +240,42 @@ skip_pid:
 	doca_argp_param_set_callback(os_type_param, os_type_callback);
 	doca_argp_param_set_type(os_type_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(os_type_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	/* Create and register system memory map param */
+	result = doca_argp_param_create(&memr_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(memr_param, "m");
+	doca_argp_param_set_long_name(memr_param, "memr");
+	doca_argp_param_set_arguments(memr_param, "<path>");
+	doca_argp_param_set_description(memr_param, "System memory regions map");
+	doca_argp_param_set_callback(memr_param, memr_callback);
+	doca_argp_param_set_type(memr_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(memr_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	/* Create and register system OS map param */
+	result = doca_argp_param_create(&os_syms_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(os_syms_param, "o");
+	doca_argp_param_set_long_name(os_syms_param, "osym");
+	doca_argp_param_set_arguments(os_syms_param, "<path>");
+	doca_argp_param_set_description(os_syms_param, "System OS symbol map path");
+	doca_argp_param_set_callback(os_syms_param, os_syms_callback);
+	doca_argp_param_set_type(os_syms_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(os_syms_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
 		return result;

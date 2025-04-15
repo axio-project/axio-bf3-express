@@ -43,7 +43,9 @@ DOCA_LOG_REGISTER(INJECTION_DETECT_GET);
 doca_error_t injection_detect_get(const char *dma_device_name,
 				  const char *pci_vuid,
 				  enum doca_apsh_system_os os_type,
-				  DOCA_APSH_PROCESS_PID_TYPE pid)
+				  DOCA_APSH_PROCESS_PID_TYPE pid,
+				  const char *mem_region,
+				  const char *os_symbols)
 {
 	doca_error_t result;
 	int i, nb_processes;
@@ -52,9 +54,6 @@ doca_error_t injection_detect_get(const char *dma_device_name,
 	struct doca_apsh_process *proc, **processes;
 	int num_injection_detect;
 	struct doca_apsh_injection_detect **injection_detect_list;
-	/* Hardcoded paths to the files created by doca_apsh_config tool */
-	const char *os_symbols = "/tmp/symbols.json";
-	const char *mem_region = "/tmp/mem_regions.json";
 
 	/* Init */
 	result = init_doca_apsh(dma_device_name, &apsh_ctx);

@@ -41,6 +41,7 @@
 #include <doca_rdma.h>
 #include <doca_gpunetio.h>
 #include <doca_mmap.h>
+#include <doca_pe.h>
 #include <doca_error.h>
 #include <doca_buf_array.h>
 
@@ -55,6 +56,10 @@
 #define RDMA_SEND_QUEUE_SIZE 8192
 #define RDMA_RECV_QUEUE_SIZE 8192
 #define ROUND_UP(unaligned_mapping_size, align_val) ((unaligned_mapping_size) + (align_val)-1) & (~((align_val)-1))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define SERVER_ADDR_LEN (MAX(MAX(DOCA_DEVINFO_IPV4_ADDR_SIZE, DOCA_DEVINFO_IPV6_ADDR_SIZE), DOCA_GID_BYTE_LENGTH))
+#define SERVER_ADDR_TYPE_LEN 6
+#define DEFAULT_CM_PORT 13579
 
 struct rdma_config {
 	char device_name[DOCA_DEVINFO_IBDEV_NAME_SIZE]; /* DOCA device name */
@@ -63,6 +68,12 @@ struct rdma_config {
 	bool is_server;					/* Sample is acting as server or client */
 	bool is_gid_index_set;				/* Is the set_index parameter passed */
 	uint32_t gid_index;				/* GID index for DOCA RDMA */
+	bool use_rdma_cm;				/* Use RDMA CM */
+	uint32_t cm_port;				/* CM port */
+	char cm_addr[SERVER_ADDR_LEN + 1];		/* RDMA_CM server IPv4/IPv6/GID address */
+	enum doca_rdma_addr_type cm_addr_type;		/* RDMA_CM server address type, IPv4, IPv6 or GID,
+							 * Only useful for client
+							 **/
 };
 
 struct rdma_resources {
@@ -75,6 +86,17 @@ struct rdma_resources {
 	struct doca_pe *pe;		    /* DOCA progress engine -- needed by server only */
 	const void *connection_details;	    /* Remote peer connection details */
 	size_t conn_det_len;		    /* Remote peer connection details data length */
+
+	/* rdma_cm resources */
+	struct doca_rdma_addr *cm_addr;		 /* CM server address to connect by a client */
+	struct doca_rdma_connection *connection; /* The RDMA_CM connection instance */
+	bool connection_established;		 /* Indicate whether connection is established */
+	bool connection_error;			 /* Indicate connection error */
+	bool server_listen_active;		 /* Indicate if server listen_to_port is active */
+
+	struct doca_rdma_connection *connection2; /* The RDMA_CM connection instance */
+	bool connection2_established;		  /* Indicate whether connection is established */
+	bool connection2_error;			  /* Indicate connection error */
 };
 
 /* Sample rdma mmap object */
@@ -211,7 +233,9 @@ doca_error_t kernel_write_client(cudaStream_t stream,
 				 struct doca_gpu_buf_arr *client_local_buf_arr_B,
 				 struct doca_gpu_buf_arr *client_local_buf_arr_C,
 				 struct doca_gpu_buf_arr *client_local_buf_arr_F,
-				 struct doca_gpu_buf_arr *client_remote_buf_arr_A);
+				 struct doca_gpu_buf_arr *client_remote_buf_arr_A,
+				 uint32_t connection_index,
+				 uint32_t *exit_flag);
 
 /*
  * Launch a CUDA kernel doing RDMA Write server
@@ -227,7 +251,8 @@ doca_error_t kernel_write_server(cudaStream_t stream,
 				 struct doca_gpu_dev_rdma *rdma_gpu,
 				 struct doca_gpu_buf_arr *server_local_buf_arr_A,
 				 struct doca_gpu_buf_arr *server_local_buf_arr_F,
-				 struct doca_gpu_buf_arr *server_remote_buf_arr_F);
+				 struct doca_gpu_buf_arr *server_remote_buf_arr_F,
+				 uint32_t connection_index);
 
 /*
  * Launch a CUDA kernel for RDMA Write Bandwidth benchmark

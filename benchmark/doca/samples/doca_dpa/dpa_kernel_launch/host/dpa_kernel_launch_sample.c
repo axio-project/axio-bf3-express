@@ -68,32 +68,29 @@ doca_error_t kernel_launch(struct dpa_resources *resources)
 	struct doca_sync_event *wait_event = NULL;
 	struct doca_sync_event *comp_event = NULL;
 	pthread_t tid = 0;
-	/* Wait event threshold */
 	uint64_t wait_thresh = 4;
-	/* Completion event val */
 	uint64_t comp_event_val = 10;
-	/* Number of DPA threads */
 	const unsigned int num_dpa_threads = 1;
 	doca_error_t result, tmp_result;
 	int res = 0;
 
-	/* Creating DOCA sync event for DPA kernel wait */
-	result = create_doca_dpa_wait_sync_event(resources->doca_dpa, resources->doca_device, &wait_event);
+	result = create_doca_dpa_wait_sync_event(resources->pf_dpa_ctx, resources->pf_doca_device, &wait_event);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create DOCA sync event for DPA kernel wait: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	/* Creating DOCA sync event for DPA kernel completion */
-	result = create_doca_dpa_completion_sync_event(resources->doca_dpa, resources->doca_device, &comp_event, NULL);
+	result = create_doca_dpa_completion_sync_event(resources->pf_dpa_ctx,
+						       resources->pf_doca_device,
+						       &comp_event,
+						       NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create DOCA sync event for DPA kernel completion: %s",
 			     doca_error_get_descr(result));
 		goto destroy_wait_event;
 	}
 
-	/* kernel launch */
-	result = doca_dpa_kernel_launch_update_set(resources->doca_dpa,
+	result = doca_dpa_kernel_launch_update_set(resources->pf_dpa_ctx,
 						   wait_event,
 						   wait_thresh,
 						   comp_event,
@@ -105,7 +102,6 @@ doca_error_t kernel_launch(struct dpa_resources *resources)
 		goto destroy_comp_event;
 	}
 
-	/* update wait event within a different CPU thread */
 	res = pthread_create(&tid, NULL, wait_event_update_thread, (void *)wait_event);
 	if (res != 0) {
 		DOCA_LOG_ERR("Failed to create thread");
@@ -120,7 +116,6 @@ doca_error_t kernel_launch(struct dpa_resources *resources)
 		goto destroy_comp_event;
 	}
 
-	/* Wait until completion event reach completion val */
 	result = doca_sync_event_wait_gt(comp_event, comp_event_val - 1, SYNC_EVENT_MASK_FFS);
 	if (result != DOCA_SUCCESS)
 		DOCA_LOG_ERR("Failed to wait for host completion event: %s", doca_error_get_descr(result));

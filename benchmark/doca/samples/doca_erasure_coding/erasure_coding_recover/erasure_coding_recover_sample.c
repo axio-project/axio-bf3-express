@@ -156,7 +156,10 @@ static void ec_cleanup(struct ec_sample_objects *state)
 			DOCA_LOG_ERR("Failed to destroy ec: %s", doca_error_get_descr(result));
 	}
 
-	destroy_core_objects(&state->core_state);
+	result = destroy_core_objects(&state->core_state);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to destroy DOCA core objects: %s", doca_error_get_descr(result));
+	}
 }
 
 /**

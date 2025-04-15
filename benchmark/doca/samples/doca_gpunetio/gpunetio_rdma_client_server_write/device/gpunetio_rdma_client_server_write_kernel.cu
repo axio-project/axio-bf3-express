@@ -36,7 +36,9 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 				struct doca_gpu_buf_arr *client_local_buf_arr_B,
 				struct doca_gpu_buf_arr *client_local_buf_arr_C,
 				struct doca_gpu_buf_arr *client_local_buf_arr_F,
-				struct doca_gpu_buf_arr *client_remote_buf_arr_A)
+				struct doca_gpu_buf_arr *client_remote_buf_arr_A,
+				uint32_t connection_index,
+				uint32_t *exit_flag)
 {
 	doca_error_t result;
 	struct doca_gpu_buf *local_buf_B;
@@ -94,7 +96,7 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 			/* Each CUDA thread posts RDMA Write Imm from a different buffer */
 			printf("Thread %d post rdma write imm %d\n", threadIdx.x, buf_index + threadIdx.x);
 			if (threadIdx.x == 0) {
-				result = doca_gpu_dev_rdma_write_strong(rdma_gpu,
+				result = doca_gpu_dev_rdma_write_strong(rdma_gpu, connection_index,
 								remote_buf_A, 0,
 								local_buf_B, 0,
 								GPU_BUF_SIZE_B, buf_index + threadIdx.x,
@@ -102,7 +104,7 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 				if (result != DOCA_SUCCESS)
 					printf("Error %d doca_gpu_dev_rdma_write_strong\n", result);
 			} else {
-				result = doca_gpu_dev_rdma_write_strong(rdma_gpu,
+				result = doca_gpu_dev_rdma_write_strong(rdma_gpu, connection_index,
 								remote_buf_A, GPU_BUF_SIZE_B,
 								local_buf_C, 0,
 								GPU_BUF_SIZE_C, buf_index + threadIdx.x,
@@ -114,14 +116,14 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 			/* Each CUDA thread posts RDMA Send Imm from a different buffer */
 			printf("Thread %d post rdma send imm %d\n", threadIdx.x, buf_index + threadIdx.x);
 			if (threadIdx.x == 0) {
-				result = doca_gpu_dev_rdma_send_strong(rdma_gpu,
+				result = doca_gpu_dev_rdma_send_strong(rdma_gpu, connection_index,
 								local_buf_B, 0,
 								GPU_BUF_SIZE_B, buf_index + threadIdx.x,
 								DOCA_GPU_RDMA_SEND_FLAG_IMM);
 				if (result != DOCA_SUCCESS)
 					printf("Error %d doca_gpu_dev_rdma_send_strong\n", result);
 			} else {
-				result = doca_gpu_dev_rdma_send_strong(rdma_gpu,
+				result = doca_gpu_dev_rdma_send_strong(rdma_gpu, connection_index,
 								local_buf_C, 0,
 								GPU_BUF_SIZE_C, buf_index + threadIdx.x,
 								DOCA_GPU_RDMA_SEND_FLAG_IMM);
@@ -132,7 +134,7 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 		__syncthreads();
 
 		if (threadIdx.x == 0) {
-			result = doca_gpu_dev_rdma_commit_strong(rdma_gpu);
+			result = doca_gpu_dev_rdma_commit_strong(rdma_gpu, connection_index);
 			if (result != DOCA_SUCCESS)
 				printf("Error %d doca_gpu_dev_rdma_push\n", result);
 		}
@@ -144,8 +146,13 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 		if (result != DOCA_SUCCESS)
 			printf("Error %d doca_gpu_dev_rdma_push\n", result);
 
-		printf("Client posted and completed %d RDMA ops\n", num_ops);
-}
+		printf("Client posted and completed %d RDMA commits on connection %d. Waiting on the exit flag.\n",
+				num_ops, connection_index);
+
+		while(DOCA_GPUNETIO_VOLATILE(*exit_flag) == 0);
+	}
+
+	__syncthreads();
 
 	return;
 }
@@ -153,7 +160,8 @@ __global__ void kernel_client(struct doca_gpu_dev_rdma *rdma_gpu,
 __global__ void kernel_server(struct doca_gpu_dev_rdma *rdma_gpu,
 				struct doca_gpu_buf_arr *server_local_buf_arr_A,
 				struct doca_gpu_buf_arr *server_local_buf_arr_F,
-				struct doca_gpu_buf_arr *server_remote_buf_arr_F)
+				struct doca_gpu_buf_arr *server_remote_buf_arr_F,
+				uint32_t connection_index)
 {
 	doca_error_t result;
 	struct doca_gpu_buf *remote_buf_F;
@@ -223,11 +231,11 @@ __global__ void kernel_server(struct doca_gpu_dev_rdma *rdma_gpu,
 
 			/* As only 1 RDMA Write is required here, same thread can enqueue and push the write op */
 			/* Update flag F0 to remote client to notify receives have been posted */
-			result = doca_gpu_dev_rdma_write_strong(rdma_gpu, remote_buf_F, buf_index, local_buf_F, buf_index, GPU_BUF_SIZE_F, 0, DOCA_GPU_RDMA_WRITE_FLAG_NONE);
+			result = doca_gpu_dev_rdma_write_strong(rdma_gpu, connection_index, remote_buf_F, buf_index, local_buf_F, buf_index, GPU_BUF_SIZE_F, 0, DOCA_GPU_RDMA_WRITE_FLAG_NONE);
 			if (result != DOCA_SUCCESS)
 				printf("Error %d doca_gpu_dev_rdma_write_strong\n", result);
 
-			result = doca_gpu_dev_rdma_commit_strong(rdma_gpu);
+			result = doca_gpu_dev_rdma_commit_strong(rdma_gpu, connection_index);
 			if (result != DOCA_SUCCESS)
 				printf("Error %d doca_gpu_dev_rdma_commit\n", result);
 
@@ -250,7 +258,8 @@ extern "C" {
 doca_error_t kernel_write_server(cudaStream_t stream, struct doca_gpu_dev_rdma *rdma_gpu,
 				struct doca_gpu_buf_arr *server_local_buf_arr_A,
 				struct doca_gpu_buf_arr *server_local_buf_arr_F,
-				struct doca_gpu_buf_arr *server_remote_buf_arr_F)
+				struct doca_gpu_buf_arr *server_remote_buf_arr_F,
+				uint32_t connection_index)
 {
 	cudaError_t result = cudaSuccess;
 
@@ -266,7 +275,7 @@ doca_error_t kernel_write_server(cudaStream_t stream, struct doca_gpu_dev_rdma *
 		return DOCA_ERROR_BAD_STATE;
 	}
 
-	kernel_server<<<1, GPU_NUM_OP_X_BUF, 0, stream>>>(rdma_gpu, server_local_buf_arr_A, server_local_buf_arr_F, server_remote_buf_arr_F);
+	kernel_server<<<1, GPU_NUM_OP_X_BUF, 0, stream>>>(rdma_gpu, server_local_buf_arr_A, server_local_buf_arr_F, server_remote_buf_arr_F, connection_index);
 	result = cudaGetLastError();
 	if (result != cudaSuccess) {
 		DOCA_LOG_ERR("[%s:%d] cuda failed with %s", __FILE__, __LINE__, cudaGetErrorString(result));
@@ -280,7 +289,8 @@ doca_error_t kernel_write_client(cudaStream_t stream, struct doca_gpu_dev_rdma *
 				struct doca_gpu_buf_arr *client_local_buf_arr_B,
 				struct doca_gpu_buf_arr *client_local_buf_arr_C,
 				struct doca_gpu_buf_arr *client_local_buf_arr_F,
-				struct doca_gpu_buf_arr *client_remote_buf_arr_A)
+				struct doca_gpu_buf_arr *client_remote_buf_arr_A,
+				uint32_t connection_index, uint32_t *exit_flag)
 {
 	cudaError_t result = cudaSuccess;
 
@@ -296,7 +306,7 @@ doca_error_t kernel_write_client(cudaStream_t stream, struct doca_gpu_dev_rdma *
 		return DOCA_ERROR_BAD_STATE;
 	}
 
-	kernel_client<<<1, GPU_NUM_OP_X_BUF, 0, stream>>>(rdma_gpu, client_local_buf_arr_B, client_local_buf_arr_C, client_local_buf_arr_F, client_remote_buf_arr_A);
+	kernel_client<<<1, GPU_NUM_OP_X_BUF, 0, stream>>>(rdma_gpu, client_local_buf_arr_B, client_local_buf_arr_C, client_local_buf_arr_F, client_remote_buf_arr_A, connection_index, exit_flag);
 
 	result = cudaGetLastError();
 	if (cudaSuccess != result) {

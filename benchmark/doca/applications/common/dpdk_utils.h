@@ -52,9 +52,10 @@ struct doca_buf;
 
 /* Port configuration */
 struct application_port_config {
-	int nb_ports;			   /* Set on init to 0 for don't care, required ports otherwise */
-	uint16_t nb_queues;		   /* Set on init to 0 for don't care, required minimum cores otherwise */
-	int nb_hairpin_q;		   /* Set on init to 0 to disable, hairpin queues otherwise */
+	int nb_ports;	    /* Set on init to 0 for don't care, required ports otherwise */
+	uint16_t nb_queues; /* Set on init to 0 for don't care, required minimum cores otherwise */
+	int nb_hairpin_q;   /* Set on init to 0 to disable, hairpin queues otherwise */
+	uint16_t mbuf_size; /* Set on init to 0 for don't care, packet mbuf size (including headroom) otherwise */
 	uint16_t enable_mbuf_metadata : 1; /* Set on init to 0 to disable, otherwise it will add meta to each mbuf */
 	uint16_t self_hairpin : 1;	   /* Set on init to 1 enable both self and peer hairpin */
 	uint16_t rss_support : 1;	   /* Set on init to 0 for no RSS support, RSS support otherwise */

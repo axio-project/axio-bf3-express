@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -28,6 +28,8 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_flow_tune_server.h>
+#include <doca_bitfield.h>
 
 #include "utils.h"
 #include "flow_common.h"
@@ -128,6 +130,12 @@ static doca_error_t create_doca_flow_port(int port_id,
 		goto destroy_port_cfg;
 	}
 
+	result = doca_flow_port_cfg_set_actions_mem_size(port_cfg, rte_align32pow2(MAX_ACTIONS_MEM_SIZE));
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set doca_flow_port_cfg actions memory size: %s", doca_error_get_descr(result));
+		goto destroy_port_cfg;
+	}
+
 	if (sn_offload_disable) {
 		result = doca_flow_port_cfg_set_ipsec_sn_offload_disable(port_cfg);
 		if (result != DOCA_SUCCESS) {
@@ -162,6 +170,7 @@ doca_error_t ipsec_security_gw_init_doca_flow(const struct ipsec_security_gw_con
 	int nb_ports = 0;
 	struct doca_dev *dev;
 	struct doca_flow_cfg *flow_cfg;
+	struct doca_flow_tune_server_cfg *server_cfg;
 	struct doca_flow_resource_rss_cfg rss = {0};
 	uint16_t rss_queues[nb_queues];
 	char *mode_args;
@@ -212,9 +221,12 @@ doca_error_t ipsec_security_gw_init_doca_flow(const struct ipsec_security_gw_con
 		return result;
 	}
 
-	/* DECRYPT_DUMMY_ID is the highest ID, adding one to be able to use it exactly */
 	result = doca_flow_cfg_set_nr_shared_resource(flow_cfg,
-						      DECRYPT_DUMMY_ID + 1,
+#ifdef MLX5DV_HWS
+						      MAX_NB_RULES * 2, /* for both encrypt and decrypt */
+#else
+						      DECRYPT_DUMMY_ID + 1, /* DECRYPT_DUMMY_ID is the highest ID */
+#endif
 						      DOCA_FLOW_SHARED_RESOURCE_IPSEC_SA);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_cfg nr_shared_resources: %s", doca_error_get_descr(result));
@@ -283,6 +295,25 @@ doca_error_t ipsec_security_gw_init_doca_flow(const struct ipsec_security_gw_con
 			return DOCA_ERROR_INITIALIZATION;
 		}
 	}
+	/* Init DOCA Flow Tune Server */
+	result = doca_flow_tune_server_cfg_create(&server_cfg);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create flow tune server configuration");
+		doca_flow_cleanup(nb_ports, ports);
+		return result;
+	}
+	result = doca_flow_tune_server_init(server_cfg);
+	if (result != DOCA_SUCCESS) {
+		if (result == DOCA_ERROR_NOT_SUPPORTED) {
+			DOCA_LOG_DBG("DOCA Flow Tune Server isn't supported in this runtime version");
+		} else {
+			DOCA_LOG_ERR("Failed to initialize the flow tune server");
+			doca_flow_tune_server_cfg_destroy(server_cfg);
+			doca_flow_cleanup(nb_ports, ports);
+			return result;
+		}
+	}
+	doca_flow_tune_server_cfg_destroy(server_cfg);
 	return DOCA_SUCCESS;
 }
 
@@ -310,7 +341,10 @@ uint32_t get_icv_len_int(enum doca_flow_crypto_icv_len icv_len)
 		return 16;
 }
 
-doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, struct doca_flow_pipe **rss_pipe)
+doca_error_t create_rss_pipe(struct ipsec_security_gw_config *app_cfg,
+			     struct doca_flow_port *port,
+			     uint16_t nb_queues,
+			     struct doca_flow_pipe **rss_pipe)
 {
 	struct doca_flow_match match;
 	struct doca_flow_match match_mask;
@@ -322,6 +356,7 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 	int i;
 	doca_error_t result;
 	union security_gateway_pkt_meta meta = {0};
+	bool is_root = (app_cfg->flow_mode == IPSEC_SECURITY_GW_VNF);
 
 	memset(&match, 0, sizeof(match));
 	memset(&match_mask, 0, sizeof(match_mask));
@@ -330,9 +365,10 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 
 	meta.encrypt = 1;
 	meta.decrypt = 1;
-	match_mask.meta.pkt_meta = meta.u32;
+	match_mask.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
 	rss_queues = (uint16_t *)calloc(nb_queues - 1, sizeof(uint16_t));
 	if (rss_queues == NULL) {
 		DOCA_LOG_ERR("Failed to allocate memory for RSS queues");
@@ -341,8 +377,8 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 
 	for (i = 0; i < nb_queues - 1; i++)
 		rss_queues[i] = i + 1;
-	fwd.rss_queues = rss_queues;
-	fwd.num_of_queues = nb_queues - 1;
+	fwd.rss.queues_array = rss_queues;
+	fwd.rss.nr_queues = nb_queues - 1;
 
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
 	if (result != DOCA_SUCCESS) {
@@ -360,7 +396,7 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, true);
+	result = doca_flow_pipe_cfg_set_is_root(pipe_cfg, is_root);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg is_root: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
@@ -386,7 +422,7 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 
 	meta.encrypt = 1;
 	meta.decrypt = 0;
-	match.meta.pkt_meta = meta.u32;
+	match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	result = doca_flow_pipe_add_entry(0,
 					  *rss_pipe,
 					  &match,
@@ -403,7 +439,7 @@ doca_error_t create_rss_pipe(struct doca_flow_port *port, uint16_t nb_queues, st
 
 	meta.encrypt = 0;
 	meta.decrypt = 1;
-	match.meta.pkt_meta = meta.u32;
+	match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	result = doca_flow_pipe_add_entry(0, *rss_pipe, &match, NULL, NULL, NULL, DOCA_FLOW_NO_WAIT, &status, NULL);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add entry to RSS pipe: %s", doca_error_get_descr(result));
@@ -450,13 +486,14 @@ void create_hairpin_pipe_fwd(struct ipsec_security_gw_config *app_cfg,
 				rss_queues[i] = i + 1;
 
 			fwd->type = DOCA_FLOW_FWD_RSS;
+			fwd->rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
 			if (!encrypt && app_cfg->mode == IPSEC_SECURITY_GW_TUNNEL)
-				fwd->rss_inner_flags = rss_flags;
+				fwd->rss.inner_flags = rss_flags;
 			else
-				fwd->rss_outer_flags = rss_flags;
+				fwd->rss.outer_flags = rss_flags;
 
-			fwd->rss_queues = rss_queues;
-			fwd->num_of_queues = nb_queues - 1;
+			fwd->rss.queues_array = rss_queues;
+			fwd->rss.nr_queues = nb_queues - 1;
 		}
 	} else {
 		if (app_cfg->flow_mode == IPSEC_SECURITY_GW_SWITCH) {
@@ -541,6 +578,8 @@ static doca_error_t add_switch_port_meta_entries(struct ipsec_security_gw_ports_
 	memset(&status, 0, sizeof(status));
 	memset(&match, 0, sizeof(match));
 
+	status.entries_in_queue = num_of_entries;
+
 	/* forward the packets from the unsecured port to encryption */
 	match.parser_meta.port_meta = ports[UNSECURED_IDX]->port_id;
 
@@ -594,7 +633,7 @@ static doca_error_t create_switch_pkt_meta_pipe(struct doca_flow_pipe **pipe)
 
 	meta.decrypt = 1;
 	meta.encrypt = 1;
-	match_mask.meta.pkt_meta = meta.u32;
+	match_mask.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, doca_flow_port_switch_get(NULL));
 	if (result != DOCA_SUCCESS) {
@@ -661,7 +700,7 @@ static doca_error_t add_switch_pkt_meta_entries(struct ipsec_security_gw_ports_m
 
 	meta.decrypt = 0;
 	meta.encrypt = 1;
-	match.meta.pkt_meta = meta.u32;
+	match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	fwd.type = DOCA_FLOW_FWD_PIPE;
 	fwd.next_pipe = encrypt_pipe;
 
@@ -673,7 +712,7 @@ static doca_error_t add_switch_pkt_meta_entries(struct ipsec_security_gw_ports_m
 
 	meta.encrypt = 0;
 	meta.decrypt = 1;
-	match.meta.pkt_meta = meta.u32;
+	match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	fwd.type = DOCA_FLOW_FWD_PORT;
 	fwd.port_id = ports[UNSECURED_IDX]->port_id;
 
@@ -738,13 +777,13 @@ doca_error_t create_switch_egress_root_pipes(struct ipsec_security_gw_ports_map 
 }
 
 /*
-* Remove the ethernet padding from the packet
-* Ethernet padding is added to the packet to make sure the packet is at least 64 bytes long
-* This is required by the Ethernet standard
-* The padding is added after the payload and before the FCS
-
-* @m [in]: the packet to remove the padding from
-*/
+ * Remove the ethernet padding from the packet
+ * Ethernet padding is added to the packet to make sure the packet is at least 64 bytes long
+ * This is required by the Ethernet standard
+ * The padding is added after the payload and before the FCS
+ *
+ * @m [in]: the packet to remove the padding from
+ */
 void remove_ethernet_padding(struct rte_mbuf **m)
 {
 	struct rte_ether_hdr *oh;
@@ -767,7 +806,7 @@ void remove_ethernet_padding(struct rte_mbuf **m)
 	payload_len = (*m)->pkt_len - l2_l3_len;
 
 	/* check if need to remove trailing l2 zeros - occurs when packet_len < eth_minimum_len=64 */
-	if (payload_len - payload_len_l3 > 0) {
+	if (payload_len > payload_len_l3) {
 		/* need to remove the extra zeros */
 		rte_pktmbuf_trim(*m, payload_len - payload_len_l3);
 	}

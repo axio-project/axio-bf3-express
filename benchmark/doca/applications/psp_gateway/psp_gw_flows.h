@@ -57,14 +57,14 @@ struct psp_pf_dev {
 
 /**
  * @brief describes a PSP tunnel connection to a single address
- *        on a remote host
+ *        on a peer.
  */
 struct psp_session_t {
 	rte_ether_addr dst_mac;
 
 	struct doca_flow_ip_addr dst_pip; //!< Physical/Outer IP addr
-	doca_be32_t dst_vip;		  //!< Virtual/Innter IP addr
-	doca_be32_t src_vip;		  //!< Virtual/Innter IP addr
+	struct doca_flow_ip_addr dst_vip; //!< Virtual/Inner IP addr
+	struct doca_flow_ip_addr src_vip; //!< Virtual/Inner IP addr
 
 	uint32_t spi_egress;  //!< Security Parameter Index on the wire - host-to-net
 	uint32_t spi_ingress; //!< Security Parameter Index on the wire - net-to-host
@@ -118,7 +118,7 @@ public:
 
 	/**
 	 * @brief Adds a flow pipe entry to perform encryption on a new flow
-	 *        to the indicated remote host.
+	 *        to the indicated peer.
 	 * The caller is responsible for negotiating the SPI and key, and
 	 * assigning a unique crypto_id.
 	 *
@@ -155,10 +155,10 @@ public:
 	 * @brief Shows flow counters for the given tunnel, if they have changed
 	 *        since the last invocation.
 	 *
-	 * @dst_vip [in]: stringified dst IP, to avoid repeating the conversion
+	 * @session_vips_pair [in]: the pair of VIPs which identify the session
 	 * @session [in/out]: the object which holds the flow entries
 	 */
-	void show_session_flow_count(const std::string &dst_vip, psp_session_t &session);
+	void show_session_flow_count(const session_key session_vips_pair, psp_session_t &session);
 
 private:
 	/**
@@ -239,20 +239,28 @@ private:
 				      doca_flow_pipe_entry **entry);
 
 	/**
-	 * Generates the outer/encap header contents for a given session for ipv6 encap
+	 * Generates the outer/encap header contents for a given session for ipv6 tunnel encap
 	 *
 	 * @session [in]: the remote host mac/ip/etc. to encap
 	 * @encap_data [out]: the actions.crypto_encap.encap_data to populate
 	 */
-	void format_encap_data_ipv6(const psp_session_t *session, uint8_t *encap_data);
+	void format_encap_tunnel_data_ipv6(const psp_session_t *session, uint8_t *encap_data);
 
 	/**
-	 * Generates the outer/encap header contents for a given session for ipv4 encap
+	 * Generates the outer/encap header contents for a given session for ipv4 tunnel encap
 	 *
 	 * @session [in]: the remote host mac/ip/etc. to encap
 	 * @encap_data [out]: the actions.crypto_encap.encap_data to populate
 	 */
-	void format_encap_data_ipv4(const psp_session_t *session, uint8_t *encap_data);
+	void format_encap_tunnel_data_ipv4(const psp_session_t *session, uint8_t *encap_data);
+
+	/**
+	 * Generates the outer/encap header contents for a given session for transport encap
+	 *
+	 * @session [in]: the remote host mac/ip/etc. to encap
+	 * @encap_data [out]: the actions.crypto_encap.encap_data to populate
+	 */
+	void format_encap_transport_data(const psp_session_t *session, uint8_t *encap_data);
 
 	/**
 	 * Top-level pipe creation method
@@ -279,9 +287,10 @@ private:
 	 * Creates the pipe to only accept incoming packets from
 	 * appropriate sources.
 	 *
+	 * @ipv4 [in]: if true match ipv4 address, else ipv6
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
-	doca_error_t ingress_acl_pipe_create(void);
+	doca_error_t ingress_acl_pipe_create(bool ipv4);
 
 	/**
 	 * Creates the pipe which counts the various syndrome types
@@ -294,9 +303,44 @@ private:
 	/**
 	 * Creates the pipe to trap outgoing packets to unregistered destinations
 	 *
+	 * @ipv4 [in]: if true match ipv4 address, else ipv6
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
-	doca_error_t egress_acl_pipe_create(void);
+	doca_error_t egress_acl_pipe_create(bool ipv4);
+
+	/**
+	 * Creates the pipe that match ipv6 destination address in egress domain
+	 * Write on meta data the hash of the source address
+	 *
+	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+	 */
+	doca_error_t create_egress_dst_ip6_pipe(void);
+
+	/**
+	 * Creates the pipe that match ipv6 source address in ingress domain
+	 * Write on meta data the hash of the destination address
+	 *
+	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+	 */
+	doca_error_t create_ingress_src_ip6_pipe(void);
+
+	/**
+	 * Add entry to ipv6 destination address pipe
+	 *
+	 * @session [in]: the session for which an encryption flow should be created
+	 * @dst_vip_id [in]: the hash of the destination vip to set in meta data
+	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+	 */
+	doca_error_t add_egress_dst_ip6_entry(psp_session_t *session, int dst_vip_id);
+
+	/**
+	 * Add entry to ipv6 source address pipe
+	 *
+	 * @session [in]: the session for which an decryption flow should be created
+	 * @dst_vip_id [in]: the hash of the destination vip to set in meta data
+	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+	 */
+	doca_error_t add_ingress_src_ip6_entry(psp_session_t *session, int dst_vip_id);
 
 	/**
 	 * Creates the pipe to mark and randomly sample outgoing packets
@@ -320,6 +364,12 @@ private:
 	 */
 	doca_error_t ingress_root_pipe_create(void);
 
+	/**
+	 * @brief Creates a pipe that classify if inner IP is ipv6 or ipv4 and based on that send to acl pipe
+	 *
+	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+	 */
+	doca_error_t ingress_inner_classifier_pipe_create(void);
 	/**
 	 * @brief Creates a pipe to fwd packets to port
 	 *
@@ -346,11 +396,9 @@ private:
 	 * flows from the egress domain to the secure-egress domain,
 	 * and to relay injected ARP responses back to the VF.
 	 *
-	 * @next_pipe [in]: The pipe to which the empty pipe
-	 * should forward its traffic.
 	 * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
 	 */
-	doca_error_t empty_pipe_create(doca_flow_pipe *next_pipe);
+	doca_error_t empty_pipe_create(void);
 
 	/**
 	 * @brief Creates a pipe to fwd packets to port
@@ -381,6 +429,9 @@ private:
 
 	bool sampling_enabled{false};
 
+	std::vector<uint16_t> rss_queues;
+	doca_flow_fwd fwd_rss{};
+
 	// Pipe and pipe entry application state:
 
 	// general pipes
@@ -390,10 +441,13 @@ private:
 	// net-to-host pipes
 	doca_flow_pipe *ingress_decrypt_pipe{};
 	doca_flow_pipe *ingress_sampling_pipe{};
-	doca_flow_pipe *ingress_acl_pipe{};
+	doca_flow_pipe *ingress_inner_ip_classifier_pipe{};
+	doca_flow_pipe *ingress_acl_ipv4_pipe{};
+	doca_flow_pipe *ingress_acl_ipv6_pipe{};
 
 	// host-to-net pipes
-	doca_flow_pipe *egress_acl_pipe{};
+	doca_flow_pipe *egress_acl_ipv4_pipe{};
+	doca_flow_pipe *egress_acl_ipv6_pipe{};
 	doca_flow_pipe *egress_sampling_pipe{};
 	doca_flow_pipe *egress_encrypt_pipe{};
 	doca_flow_pipe *syndrome_stats_pipe{};
@@ -402,20 +456,31 @@ private:
 	doca_flow_pipe *fwd_to_wire_pipe{};
 	doca_flow_pipe *fwd_to_rss_pipe{};
 	doca_flow_pipe *set_sample_bit_pipe{};
+	doca_flow_pipe *egress_dst_ip6_pipe{};
+	doca_flow_pipe *ingress_src_ip6_pipe{};
 
 	// static pipe entries
 	doca_flow_pipe_entry *default_rss_entry{};
 	doca_flow_pipe_entry *default_decrypt_entry{};
 	doca_flow_pipe_entry *default_ingr_sampling_entry{};
-	doca_flow_pipe_entry *default_ingr_acl_entry{};
 	doca_flow_pipe_entry *egr_sampling_rss{};
 	doca_flow_pipe_entry *egr_sampling_drop{};
+	doca_flow_pipe_entry *default_ingr_acl_ipv4_entry{};
+	doca_flow_pipe_entry *default_ingr_acl_ipv6_entry{};
+	doca_flow_pipe_entry *ingress_ipv4_clasify_entry{};
+	doca_flow_pipe_entry *ingress_ipv6_clasify_entry{};
 	doca_flow_pipe_entry *root_jump_to_ingress_ipv6_entry{};
 	doca_flow_pipe_entry *root_jump_to_ingress_ipv4_entry{};
-	doca_flow_pipe_entry *root_jump_to_egress_entry{};
+	doca_flow_pipe_entry *root_jump_to_egress_ipv6_entry{};
+	doca_flow_pipe_entry *root_jump_to_egress_ipv4_entry{};
 	doca_flow_pipe_entry *vf_arp_to_rss{};
+	doca_flow_pipe_entry *vf_arp_to_wire{};
+	doca_flow_pipe_entry *uplink_arp_to_vf{};
 	doca_flow_pipe_entry *syndrome_stats_entries[NUM_OF_PSP_SYNDROMES]{};
 	doca_flow_pipe_entry *empty_pipe_entry{};
+	doca_flow_pipe_entry *arp_empty_pipe_entry{};
+	doca_flow_pipe_entry *ipv4_empty_pipe_entry{};
+	doca_flow_pipe_entry *ipv6_empty_pipe_entry{};
 	doca_flow_pipe_entry *root_default_drop{};
 	doca_flow_pipe_entry *fwd_to_wire_entry{};
 	doca_flow_pipe_entry *fwd_to_rss_entry{};

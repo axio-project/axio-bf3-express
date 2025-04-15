@@ -40,19 +40,45 @@ DOCA_LOG_REGISTER(DEVEMU_PCI_DEVICE_DMA_DPU::MAIN);
 
 /* Sample's Logic */
 doca_error_t devemu_pci_device_dma_dpu(const char *pci_address,
+				       const char *devemu_name,
 				       const char *emulated_dev_vuid,
 				       uint64_t host_dma_mem_iova,
 				       const char *write_data);
 
 /* Configuration struct */
 struct devemu_pci_cfg {
-	char pci_address[DOCA_DEVINFO_PCI_ADDR_SIZE]; /* Device PCI address */
-	char vuid[DOCA_DEVINFO_REP_VUID_SIZE];	      /* VUID of emulated device */
-	uint64_t host_dma_mem_iova;		      /* IOVA of host DMA memory */
-	char write_data[MEM_BUF_LEN];		      /* Data to write to host memory */
+	char devemu_manager_pci_address[DOCA_DEVINFO_PCI_ADDR_SIZE]; /* Emulated device manager PCI address */
+	char dma_dev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE];	     /* DMA device name */
+	char vuid[DOCA_DEVINFO_REP_VUID_SIZE];			     /* VUID of emulated device */
+	uint64_t host_dma_mem_iova;				     /* IOVA of host DMA memory */
+	char write_data[MEM_BUF_LEN];				     /* Data to write to host memory */
 };
 
 #ifdef DOCA_ARCH_DPU
+
+/*
+ * ARGP Callback - Handle IB device name parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t device_name_callback(void *param, void *config)
+{
+	struct devemu_pci_cfg *conf = (struct devemu_pci_cfg *)config;
+	char *device_name = (char *)param;
+
+	int len = strnlen(device_name, DOCA_DEVINFO_IBDEV_NAME_SIZE);
+	if (len == DOCA_DEVINFO_IBDEV_NAME_SIZE) {
+		DOCA_LOG_ERR("Entered IB device name exceeding the maximum size of %d",
+			     DOCA_DEVINFO_IBDEV_NAME_SIZE - 1);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	strncpy(conf->dma_dev_name, device_name, len + 1);
+
+	return DOCA_SUCCESS;
+}
 
 /*
  * ARGP Callback - Handle PCI device address parameter
@@ -66,7 +92,7 @@ static doca_error_t pci_callback(void *param, void *config)
 	struct devemu_pci_cfg *conf = (struct devemu_pci_cfg *)config;
 	const char *addr = (char *)param;
 
-	return parse_pci_address(addr, conf->pci_address);
+	return parse_pci_address(addr, conf->devemu_manager_pci_address);
 }
 
 /*
@@ -127,6 +153,70 @@ static doca_error_t write_data_callback(void *param, void *config)
 
 	strncpy(conf->write_data, write_data, data_len - 1);
 	conf->write_data[data_len - 1] = 0;
+
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Register device emulation manager PCI address command line parameter
+ *
+ * @pci_callback [in]: Callback called for parsing the device emulation manager PCI address command line param
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+doca_error_t register_devemu_manager_pci_address_param(doca_argp_param_cb_t pci_callback)
+{
+	struct doca_argp_param *param;
+	doca_error_t result;
+
+	/* Create and register device emulation manager PCI address param */
+	result = doca_argp_param_create(&param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(param, "p");
+	doca_argp_param_set_long_name(param, "pci-addr");
+	doca_argp_param_set_description(
+		param,
+		"The DOCA device emulation manager PCI address. Format: XXXX:XX:XX.X or XX:XX.X");
+	doca_argp_param_set_callback(param, pci_callback);
+	doca_argp_param_set_type(param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
+	return DOCA_SUCCESS;
+}
+
+/*
+ * Register DMA IB device name command line parameter
+ *
+ * @device_name_callback [in]: Callback called for parsing the DMA IB device name command line param
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t register_dma_device_name_param(doca_argp_param_cb_t device_name_callback)
+{
+	struct doca_argp_param *param;
+	doca_error_t result;
+
+	/* Create and register DMA IB device name param */
+	result = doca_argp_param_create(&param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(param, "d");
+	doca_argp_param_set_long_name(param, "device-name");
+	doca_argp_param_set_description(param, "The IB device name to be used for DMA operations");
+	doca_argp_param_set_callback(param, device_name_callback);
+	doca_argp_param_set_type(param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
 
 	return DOCA_SUCCESS;
 }
@@ -202,7 +292,11 @@ static doca_error_t register_devemu_pci_params(void)
 {
 	doca_error_t result;
 
-	result = register_pci_address_param(pci_callback);
+	result = register_devemu_manager_pci_address_param(pci_callback);
+	if (result != DOCA_SUCCESS)
+		return result;
+
+	result = register_dma_device_name_param(device_name_callback);
 	if (result != DOCA_SUCCESS)
 		return result;
 
@@ -238,7 +332,8 @@ int main(int argc, char **argv)
 	int exit_status = EXIT_FAILURE;
 
 	/* Set the default configuration values (Example values) */
-	strcpy(devemu_pci_cfg.pci_address, "0000:03:00.0");
+	strcpy(devemu_pci_cfg.devemu_manager_pci_address, "0000:03:00.0");
+	strcpy(devemu_pci_cfg.dma_dev_name, "");
 	strcpy(devemu_pci_cfg.vuid, "");
 	strcpy(devemu_pci_cfg.write_data, "This is a sample piece of data from DPU!");
 	devemu_pci_cfg.host_dma_mem_iova = 0x1000000;
@@ -279,7 +374,8 @@ int main(int argc, char **argv)
 		goto argp_cleanup;
 	}
 
-	result = devemu_pci_device_dma_dpu(devemu_pci_cfg.pci_address,
+	result = devemu_pci_device_dma_dpu(devemu_pci_cfg.devemu_manager_pci_address,
+					   devemu_pci_cfg.dma_dev_name,
 					   devemu_pci_cfg.vuid,
 					   devemu_pci_cfg.host_dma_mem_iova,
 					   devemu_pci_cfg.write_data);

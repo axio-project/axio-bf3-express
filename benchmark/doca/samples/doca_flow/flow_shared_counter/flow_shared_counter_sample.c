@@ -44,6 +44,11 @@ DOCA_LOG_REGISTER(FLOW_SHARED_COUNTER);
 			match.layer.udp.l4_port.port = (value); \
 	} while (0)
 
+enum {
+	TCP_ENTRY = 0,
+	UDP_ENTRY,
+};
+
 /*
  * Create DOCA Flow pipe with 5 tuple match and monitor with shared counter ID
  *
@@ -133,12 +138,12 @@ destroy_pipe_cfg:
 static doca_error_t add_shared_counter_pipe_entry(struct doca_flow_pipe *pipe,
 						  enum doca_flow_l4_type_ext out_l4_type,
 						  uint32_t shared_counter_id,
-						  struct entries_status *status)
+						  struct entries_status *status,
+						  struct doca_flow_pipe_entry **entry)
 {
 	struct doca_flow_match match;
 	struct doca_flow_actions actions;
 	struct doca_flow_monitor monitor;
-	struct doca_flow_pipe_entry *entry;
 	doca_error_t result;
 
 	/* example 5-tuple to match */
@@ -160,7 +165,7 @@ static doca_error_t add_shared_counter_pipe_entry(struct doca_flow_pipe *pipe,
 	SET_L4_PORT(outer, dst_port, dst_port);
 	SET_L4_PORT(outer, src_port, src_port);
 
-	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, &monitor, NULL, 0, status, &entry);
+	result = doca_flow_pipe_add_entry(0, pipe, &match, &actions, &monitor, NULL, 0, status, entry);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add entry: %s", doca_error_get_descr(result));
 		return result;
@@ -288,6 +293,7 @@ doca_error_t flow_shared_counter(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *tcp_pipe, *udp_pipe, *pipe;
 	int port_id;
 	uint32_t shared_counter_ids[] = {0, 1};
@@ -296,6 +302,7 @@ doca_error_t flow_shared_counter(int nb_queues)
 	struct entries_status status;
 	int num_of_entries = 4;
 	doca_error_t result;
+	struct doca_flow_pipe_entry *entry[nb_ports][2];
 
 	nr_shared_resources[DOCA_FLOW_SHARED_RESOURCE_COUNTER] = 2;
 
@@ -306,7 +313,8 @@ doca_error_t flow_shared_counter(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -346,7 +354,8 @@ doca_error_t flow_shared_counter(int nb_queues)
 		result = add_shared_counter_pipe_entry(tcp_pipe,
 						       DOCA_FLOW_L4_TYPE_EXT_TCP,
 						       shared_counter_ids[port_id],
-						       &status);
+						       &status,
+						       &entry[port_id][TCP_ENTRY]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -365,7 +374,8 @@ doca_error_t flow_shared_counter(int nb_queues)
 		result = add_shared_counter_pipe_entry(udp_pipe,
 						       DOCA_FLOW_L4_TYPE_EXT_UDP,
 						       shared_counter_ids[port_id],
-						       &status);
+						       &status,
+						       &entry[port_id][UDP_ENTRY]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add entry: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -411,16 +421,37 @@ doca_error_t flow_shared_counter(int nb_queues)
 						  query_results_array,
 						  nb_ports);
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to query entry: %s", doca_error_get_descr(result));
+		DOCA_LOG_ERR("Failed to query shared counter resource: %s", doca_error_get_descr(result));
 		stop_doca_flow_ports(nb_ports, ports);
 		doca_flow_destroy();
 		return result;
 	}
 
+	DOCA_LOG_INFO("Query shared counter data:");
 	for (port_id = 0; port_id < nb_ports; port_id++) {
 		DOCA_LOG_INFO("Port %d:", port_id);
-		DOCA_LOG_INFO("Total bytes: %ld", query_results_array[port_id].counter.total_bytes);
-		DOCA_LOG_INFO("Total packets: %ld", query_results_array[port_id].counter.total_pkts);
+		DOCA_LOG_INFO(" Total bytes: %ld", query_results_array[port_id].counter.total_bytes);
+		DOCA_LOG_INFO(" Total packets: %ld", query_results_array[port_id].counter.total_pkts);
+	}
+
+	DOCA_LOG_INFO("Query per entry shared counter data:");
+	for (port_id = 0; port_id < nb_ports; port_id++) {
+		DOCA_LOG_INFO("Port %d:", port_id);
+		for (int i = 0; i < 2; i++) {
+			result = doca_flow_resource_query_entry(entry[port_id][i], &query_results_array[0]);
+			if (result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to query %s entry (Port %d): %s",
+					     i == TCP_ENTRY ? "TCP" : "UDP",
+					     port_id,
+					     doca_error_get_descr(result));
+				stop_doca_flow_ports(nb_ports, ports);
+				doca_flow_destroy();
+				return result;
+			}
+			DOCA_LOG_INFO(" %s entry:", i == TCP_ENTRY ? "TCP" : "UDP");
+			DOCA_LOG_INFO("  Total bytes: %ld", query_results_array[port_id].counter.total_bytes);
+			DOCA_LOG_INFO("  Total packets: %ld", query_results_array[port_id].counter.total_pkts);
+		}
 	}
 
 	result = stop_doca_flow_ports(nb_ports, ports);

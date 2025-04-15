@@ -37,7 +37,11 @@ DOCA_LOG_REGISTER(ENVARS_GET);
  * @pid [in]: PID of the target process
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t envars_get(const char *dma_device_name, const char *pci_vuid, DOCA_APSH_PROCESS_PID_TYPE pid)
+doca_error_t envars_get(const char *dma_device_name,
+			const char *pci_vuid,
+			DOCA_APSH_PROCESS_PID_TYPE pid,
+			const char *mem_region,
+			const char *os_symbols)
 {
 	doca_error_t result;
 	int i, nb_processes;
@@ -46,9 +50,7 @@ doca_error_t envars_get(const char *dma_device_name, const char *pci_vuid, DOCA_
 	struct doca_apsh_process *proc, **processes;
 	int num_envars;
 	struct doca_apsh_envar **envars_list;
-	/* Hardcoded paths to the files created by doca_apsh_config tool */
-	const char *os_symbols = "/tmp/symbols.json";
-	const char *mem_region = "/tmp/mem_regions.json";
+
 	/* OS Type: Currently only Windows is supported */
 	enum doca_apsh_system_os os_type = DOCA_APSH_SYSTEM_WINDOWS;
 

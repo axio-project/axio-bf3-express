@@ -314,6 +314,85 @@ doca_error_t register_rdma_write_string_param(void)
 }
 
 /*
+ * ARGP Callback - Handle num_connections parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t num_connections_param_callback(void *param, void *config)
+{
+	struct rdma_config *rdma_cfg = (struct rdma_config *)config;
+	const uint32_t num_connections = *(uint32_t *)param;
+
+	if (num_connections > MAX_NUM_CONNECTIONS) {
+		DOCA_LOG_ERR("Max number of connections must be <= [%d]", MAX_NUM_CONNECTIONS);
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	rdma_cfg->num_connections = num_connections;
+
+	return DOCA_SUCCESS;
+}
+
+doca_error_t register_rdma_num_connections_param(void)
+{
+	struct doca_argp_param *num_connections_param;
+	doca_error_t result;
+	static char param_desc[MAX_ARG_SIZE];
+
+	/* Create and register num_connections param */
+	result = doca_argp_param_create(&num_connections_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(num_connections_param, "nc");
+	doca_argp_param_set_long_name(num_connections_param, "num-connections");
+	snprintf(param_desc,
+		 MAX_ARG_SIZE,
+		 "%s%d%s",
+		 "num_connections for DOCA RDMA (optional), max connections number must be <= ",
+		 MAX_NUM_CONNECTIONS,
+		 " in this sample");
+	doca_argp_param_set_description(num_connections_param, param_desc);
+	doca_argp_param_set_callback(num_connections_param, num_connections_param_callback);
+	doca_argp_param_set_type(num_connections_param, DOCA_ARGP_TYPE_INT);
+	result = doca_argp_register_param(num_connections_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	return result;
+}
+
+/*
+ * ARGP Callback - Handle transport_type parameter
+ *
+ * @param [in]: Input parameter
+ * @config [in/out]: Program configuration context
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t transport_type_param_callback(void *param, void *config)
+{
+	struct rdma_config *rdma_cfg = (struct rdma_config *)config;
+	const char *type = (char *)param;
+
+	if (strcasecmp(type, "RC") == 0)
+		rdma_cfg->transport_type = DOCA_RDMA_TRANSPORT_TYPE_RC;
+	else if (strcasecmp(type, "DC") == 0)
+		rdma_cfg->transport_type = DOCA_RDMA_TRANSPORT_TYPE_DC;
+	else {
+		DOCA_LOG_ERR("Entered wrong RDMA transport_type, the accepted RDMA transport_type are: "
+			     "RC, rc, "
+			     "DC, dc");
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
+	return DOCA_SUCCESS;
+}
+
+/*
  * ARGP Callback - Handle use_rdma_cm parameter
  *
  * @param [in]: Input parameter
@@ -506,6 +585,7 @@ doca_error_t register_rdma_common_params(void)
 	struct doca_argp_param *remote_desc_path_param;
 	struct doca_argp_param *remote_resource_desc_path;
 	struct doca_argp_param *gid_index_param;
+	struct doca_argp_param *transport_type_param;
 
 	/* Create and register device param */
 	result = doca_argp_param_create(&device_param);
@@ -603,6 +683,25 @@ doca_error_t register_rdma_common_params(void)
 		return result;
 	}
 
+	/* Create and register transport_type param */
+	result = doca_argp_param_create(&transport_type_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
+		return result;
+	}
+	doca_argp_param_set_short_name(transport_type_param, "tt");
+	doca_argp_param_set_long_name(transport_type_param, "transport-type");
+	doca_argp_param_set_description(
+		transport_type_param,
+		"transport_type for DOCA RDMA (RC or DC, optional), only useful for single connection out-of-band RDMA for now");
+	doca_argp_param_set_callback(transport_type_param, transport_type_param_callback);
+	doca_argp_param_set_type(transport_type_param, DOCA_ARGP_TYPE_STRING);
+	result = doca_argp_register_param(transport_type_param);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to register program param: %s", doca_error_get_descr(result));
+		return result;
+	}
+
 	return register_rdma_cm_params();
 }
 
@@ -669,6 +768,14 @@ doca_error_t allocate_rdma_resources(struct rdma_config *cfg,
 	resources->run_pe_progress = true;
 	resources->num_remaining_tasks = 0;
 
+	/* Check configuration correctness, for now, DC is only supported for out-of-band single connection sample */
+	if (((cfg->num_connections > 1) || (cfg->use_rdma_cm == true)) &&
+	    (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC)) {
+		DOCA_LOG_ERR(
+			"Failed to allocate RDMA resources: due to DOCA_RDMA_TRANSPORT_TYPE_DC is only supported for out-of-band single connection case for now");
+		return DOCA_ERROR_INVALID_VALUE;
+	}
+
 	/* Open DOCA device */
 	result = open_doca_device(cfg->device_name, func, &(resources->doca_device));
 	if (result != DOCA_SUCCESS) {
@@ -733,6 +840,20 @@ doca_error_t allocate_rdma_resources(struct rdma_config *cfg,
 		}
 	}
 
+	/* Set num_connections to DOCA RDMA */
+	result = doca_rdma_set_max_num_connections(resources->rdma, cfg->num_connections);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set max_num_connections to DOCA RDMA: %s", doca_error_get_descr(result));
+		goto destroy_doca_rdma;
+	}
+
+	/* Set transport type */
+	result = doca_rdma_set_transport_type(resources->rdma, cfg->transport_type);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to set RDMA transport type: %s", doca_error_get_descr(result));
+		goto destroy_doca_rdma;
+	}
+
 	result = doca_pe_connect_ctx(resources->pe, resources->rdma_ctx);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Unable to set progress engine for RDMA: %s", doca_error_get_descr(result));
@@ -775,13 +896,7 @@ close_doca_dev:
 	return result;
 }
 
-/*
- * Delete file if exists
- *
- * @file_path [in]: The path of the file we want to delete
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t delete_file(const char *file_path)
+doca_error_t delete_file(const char *file_path)
 {
 	FILE *fp;
 	int res;
@@ -1070,6 +1185,11 @@ doca_error_t rdma_cm_connect(struct rdma_resources *resources)
 			resources->self_name = CLIENT_NAME;
 			resources->is_client = true;
 		}
+		if ((resources->is_client == true) && (cfg->num_connections > 1)) {
+			DOCA_LOG_ERR("Client only support single connection, but input num_connections is [%u]",
+				     cfg->num_connections);
+			return DOCA_ERROR_INVALID_VALUE;
+		}
 	} else
 		DOCA_LOG_INFO("Using Out-Of-Band to setup RDMA connection");
 
@@ -1079,10 +1199,11 @@ doca_error_t rdma_cm_connect(struct rdma_resources *resources)
 	DOCA_LOG_INFO("-- Addr_type : %d", cfg->cm_addr_type);
 	DOCA_LOG_INFO("-- Addr: %s", (cfg->cm_addr[0] == '\0') ? "NULL" : cfg->cm_addr);
 	DOCA_LOG_INFO("-- Port: %u", cfg->cm_port);
+	DOCA_LOG_INFO("-- Num_connections: %u", cfg->num_connections);
 	DOCA_LOG_INFO("-----------------------------------------------");
 
 	resources->cm_addr = NULL;
-	resources->connection_established = false;
+	resources->num_connection_established = 0;
 
 	if (resources->is_client == false) {
 		DOCA_LOG_INFO("Server calling doca_rdma_start_listen_to_port");
@@ -1123,21 +1244,23 @@ doca_error_t rdma_cm_connect(struct rdma_resources *resources)
 doca_error_t rdma_cm_disconnect(struct rdma_resources *resources)
 {
 	doca_error_t result = DOCA_SUCCESS;
+	uint32_t i = 0;
 
-	if (resources->connection == NULL)
-		return result;
-
-	result = doca_rdma_connection_disconnect(resources->connection);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("[%s] cannot disconnect rdma-cm connection: %s",
-			     resources->self_name,
-			     doca_error_get_descr(result));
-	else
-		DOCA_LOG_INFO("[%s] successfully disconnect rdma-cm connection", resources->self_name);
+	for (i = 0; i < resources->num_connection_established; i++) {
+		result = doca_rdma_connection_disconnect(resources->connections[i]);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("[%s] cannot disconnect rdma-cm connection: %s",
+				     resources->self_name,
+				     doca_error_get_descr(result));
+			break;
+		} else
+			DOCA_LOG_INFO("[%s] successfully disconnect rdma-cm connection", resources->self_name);
+	}
 	return result;
 }
 
 doca_error_t send_msg(struct doca_rdma *rdma,
+		      struct doca_rdma_connection *rdma_connection,
 		      struct doca_mmap *mmap,
 		      struct doca_buf_inventory *buf_inv,
 		      void *msg,
@@ -1156,7 +1279,7 @@ doca_error_t send_msg(struct doca_rdma *rdma,
 		return result;
 	}
 
-	result = doca_rdma_task_send_allocate_init(rdma, src_buf, task_user_data, &rdma_send_task);
+	result = doca_rdma_task_send_allocate_init(rdma, rdma_connection, src_buf, task_user_data, &rdma_send_task);
 	if (DOCA_IS_ERROR(result)) {
 		DOCA_LOG_ERR("Failed to allocate send task, with error: %s", doca_error_get_descr(result));
 		return result;
@@ -1330,6 +1453,7 @@ doca_error_t rdma_responder_send_data_to_rdma_requester(struct rdma_resources *r
 	wait_for_enter();
 
 	result = send_msg(resources->rdma,
+			  resources->connections[0],
 			  send_descriptor_mmap,
 			  resources->buf_inventory,
 			  send_descriptor,
@@ -1435,7 +1559,7 @@ void rdma_cm_connect_request_cb(struct doca_rdma_connection *connection, union d
 	doca_error_t result;
 	union doca_data connection_user_data;
 
-	result = doca_rdma_connection_accept(connection);
+	result = doca_rdma_connection_accept(connection, NULL, 0);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to accept rdma cm connection: %s", doca_error_get_descr(result));
 		(void)doca_ctx_stop(resource->rdma_ctx);
@@ -1455,14 +1579,19 @@ void rdma_cm_connect_established_cb(struct doca_rdma_connection *connection,
 				    union doca_data ctx_user_data)
 {
 	(void)connection_user_data;
+	union doca_data connection_data;
 	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
 
-	resource->connection = connection;
-	resource->connection_established = true;
+	connection_data.u64 = resource->num_connection_established;
+	(void)doca_rdma_connection_set_user_data(connection, connection_data);
+	resource->connections[resource->num_connection_established] = connection;
+	resource->connection_established[resource->num_connection_established++] = true;
 
 	if (resource->require_remote_mmap == false) {
-		if (resource->task_fn(resource) != DOCA_SUCCESS)
-			(void)doca_ctx_stop(resource->rdma_ctx);
+		if (resource->num_connection_established >= resource->cfg->num_connections) {
+			if (resource->task_fn(resource) != DOCA_SUCCESS)
+				(void)doca_ctx_stop(resource->rdma_ctx);
+		}
 		return;
 	}
 
@@ -1476,12 +1605,17 @@ void rdma_cm_connect_failure_cb(struct doca_rdma_connection *connection,
 				union doca_data connection_user_data,
 				union doca_data ctx_user_data)
 {
-	(void)connection;
-	(void)connection_user_data;
+	uint16_t connection_index = (uint16_t)(connection_user_data.u64);
 	struct rdma_resources *resource = (struct rdma_resources *)ctx_user_data.ptr;
 
-	resource->connection_established = false;
-
+	if (resource->num_connection_established > 0) {
+		if ((resource->connections[connection_index] == connection) &&
+		    (resource->connection_established[connection_index] == true)) {
+			resource->connection_established[connection_index] = false;
+			--resource->num_connection_established;
+		}
+	}
+	DOCA_ERROR_PROPAGATE(resource->first_encountered_error, DOCA_ERROR_CONNECTION_ABORTED);
 	(void)doca_ctx_stop(resource->rdma_ctx);
 }
 
@@ -1500,7 +1634,7 @@ void rdma_cm_disconnect_cb(struct doca_rdma_connection *connection,
 		return;
 	}
 
-	resource->connection_established = false;
+	resource->connections[--resource->num_connection_established] = NULL;
 }
 
 doca_error_t set_default_config_value(struct rdma_config *cfg)
@@ -1516,6 +1650,8 @@ doca_error_t set_default_config_value(struct rdma_config *cfg)
 	strcpy(cfg->remote_connection_desc_path, DEFAULT_REMOTE_CONNECTION_DESC_PATH);
 	strcpy(cfg->remote_resource_desc_path, DEFAULT_REMOTE_RESOURCE_CONNECTION_DESC_PATH);
 	cfg->is_gid_index_set = false;
+	cfg->num_connections = 1;
+	cfg->transport_type = DOCA_RDMA_TRANSPORT_TYPE_RC;
 
 	/* Only related rdma cm */
 	cfg->use_rdma_cm = false;

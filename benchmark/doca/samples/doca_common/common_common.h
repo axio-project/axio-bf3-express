@@ -34,13 +34,13 @@
 #include <doca_pe.h>
 #include <doca_sync_event.h>
 
-#define SYNC_EVENT_CC_MAX_MSG_SIZE 1024		   /* DOCA comm_channel maximum message size */
-#define SYNC_EVENT_CC_MAX_QUEUE_SIZE 8		   /* DOCA comm_channel maximum queue size */
-#define SYNC_EVENT_CC_MAX_TASKS 8		   /* DOCA comm_channel maximum send tasks to allocate */
-#define SYNC_EVENT_CC_SERVICE_NAME "sync_event_cc" /* DOCA comm_channel service name */
-#define SYNC_EVENT_CC_TIMEOUT_SEC 30		   /* DOCA comm_channel timeout in seconds */
-#define SYNC_EVENT_CC_ACK_SIZE 1		   /* DOCA comm_channel acknowledge size in bytes */
-#define SYNC_EVENT_CC_ACK_VALUE 1		   /* DOCA comm_channel acknowledge value */
+#define SYNC_EVENT_CC_MAX_MSG_SIZE 1024		   /* DOCA comch maximum message size */
+#define SYNC_EVENT_CC_MAX_QUEUE_SIZE 8		   /* DOCA comch maximum queue size */
+#define SYNC_EVENT_CC_MAX_TASKS 8		   /* DOCA comch maximum send tasks to allocate */
+#define SYNC_EVENT_CC_SERVICE_NAME "sync_event_cc" /* DOCA comch service name */
+#define SYNC_EVENT_CC_TIMEOUT_SEC 30		   /* DOCA comch timeout in seconds */
+#define SYNC_EVENT_CC_ACK_SIZE 1		   /* DOCA comch acknowledge size in bytes */
+#define SYNC_EVENT_CC_ACK_VALUE 1		   /* DOCA comch acknowledge value */
 
 /* user input */
 struct sync_event_config {
@@ -107,7 +107,7 @@ doca_error_t sync_event_start_async(const struct sync_event_config *se_cfg,
 				    struct sync_event_runtime_objects *se_rt_objs);
 
 /*
- * Establish Sample's DOCA comm_channel connection
+ * Establish Sample's DOCA comch connection
  *
  * @se_rt_objs [in/out]: sample's runtime resources
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise

@@ -31,11 +31,6 @@
 
 #define DOCA_PCC_DEV_EVNT_ROCE_ACK_MASK (1 << DOCA_PCC_DEV_EVNT_ROCE_ACK)
 
-/**< Maximum hop limit value for IFA2 header */
-uint8_t max_hop_limit;
-/**< Flag to indicate that the mailbox operation has completed */
-uint32_t mailbox_done = 0;
-
 /*
  * Main entry point to user CC algorithm (Reference code)
  * This function starts the algorithm code of a single event
@@ -145,30 +140,4 @@ doca_pcc_dev_error_t doca_pcc_dev_user_set_algo_params(uint32_t port_num,
 		break;
 	}
 	return ret;
-}
-
-/*
- * Called when host sends a mailbox send request.
- * Used to save the hop limit that was set by user in host.
- */
-doca_pcc_dev_error_t doca_pcc_dev_user_mailbox_handle(void *request,
-						      uint32_t request_size,
-						      uint32_t max_response_size,
-						      void *response,
-						      uint32_t *response_size)
-{
-	if (request_size != sizeof(uint32_t))
-		return DOCA_PCC_DEV_STATUS_FAIL;
-
-	max_hop_limit = *(uint8_t *)(request);
-	doca_pcc_dev_printf("Mailbox initiated hop limit = %d\n", max_hop_limit);
-
-	mailbox_done = 1;
-	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-
-	(void)(max_response_size);
-	(void)(response);
-	(void)(response_size);
-
-	return DOCA_PCC_DEV_STATUS_OK;
 }

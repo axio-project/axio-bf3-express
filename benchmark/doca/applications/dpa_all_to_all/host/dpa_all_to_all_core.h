@@ -47,16 +47,28 @@
 
 /* Configuration struct */
 struct a2a_config {
-	int msgsize;				   /* Message size of sendbuf (in bytes) */
-	char device1_name[MAX_IB_DEVICE_NAME_LEN]; /* Buffer that holds the IB device name */
-	char device2_name[MAX_IB_DEVICE_NAME_LEN]; /* Buffer that holds the IB device name */
+	int msgsize;					/* Message size of sendbuf (in bytes) */
+	char pf_device1_name[MAX_IB_DEVICE_NAME_LEN];	/* PF DOCA device name used to create DOCA DPA context */
+	char rdma_device1_name[MAX_IB_DEVICE_NAME_LEN]; /* When running from DPU: SF DOCA device name used to create
+						 RDMA context When running from Host: will be equal to pf_device1_name
+					       */
+	char pf_device2_name[MAX_IB_DEVICE_NAME_LEN];	/* PF DOCA device name used to create second DOCA DPA context */
+	char rdma_device2_name[MAX_IB_DEVICE_NAME_LEN]; /* When running from DPU: second SF DOCA device name used to
+						 create RDMA context When running from Host: will be equal to
+						 pf_device2_name */
 };
 
 /* A struct that includes all the resources needed for DPA */
 struct a2a_resources {
-	char device_name[MAX_IB_DEVICE_NAME_LEN];	    /* Buffer that holds the IB device name */
-	struct doca_dev *doca_device;			    /* DOCA device for DPA */
-	struct doca_dpa *doca_dpa;			    /* DOCA DPA context */
+	char pf_device_name[MAX_IB_DEVICE_NAME_LEN];   /* Buffer that holds the PF device name */
+	struct doca_dev *pf_doca_device;	       /* PF DOCA device used to create the DOCA DPA context */
+	struct doca_dpa *pf_doca_dpa;		       /* DOCA DPA context created on PF device */
+	char rdma_device_name[MAX_IB_DEVICE_NAME_LEN]; /* Buffer that holds the RDMA device name */
+	struct doca_dev *rdma_doca_device; /* When running from DPU: SF DOCA device used to create RDMA context
+						 When running from Host: will be equal to pf_doca_device */
+	struct doca_dpa *rdma_doca_dpa; /* When running from DPU: extended DOCA DPA context created on RDMA DOCA device
+						   When running from Host: will be equal to pf_doca_dpa */
+	doca_dpa_dev_t rdma_doca_dpa_handle;		    /* Extended DOCA DPA context handle */
 	void *sendbuf;					    /* The send buffer we get from the alltoall call */
 	void *recvbuf;					    /* The receive buffer we get from the alltoall call */
 	struct doca_sync_event *comp_event;		    /* DOCA sync event for DPA completion event */
@@ -74,6 +86,7 @@ struct a2a_resources {
 	doca_dpa_dev_sync_event_remote_net_t *rp_kernel_events_dpa_handles; /* DOCA DPA remote process device
 									       remote events */
 	doca_dpa_dev_uintptr_t devptr_rp_remote_kernel_events; /* DOCA DPA remote processes remote events DPA handles */
+	struct doca_dpa_completion **dpa_completions;	       /* DOCA DPA completion contexts */
 	struct doca_rdma **rdmas;			       /* DOCA RDMA contexts */
 	doca_dpa_dev_uintptr_t devptr_rdmas;		       /* DOCA DPA RDMA handlers device pointers */
 	struct doca_mmap *sendbuf_mmap;			       /* DOCA mmap for sendbuf host memory */
@@ -99,11 +112,20 @@ struct dpa_a2a_request {
 /*
  * Check if the provided device name is a name of a valid IB device with DPA capabilities
  *
- * @device_name [in]: The wanted IB device name with DPA capabilities
+ * @device_name [in]: The wanted IB device name
  * @return: True if device_name is IB_DEVICE_DEFAULT_NAME or if an IB device with DPA capabilities with name
  *	same as device_name is found, false otherwise.
  */
 bool dpa_device_exists_check(const char *device_name);
+
+/*
+ * Check if the provided device name is a name of a valid IB device with RDMA capabilities
+ *
+ * @device_name [in]: The wanted IB device name
+ * @return: True if device_name is IB_DEVICE_DEFAULT_NAME or if an IB device with RDMA capabilities with name
+ *	same as device_name is found, false otherwise.
+ */
+bool rdma_device_exists_check(const char *device_name);
 
 /*
  * Finalize the request and destroy the associated resources

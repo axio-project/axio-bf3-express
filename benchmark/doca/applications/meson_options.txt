@@ -28,7 +28,7 @@ option('enable_all_applications', type: 'boolean', value: true,
 option('enable_cross_compilation_to_dpu', type: 'boolean', value: false,
 	description: 'Enable cross-compilation mode from host to DPU.')
 
-option('enable_deprecated_features', type: 'boolean', value: true,
+option('enable_deprecated_features', type: 'boolean', value: false,
 	description: 'Silence compilation warnings regarding deprecated DOCA features.')
 
 option('enable_trace_log', type: 'boolean', value: false,
@@ -39,6 +39,26 @@ option('enable_pcc_application_tx_counter_sampling', type: 'boolean', value: fal
 
 option('enable_pcc_application_np_rx_rate', type: 'boolean', value: false,
 	description: 'Enable PCC application CC rate update via notification point RX bytes.')
+
+# Enable Use of HWS
+option('enable_mlx5dv_hws', type: 'boolean', value: true,
+	description: 'Enable HW Steering.')
+
+# gRPC versions
+option('upstream_grpc', type : 'boolean', value : true,
+	description : 'Are we compiling using upstream gRPC?')
+
+# SPDK and DPDK packages
+option('spdk_prefix', type : 'string', value : '/opt/mellanox/spdk',
+	description : 'SPDK installation prefix.')
+option('spdk_dpdk_prefix', type : 'string', value : '/opt/mellanox/spdk',
+	description : 'Installation prefix of DPDK used by SPDK.')
+option('spdk_isal_prefix', type : 'string', value : '/opt/mellanox/spdk/lib',
+	description : 'SPDK ISA-L installation prefix.')
+
+# DPACC options
+option('dpacc_mcpu', type : 'string', value : 'nv-dpa-bf3,nv-dpa-cx7,nv-dpa-cx8',
+	description : 'Set the supported architecture for DPA related application.')
 
 # Enables per application - turned off by default
 option('enable_app_shield_agent', type: 'boolean', value: false,
@@ -55,22 +75,28 @@ option('enable_file_integrity', type: 'boolean', value: false,
 	description: 'Enable the File Integrity application.')
 option('enable_gpu_packet_processing', type: 'boolean', value: false,
 	description: 'Enable GPUNetIO packet processing application.')
+option('enable_ip_frag', type: 'boolean', value: false,
+	description: 'Enable IP fragmentation application.')
 option('enable_ipsec_security_gw', type: 'boolean', value: false,
 	description: 'Enable IPsec Security Gateway application.')
 option('enable_psp_gateway', type: 'boolean', value: false,
 	description: 'Enable PSP Gateway application.')
-option('enable_l2_reflector', type: 'boolean', value: false,
-	description: 'Enable L2 Reflector application.')
-option('enable_l2_reflector_optimized', type: 'boolean', value: false,
-	description: 'Enable L2 Reflector with optimization application.')
+option('enable_nvme_emulation', type: 'boolean', value: false,
+	description: 'Enable NVMe Emulation application.')
 option('enable_pcc', type: 'boolean', value: false,
 	description: 'Enable PCC application.')
 option('enable_secure_channel', type: 'boolean', value: false,
 	description: 'Enable Secure Channel application.')
 option('enable_simple_fwd_vnf', type: 'boolean', value: false,
 	description: 'Enable Simple Forward VNF application.')
+option('enable_sta_offload', type: 'boolean', value: false,
+	description: 'Enable STA Offload application.')
+option('enable_storage', type: 'boolean', value: false,
+	description: 'Enable storage reference applications.')
 option('enable_switch', type: 'boolean', value: false,
 	description: 'Enable Switch application.')
+option('enable_upf_accel', type: 'boolean', value: false,
+	description: 'Enable UPF Acceleration application.')
 option('enable_urom_rdmo', type: 'boolean', value: false,
 	description: 'Enable UROM RDMO application.')
 option('enable_yara_inspection', type: 'boolean', value: false,

@@ -43,7 +43,9 @@ DOCA_LOG_REGISTER(VADS_GET);
 doca_error_t vads_get(const char *dma_device_name,
 		      const char *pci_vuid,
 		      enum doca_apsh_system_os os_type,
-		      DOCA_APSH_PROCESS_PID_TYPE pid)
+		      DOCA_APSH_PROCESS_PID_TYPE pid,
+		      const char *mem_region,
+		      const char *os_symbols)
 {
 	doca_error_t result;
 	int i, nb_processes;
@@ -52,9 +54,6 @@ doca_error_t vads_get(const char *dma_device_name,
 	struct doca_apsh_process *proc, **processes;
 	int num_vads;
 	struct doca_apsh_vad **vads_list;
-	/* Hardcoded paths to the files created by doca_apsh_config tool */
-	const char *os_symbols = "/tmp/symbols.json";
-	const char *mem_region = "/tmp/mem_regions.json";
 
 	/* Init */
 	result = init_doca_apsh(dma_device_name, &apsh_ctx);
@@ -95,11 +94,13 @@ doca_error_t vads_get(const char *dma_device_name,
 	/* Print some attributes of the vads */
 	DOCA_LOG_INFO("First 5 vads for process %u:", pid);
 	for (i = 0; i < num_vads && i < 5; ++i) {
-		DOCA_LOG_INFO("\tVad %d  -  Process name: %s, start address: 0x%" PRIx64 ", end address: 0x%" PRIx64,
+		DOCA_LOG_INFO("\tVad %d  -  Process name: %s, start address: 0x%" PRIx64 ", end address: 0x%" PRIx64
+			      ", path : %s",
 			      i,
 			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_PROCESS_NAME),
 			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_START),
-			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_END));
+			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_VM_END),
+			      doca_apsh_vad_info_get(vads_list[i], DOCA_APSH_VMA_FILE_PATH));
 	}
 
 	/* Cleanup */

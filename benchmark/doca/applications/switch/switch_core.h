@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2022-2025 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -27,6 +27,7 @@
 #define SWITCH_CORE_H_
 
 #include "flow_parser.h"
+#include "flow_switch_common.h"
 
 /*
  * Count the total number of ports
@@ -39,9 +40,10 @@ void switch_ports_count(struct application_dpdk_config *app_dpdk_config);
  * Initialize Switch application
  *
  * @app_dpdk_config [in]: application DPDK configuration values
+ * @ctx [in]: application Switch arguments context
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-doca_error_t switch_init(struct application_dpdk_config *app_dpdk_config);
+doca_error_t switch_init(struct application_dpdk_config *app_dpdk_config, struct flow_switch_ctx *ctx);
 
 /*
  * Destroy Switch application resources

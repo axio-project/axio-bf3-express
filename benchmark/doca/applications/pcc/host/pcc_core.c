@@ -342,6 +342,9 @@ doca_error_t pcc_mailbox_send(struct pcc_config *cfg, struct pcc_resources *reso
 	uint32_t *request_buf;
 	uint32_t response_size, cb_ret_val;
 
+	if (!(cfg->app == pcc_np_switch_telemetry_app))
+		return DOCA_SUCCESS;
+
 	/* Get the request buffer of the mailbox */
 	result = doca_pcc_mailbox_get_request_buffer(resources->doca_pcc, (void **)&request_buf);
 	if (result != DOCA_SUCCESS) {
@@ -349,30 +352,10 @@ doca_error_t pcc_mailbox_send(struct pcc_config *cfg, struct pcc_resources *reso
 		return result;
 	}
 
-	if (cfg->role == PCC_ROLE_NP) {
-		if (cfg->app == pcc_np_nic_telemetry_app) {
-			/* send port id to device */
-			*request_buf = cfg->port_id;
-		} else if (cfg->app == pcc_np_switch_telemetry_app) {
-			/* send hop limit to device */
-			*request_buf = cfg->hop_limit;
-		}
-	} else if (cfg->role == PCC_ROLE_RP) { /* send port bandwidth to device */
-		/* Get the bandwidth of the device port */
-		uint64_t port_active_rate;
+	/* send hop limit to device */
+	*request_buf = cfg->hop_limit;
 
-		result = doca_devinfo_get_active_rate(doca_dev_as_devinfo(resources->doca_device), &port_active_rate);
-		if (result != DOCA_SUCCESS) {
-			PRINT_ERROR("Error: Failed to get active rate for DOCA device\n");
-			return result;
-		}
-		/* convert bandwidth from bits/s to MB/s units */
-		port_active_rate = ((port_active_rate / 1000000) / 8);
-		/* set the buffer value to the port bandwidth */
-		*request_buf = (uint32_t)(port_active_rate);
-	}
-
-	/* Send the request buffer that holds the ports bandwidth */
+	/* Send the request buffer that holds the hop limit */
 	result = doca_pcc_mailbox_send(resources->doca_pcc, PCC_MAILBOX_REQUEST_SIZE, &response_size, &cb_ret_val);
 	if (result != DOCA_SUCCESS) {
 		PRINT_ERROR("Error: Failed to send the PCC mailbox request buffer\n");
@@ -704,30 +687,6 @@ static doca_error_t coredump_file_callback(void *param, void *config)
 	return DOCA_SUCCESS;
 }
 
-/*
- * ARGP Callback - Handle PCC port ID parameter
- *
- * @param [in]: Input parameter
- * @config [in/out]: Program configuration context
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t port_id_callback(void *param, void *config)
-{
-	struct pcc_config *pcc_cfg = (struct pcc_config *)config;
-	int port_id = *((int *)param);
-
-	if (port_id > (NUM_AVAILABLE_PORTS - 1)) {
-		PRINT_ERROR("Error: Entered port ID %d is not available. Maximum port ID available is %d\n",
-			    port_id,
-			    (NUM_AVAILABLE_PORTS - 1));
-		return DOCA_ERROR_INVALID_VALUE;
-	}
-
-	pcc_cfg->port_id = port_id;
-
-	return DOCA_SUCCESS;
-}
-
 doca_error_t register_pcc_params(void)
 {
 	doca_error_t result;
@@ -743,7 +702,6 @@ doca_error_t register_pcc_params(void)
 	struct doca_argp_param *gns_ignore_mask_param;
 	struct doca_argp_param *gns_ignore_value_param;
 	struct doca_argp_param *coredump_file_param;
-	struct doca_argp_param *port_id_param;
 
 	/* Create and register DOCA device name parameter */
 	result = doca_argp_param_create(&device_param);
@@ -930,7 +888,7 @@ doca_error_t register_pcc_params(void)
 		PRINT_ERROR("Error: Failed to create ARGP param: %s\n", doca_error_get_descr(result));
 		return result;
 	}
-	doca_argp_param_set_short_name(gns_ignore_mask_param, "gns-ignore_mask");
+	doca_argp_param_set_short_name(gns_ignore_mask_param, "gns-ignore-mask");
 	doca_argp_param_set_long_name(gns_ignore_mask_param, "global-namespace-ignore-mask");
 	doca_argp_param_set_arguments(gns_ignore_mask_param, "<IFA2 global namespace ignore mask>");
 	doca_argp_param_set_description(
@@ -950,7 +908,7 @@ doca_error_t register_pcc_params(void)
 		PRINT_ERROR("Error: Failed to create ARGP param: %s\n", doca_error_get_descr(result));
 		return result;
 	}
-	doca_argp_param_set_short_name(gns_ignore_value_param, "gns-ignore_val");
+	doca_argp_param_set_short_name(gns_ignore_value_param, "gns-ignore-val");
 	doca_argp_param_set_long_name(gns_ignore_value_param, "global-namespace-ignore-value");
 	doca_argp_param_set_arguments(gns_ignore_value_param, "<IFA2 global namespace ignore value>");
 	doca_argp_param_set_description(
@@ -979,26 +937,6 @@ doca_error_t register_pcc_params(void)
 	doca_argp_param_set_callback(coredump_file_param, coredump_file_callback);
 	doca_argp_param_set_type(coredump_file_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(coredump_file_param);
-	if (result != DOCA_SUCCESS) {
-		PRINT_ERROR("Error: Failed to register program param: %s\n", doca_error_get_descr(result));
-		return result;
-	}
-
-	/* Create and register physical port ID parameter */
-	result = doca_argp_param_create(&port_id_param);
-	if (result != DOCA_SUCCESS) {
-		PRINT_ERROR("Error: Failed to create ARGP param: %s\n", doca_error_get_descr(result));
-		return result;
-	}
-	doca_argp_param_set_short_name(port_id_param, "i");
-	doca_argp_param_set_long_name(port_id_param, "port-id");
-	doca_argp_param_set_arguments(port_id_param, "<Physical port ID>");
-	doca_argp_param_set_description(
-		port_id_param,
-		"The physical port ID of the device running the application (optional). If not provided then ID 0 will be chosen.");
-	doca_argp_param_set_callback(port_id_param, port_id_callback);
-	doca_argp_param_set_type(port_id_param, DOCA_ARGP_TYPE_INT);
-	result = doca_argp_register_param(port_id_param);
 	if (result != DOCA_SUCCESS) {
 		PRINT_ERROR("Error: Failed to register program param: %s\n", doca_error_get_descr(result));
 		return result;

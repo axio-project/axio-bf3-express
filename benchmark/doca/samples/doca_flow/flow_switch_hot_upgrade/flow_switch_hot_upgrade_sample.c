@@ -37,13 +37,15 @@
 
 #include "flow_common.h"
 
-DOCA_LOG_REGISTER(FLOW_SWITCH);
+DOCA_LOG_REGISTER(FLOW_SWITCH_HOT_UPGRADE);
 
 #define FLOW_SWITCH_PROXY_PORT_NB 2
 
 #define INTERVAL_QUERY_TIME 1
 
 #define SEC2USEC(sec) ((sec) * (1000000L))
+
+#define DEFAULT_CTRL_PIPE_SIZE (8192)
 
 /* Structure to control all port logic */
 struct port_control {
@@ -142,18 +144,20 @@ destroy_pipe_cfg:
  *
  * @switch_port_idx [in]: switch port index.
  * @control [in]: port control with all needed information.
+ * @status [in]: user context for adding entries.
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-static doca_error_t add_switch_pipe_entries(uint8_t switch_port_idx, struct port_control *control)
+static doca_error_t add_switch_pipe_entries(uint8_t switch_port_idx,
+					    struct port_control *control,
+					    struct entries_status *status)
 {
 	struct doca_flow_match match;
 	struct doca_flow_fwd fwd;
-	struct entries_status status;
 	doca_error_t result;
 
 	memset(&fwd, 0, sizeof(fwd));
 	memset(&match, 0, sizeof(match));
-	memset(&status, 0, sizeof(status));
+	memset(status, 0, sizeof(*status));
 
 	match.parser_meta.outer_l4_type = DOCA_FLOW_L4_META_TCP;
 	fwd.type = DOCA_FLOW_FWD_PORT;
@@ -166,7 +170,7 @@ static doca_error_t add_switch_pipe_entries(uint8_t switch_port_idx, struct port
 					  NULL,
 					  &fwd,
 					  DOCA_FLOW_WAIT_FOR_BATCH,
-					  &status,
+					  status,
 					  &control->tcp_entry);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add TCP pipe entry: %s", doca_error_get_descr(result));
@@ -183,14 +187,14 @@ static doca_error_t add_switch_pipe_entries(uint8_t switch_port_idx, struct port
 					  NULL,
 					  &fwd,
 					  DOCA_FLOW_NO_WAIT,
-					  &status,
+					  status,
 					  &control->udp_entry);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add UDP pipe entry: %s", doca_error_get_descr(result));
 		return result;
 	}
 
-	result = flow_process_entries(control->port, &status, 2);
+	result = flow_process_entries(control->port, status, 2);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to process entries: %s", doca_error_get_descr(result));
 		return result;
@@ -206,6 +210,7 @@ static doca_error_t add_switch_pipe_entries(uint8_t switch_port_idx, struct port
  * @dev [in]: DOCA device connected to this port.
  * @switch_port_idx [in]: switch port index.
  * @state [in]: the operation state of this instance.
+ * @status [in]: user context for adding entries.
  * @control [out]: pointer to control port structure.
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
@@ -213,6 +218,7 @@ static doca_error_t port_control_init(struct doca_flow_port *port,
 				      struct doca_dev *dev,
 				      uint8_t switch_port_idx,
 				      enum doca_flow_port_operation_state state,
+				      struct entries_status *status,
 				      struct port_control *control)
 {
 	struct doca_devinfo *devinfo;
@@ -245,7 +251,7 @@ static doca_error_t port_control_init(struct doca_flow_port *port,
 		return result;
 	}
 
-	result = add_switch_pipe_entries(switch_port_idx, control);
+	result = add_switch_pipe_entries(switch_port_idx, control, status);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to add pipe entries for port %u", switch_port_idx);
 		return result;
@@ -454,8 +460,10 @@ doca_error_t flow_switch_hot_upgrade(int nb_queues,
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	enum doca_flow_port_operation_state states[nb_ports];
 	struct port_control port_control_list[FLOW_SWITCH_PROXY_PORT_NB];
+	struct entries_status status;
 	struct timeval start, end;
 	long query_time, sleep_time;
 	uint8_t switch_port_idx;
@@ -473,7 +481,13 @@ doca_error_t flow_switch_hot_upgrade(int nb_queues,
 	memset(states, 0, sizeof(enum doca_flow_port_operation_state) * nb_ports);
 	states[0] = DOCA_FLOW_PORT_OPERATION_STATE_UNCONNECTED;
 	states[3] = DOCA_FLOW_PORT_OPERATION_STATE_UNCONNECTED;
-	result = init_doca_flow_ports_with_op_state(nb_ports, ports, false /* is_hairpin */, dev_arr, states);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, DEFAULT_CTRL_PIPE_SIZE));
+	result = init_doca_flow_ports_with_op_state(nb_ports,
+						    ports,
+						    false /* is_hairpin */,
+						    dev_arr,
+						    states,
+						    actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -487,6 +501,7 @@ doca_error_t flow_switch_hot_upgrade(int nb_queues,
 					   dev_arr[port_id],
 					   switch_port_idx,
 					   state,
+					   &status,
 					   &port_control_list[switch_port_idx]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to init port control %u", switch_port_idx);

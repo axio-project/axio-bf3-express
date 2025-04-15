@@ -24,7 +24,7 @@
 
 project('urom_sandbox_worker_plugin',
 	'C', 'CPP',
-	license: 'Proprietary',
+	license: 'BSD-3',
 	default_options: ['buildtype=debug'],
 	meson_version: '>= 0.61.2'
 )

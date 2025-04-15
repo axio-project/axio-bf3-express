@@ -25,8 +25,8 @@
 project('DOCA_SAMPLE', 'C',
 	# Get version number from file.
 	version: run_command(find_program('cat'),
-		files('/opt/mellanox/doca/applications/VERSION'), check: true).stdout().strip(),
-	license: 'Proprietary',
+		files('../../../VERSION'), check: true).stdout().strip(),
+	license: 'BSD-3',
 	default_options: ['buildtype=debug'],
 	meson_version: '>= 0.61.2'
 )
@@ -67,10 +67,13 @@ dpacc_build_script_name = 'build_dpacc_samples.sh'
 dpacc_build_script = meson.current_source_dir() + '/../' + dpacc_build_script_name
 # Sample device source code absolute path to be compiled by the DPACC
 sample_device_src = meson.project_source_root() + '/device/' +  SAMPLE_NAME + '_kernels_dev.c'
+doca_dep = dependency('doca-dpa')
+doca_lib_dir = doca_dep.get_variable(pkgconfig : 'libdir')
+dpacc_mcpu_flag = 'nv-dpa-bf3,nv-dpa-cx7,nv-dpa-cx8'
 
 # Run DPA compiler
 run_command(dpacc_build_script, meson.project_build_root(), sample_device_src, SAMPLE_NAME,
-	    sample_program_name, check: true)
+	    sample_program_name, dpacc_mcpu_flag, doca_lib_dir, check: true)
 
 # Dependencies
 sample_device_build_dir = meson.project_build_root() + '/' + SAMPLE_NAME + '/device/build_dpacc'

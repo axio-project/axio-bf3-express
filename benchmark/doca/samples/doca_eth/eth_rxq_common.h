@@ -39,8 +39,9 @@ struct eth_rxq_flow_resources {
 };
 
 struct eth_rxq_flow_config {
-	struct doca_dev *dev;	    /* DOCA device */
-	uint16_t rxq_flow_queue_id; /* DOCA ETH RXQ's flow queue ID */
+	struct doca_dev *dev;	      /* DOCA device */
+	uint16_t *rxq_flow_queue_ids; /* DOCA ETH RXQ's flow queue IDs */
+	uint16_t nb_queues;	      /* Number of DOCA FLOW queues wanted */
 };
 
 /*

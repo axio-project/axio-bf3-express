@@ -50,8 +50,9 @@ message SingleTunnelRequest
 {
     string virt_src_ip = 1;
     string virt_dst_ip = 2;
+    uint32 inner_type = 3;
 
-    TunnelParameters reverse_params = 3;
+    TunnelParameters reverse_params = 4;
 }
 
 message MultiTunnelRequest

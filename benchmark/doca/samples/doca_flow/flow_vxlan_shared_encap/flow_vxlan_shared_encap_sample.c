@@ -28,6 +28,7 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "flow_common.h"
 
@@ -201,7 +202,7 @@ static doca_error_t add_match_pipe_entry(struct doca_flow_pipe *pipe, struct ent
 	match.outer.transport.dst_port = dst_port;
 	match.outer.transport.src_port = src_port;
 
-	actions.meta.pkt_meta = 1;
+	actions.meta.pkt_meta = DOCA_HTOBE32(1);
 	actions.outer.transport.src_port = rte_cpu_to_be_16(1235);
 	actions.action_idx = 0;
 
@@ -232,7 +233,7 @@ static doca_error_t add_vxlan_shared_encap_pipe_entry(struct doca_flow_pipe *pip
 	memset(&match, 0, sizeof(match));
 	memset(&actions, 0, sizeof(actions));
 
-	match.meta.pkt_meta = 1;
+	match.meta.pkt_meta = DOCA_HTOBE32(1);
 
 	actions.encap_type = DOCA_FLOW_RESOURCE_TYPE_SHARED;
 	if (port_id == 0)
@@ -259,7 +260,7 @@ static void create_encap_action(struct doca_flow_encap_action *encap, uint32_t i
 	doca_be32_t encap_dst_ip_addr = BE_IPV4_ADDR(81, 81, 81, 81);
 	doca_be32_t encap_src_ip_addr = BE_IPV4_ADDR(11, 21, 31, 41);
 	uint8_t encap_ttl = 17;
-	doca_be32_t encap_vxlan_tun_id = BUILD_VNI(0xadadad);
+	doca_be32_t encap_vxlan_tun_id = DOCA_HTOBE32(0xadadad);
 	uint8_t src_mac[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 	uint8_t dst_mac[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
 
@@ -267,7 +268,7 @@ static void create_encap_action(struct doca_flow_encap_action *encap, uint32_t i
 		encap_dst_ip_addr = BE_IPV4_ADDR(82, 82, 82, 82);
 		encap_src_ip_addr = BE_IPV4_ADDR(12, 22, 32, 42);
 		encap_ttl = 27;
-		encap_vxlan_tun_id = BUILD_VNI(0xaeaeae);
+		encap_vxlan_tun_id = DOCA_HTOBE32(0xaeaeae);
 	}
 
 	SET_MAC_ADDR(encap->outer.eth.src_mac, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
@@ -348,6 +349,7 @@ doca_error_t flow_vxlan_shared_encap(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *pipe;
 	struct entries_status status_ingress;
 	int num_of_entries_ingress = 1;
@@ -364,7 +366,8 @@ doca_error_t flow_vxlan_shared_encap(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries_ingress + num_of_entries_egress));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

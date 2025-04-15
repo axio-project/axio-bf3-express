@@ -40,7 +40,10 @@
 #include <doca_dpdk.h>
 #include <samples/common.h>
 
+// grpc
 #include <google/protobuf/util/json_util.h>
+#include <grpc/support/log.h>
+#include <grpcpp/grpcpp.h>
 #include <grpcpp/server_builder.h>
 
 // application
@@ -88,8 +91,8 @@ int main(int argc, char **argv)
 	app_config.dpdk_config.port_config.enable_mbuf_metadata = true;
 	app_config.dpdk_config.port_config.isolated_mode = true;
 	app_config.dpdk_config.reserve_main_thread = true;
-	app_config.pf_repr_indices = strdup("[0]");
-	app_config.core_mask = strdup("0x3");
+	app_config.pf_repr_indices = "[0]";
+	app_config.core_mask = "0x3";
 	app_config.max_tunnels = 128;
 	app_config.net_config.vc_enabled = false;
 	app_config.net_config.crypt_offset = UINT32_MAX;
@@ -101,6 +104,8 @@ int main(int argc, char **argv)
 	app_config.show_rss_rx_packets = false;
 	app_config.show_rss_durations = false;
 	app_config.outer = DOCA_FLOW_L3_TYPE_IP6;
+	app_config.inner = DOCA_FLOW_L3_TYPE_IP4;
+	app_config.mode = PSP_GW_MODE_TUNNEL;
 
 	struct psp_pf_dev pf_dev = {};
 	uint16_t vf_port_id;
@@ -130,10 +135,32 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	// init dpdk
+	std::string pid_str = "pid_" + std::to_string(getpid());
+	const char *eal_args[] = {"", "-a00:00.0", "-c", app_config.core_mask.c_str(), "--file-prefix", pid_str.c_str()};
+	int n_eal_args = sizeof(eal_args) / sizeof(eal_args[0]);
+	int rc = rte_eal_init(n_eal_args, (char **)eal_args);
+	if (rc < 0) {
+		DOCA_LOG_ERR("EAL initialization failed");
+		return DOCA_ERROR_DRIVER;
+	}
+
+	result = psp_gw_parse_config_file(&app_config);
+	if (result != DOCA_SUCCESS) {
+		exit_status = EXIT_FAILURE;
+		goto dpdk_destroy;
+	}
+
 	if (app_config.net_config.crypt_offset == UINT32_MAX) {
 		// If not specified by argp, select a default crypt_offset
-		app_config.net_config.crypt_offset =
-			app_config.net_config.vc_enabled ? DEFAULT_CRYPT_OFFSET_VC_ENABLED : DEFAULT_CRYPT_OFFSET;
+		if (app_config.inner == DOCA_FLOW_L3_TYPE_IP4)
+			app_config.net_config.crypt_offset = app_config.net_config.vc_enabled ?
+								     DEFAULT_CRYPT_OFFSET_VC_ENABLED_IPV4 :
+								     DEFAULT_CRYPT_OFFSET_IPV4;
+		else
+			app_config.net_config.crypt_offset = app_config.net_config.vc_enabled ?
+								     DEFAULT_CRYPT_OFFSET_VC_ENABLED_IPV6 :
+								     DEFAULT_CRYPT_OFFSET_IPV6;
 		DOCA_LOG_INFO("Selected crypt_offset of %d", app_config.net_config.crypt_offset);
 	}
 
@@ -149,8 +176,8 @@ int main(int argc, char **argv)
 		DOCA_LOG_ERR("Failed to open device %s: %s",
 			     app_config.pf_pcie_addr.c_str(),
 			     doca_error_get_descr(result));
-		doca_argp_destroy();
-		return EXIT_FAILURE;
+		exit_status = EXIT_FAILURE;
+		goto dpdk_destroy;
 	}
 
 	dev_probe_str = std::string("dv_flow_en=2,"	 // hardware steering
@@ -164,7 +191,8 @@ int main(int argc, char **argv)
 	result = doca_dpdk_port_probe(pf_dev.dev, dev_probe_str.c_str());
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to probe dpdk port for secured port: %s", doca_error_get_descr(result));
-		return result;
+		exit_status = EXIT_FAILURE;
+		goto dev_close;
 	}
 	DOCA_LOG_INFO("Probed %s,%s", app_config.pf_pcie_addr.c_str(), dev_probe_str.c_str());
 
@@ -182,19 +210,21 @@ int main(int argc, char **argv)
 						    DOCA_DEVINFO_IPV4_ADDR_SIZE);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to find IPv4 addr for PF: %s", doca_error_get_descr(result));
-			return result;
+			exit_status = EXIT_FAILURE;
+			goto dev_close;
 		}
-		pf_dev.src_pip_str = ipv4_to_string(pf_dev.src_pip.ipv4_addr);
 	} else {
+		pf_dev.src_pip.type = DOCA_FLOW_L3_TYPE_IP6;
 		result = doca_devinfo_get_ipv6_addr(doca_dev_as_devinfo(pf_dev.dev),
 						    (uint8_t *)pf_dev.src_pip.ipv6_addr,
 						    DOCA_DEVINFO_IPV6_ADDR_SIZE);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to find IPv6 addr for PF: %s", doca_error_get_descr(result));
-			return result;
+			exit_status = EXIT_FAILURE;
+			goto dev_close;
 		}
-		pf_dev.src_pip_str = ipv6_to_string(pf_dev.src_pip.ipv6_addr);
 	}
+	pf_dev.src_pip_str = ip_to_string(pf_dev.src_pip);
 
 	DOCA_LOG_INFO("Port %d: Detected PF mac addr: %s, IP addr: %s, total ports: %d",
 		      pf_dev.port_id,
@@ -209,17 +239,19 @@ int main(int argc, char **argv)
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to update application ports and queues: %s", doca_error_get_descr(result));
 		exit_status = EXIT_FAILURE;
-		goto dpdk_destroy;
+		goto dev_close;
 	}
 
 	{
 		PSP_GatewayFlows psp_flows(&pf_dev, vf_port_id, &app_config);
+		std::vector<psp_gw_peer> remotes_to_connect;
+		uint32_t lcore_id;
 
 		result = psp_flows.init();
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create flow pipes");
 			exit_status = EXIT_FAILURE;
-			goto dpdk_destroy;
+			goto dpdk_cleanup;
 		}
 
 		PSP_GatewayImpl psp_svc(&app_config, &psp_flows);
@@ -232,7 +264,6 @@ int main(int argc, char **argv)
 			&psp_svc,
 		};
 
-		uint32_t lcore_id;
 		RTE_LCORE_FOREACH_WORKER(lcore_id)
 		{
 			rte_eal_remote_launch(lcore_pkt_proc_func, &lcore_params, lcore_id);
@@ -249,26 +280,27 @@ int main(int argc, char **argv)
 		builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
 		builder.RegisterService(&psp_svc);
 		auto server_instance = builder.BuildAndStart();
-		std::cout << "Server listening on " << server_address << std::endl;
+
+		if (!server_instance) {
+			DOCA_LOG_ERR("Failed to initialize gRPC server (%s)", server_address.c_str());
+			exit_status = EXIT_FAILURE;
+			goto workers_cleanup;
+		} else {
+			DOCA_LOG_WARN("Server listening on %s", server_address.c_str());
+		}
 
 		// If configured to create all tunnels at startup, create a list of
 		// pending tunnels here. Each invocation of try_connect will
 		// remove entries from the list as tunnels are created.
 		// Otherwise, this list will be left empty and tunnels will be created
 		// on demand via the miss path.
-		std::vector<psp_gw_host> remotes_to_connect;
-		rte_be32_t local_vf_addr = 0;
+
 		if (app_config.create_tunnels_at_startup) {
-			if (inet_pton(AF_INET, app_config.local_vf_addr.c_str(), &local_vf_addr) != 1) {
-				DOCA_LOG_ERR("Invalid local_vf_addr: %s", app_config.local_vf_addr.c_str());
-				exit_status = EXIT_FAILURE;
-				goto dpdk_destroy;
-			}
-			remotes_to_connect = app_config.net_config.hosts;
+			remotes_to_connect = app_config.net_config.peers;
 		}
 
 		while (!force_quit) {
-			psp_svc.try_connect(remotes_to_connect, local_vf_addr);
+			psp_svc.try_connect(remotes_to_connect);
 			sleep(1);
 
 			if (app_config.print_stats) {
@@ -279,9 +311,13 @@ int main(int argc, char **argv)
 
 		DOCA_LOG_INFO("Shutting down");
 
-		server_instance->Shutdown();
-		server_instance.reset();
+		if (server_instance) {
+			server_instance->Shutdown();
+			server_instance.reset();
+		}
 
+workers_cleanup:
+		force_quit = true;
 		RTE_LCORE_FOREACH_WORKER(lcore_id)
 		{
 			DOCA_LOG_INFO("Stopping L-Core %d", lcore_id);
@@ -289,9 +325,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	// flow cleanup
+dpdk_cleanup:
 	dpdk_queues_and_ports_fini(&app_config.dpdk_config);
-
+dev_close:
+	doca_dev_close(pf_dev.dev);
 dpdk_destroy:
 	dpdk_fini();
 	doca_argp_destroy();

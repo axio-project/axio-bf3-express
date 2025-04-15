@@ -35,7 +35,8 @@
 
 #include "dpa_all_to_all_core.h"
 
-#define MAX_MPI_WAIT_TIME (10) /* Maximum time to wait on MPI request */
+#define MAX_MPI_WAIT_TIME (10)	      /* Maximum time to wait on MPI request */
+#define SLEEP_IN_NANO_SEC (100000000) /* Sleeping interval for completion polling */
 
 DOCA_LOG_REGISTER(A2A::Core);
 
@@ -46,8 +47,10 @@ DOCA_LOG_REGISTER(A2A::Core);
 extern struct doca_dpa_app *dpa_all2all_app;
 
 /* IB devices names */
-char device1_name[MAX_IB_DEVICE_NAME_LEN];
-char device2_name[MAX_IB_DEVICE_NAME_LEN];
+char pf_device1_name[MAX_IB_DEVICE_NAME_LEN];
+char pf_device2_name[MAX_IB_DEVICE_NAME_LEN];
+char rdma_device1_name[MAX_IB_DEVICE_NAME_LEN];
+char rdma_device2_name[MAX_IB_DEVICE_NAME_LEN];
 
 /* DOCA DPA all to all kernel function pointer */
 doca_dpa_func_t alltoall_kernel;
@@ -167,6 +170,48 @@ bool dpa_device_exists_check(const char *device_name)
 		result = doca_dpa_cap_is_supported(dev_list[i]);
 		if (result != DOCA_SUCCESS)
 			continue;
+
+		result = doca_devinfo_get_ibdev_name(dev_list[i], ibdev_name, sizeof(ibdev_name));
+		if (result != DOCA_SUCCESS)
+			continue;
+
+		/* Check if we found the device with the wanted name */
+		if (strncmp(device_name, ibdev_name, MAX_IB_DEVICE_NAME_LEN) == 0) {
+			exists = true;
+			break;
+		}
+	}
+
+	doca_devinfo_destroy_list(dev_list);
+
+	return exists;
+}
+
+bool rdma_device_exists_check(const char *device_name)
+{
+	struct doca_devinfo **dev_list;
+	uint32_t nb_devs = 0;
+	doca_error_t result;
+	bool exists = false;
+	char ibdev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE] = {0};
+	int i = 0;
+
+	/* If it's the default then return true */
+	if (strncmp(device_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) == 0)
+		return true;
+
+	result = doca_devinfo_create_list(&dev_list, &nb_devs);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to load DOCA devices list: %s", doca_error_get_descr(result));
+		return false;
+	}
+
+	/* Search device with same dev name*/
+	for (i = 0; i < nb_devs; i++) {
+		result = doca_rdma_cap_task_send_is_supported(dev_list[i]);
+		if (result != DOCA_SUCCESS)
+			continue;
+
 		result = doca_devinfo_get_ibdev_name(dev_list[i], ibdev_name, sizeof(ibdev_name));
 		if (result != DOCA_SUCCESS)
 			continue;
@@ -184,19 +229,28 @@ bool dpa_device_exists_check(const char *device_name)
 }
 
 /*
- * Open DPA DOCA device
+ * Open DPA DOCA devices
  *
- * @device_name [in]: Wanted IB device name, can be NOT_SET and then a random device IB DPA supported device is chosen
- * @doca_device [out]: An allocated DOCA DPA device on success and NULL otherwise
+ * When running from DPU, rdma_doca_device will be opened for SF DOCA device with RDMA capability.
+ * When running from Host, returned rdma_doca_device is equal to pf_doca_device.
+ *
+ * @pf_device_name [in]: Wanted PF device name, can be NOT_SET and then a random DPA supported device is chosen
+ * @rdma_device_name [in]: Relevant when running from DPU. Wanted RDMA device name, can be NOT_SET and then a random
+ * RDMA supported device is chosen
+ * @pf_doca_device [out]: An allocated PF DOCA device on success and NULL otherwise
+ * @rdma_doca_device [out]: An allocated RDMA DOCA device on success and NULL otherwise
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
-static doca_error_t open_dpa_device(const char *device_name, struct doca_dev **doca_device)
+static doca_error_t open_dpa_devices(const char *pf_device_name,
+				     const char *rdma_device_name,
+				     struct doca_dev **pf_doca_device,
+				     struct doca_dev **rdma_doca_device)
 {
 	struct doca_devinfo **dev_list;
 	uint32_t nb_devs = 0;
-	doca_error_t result;
+	doca_error_t result, dpa_cap;
 	char ibdev_name[DOCA_DEVINFO_IBDEV_NAME_SIZE] = {0};
-	int i = 0;
+	uint32_t i = 0;
 
 	result = doca_devinfo_create_list(&dev_list, &nb_devs);
 	if (result != DOCA_SUCCESS) {
@@ -204,35 +258,60 @@ static doca_error_t open_dpa_device(const char *device_name, struct doca_dev **d
 		return result;
 	}
 
-	/* Search device with same dev name*/
 	for (i = 0; i < nb_devs; i++) {
-		result = doca_dpa_cap_is_supported(dev_list[i]);
-		if (result != DOCA_SUCCESS)
-			continue;
 		result = doca_devinfo_get_ibdev_name(dev_list[i], ibdev_name, sizeof(ibdev_name));
-		if (result != DOCA_SUCCESS)
-			continue;
-
-		/* If a device name was provided then check for it */
-		if ((strncmp(device_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) != 0 &&
-		     strncmp(device_name, ibdev_name, MAX_IB_DEVICE_NAME_LEN) != 0))
-			continue;
-
-		result = doca_dev_open(dev_list[i], doca_device);
 		if (result != DOCA_SUCCESS) {
-			doca_devinfo_destroy_list(dev_list);
-			DOCA_LOG_ERR("Failed to open DOCA device: %s", doca_error_get_descr(result));
-			return result;
+			continue;
 		}
-		break;
+
+#ifdef DOCA_ARCH_DPU
+		doca_error_t rdma_cap = doca_rdma_cap_task_send_is_supported(dev_list[i]);
+		if (*rdma_doca_device == NULL && rdma_cap == DOCA_SUCCESS) {
+			if (strncmp(rdma_device_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) == 0 ||
+			    strncmp(rdma_device_name, ibdev_name, MAX_IB_DEVICE_NAME_LEN) == 0) {
+				result = doca_dev_open(dev_list[i], rdma_doca_device);
+				if (result != DOCA_SUCCESS) {
+					doca_devinfo_destroy_list(dev_list);
+					DOCA_LOG_ERR("Failed to open DOCA device %s: %s",
+						     ibdev_name,
+						     doca_error_get_descr(result));
+					return result;
+				}
+			}
+		}
+#endif
+
+		dpa_cap = doca_dpa_cap_is_supported(dev_list[i]);
+		if (*pf_doca_device == NULL && dpa_cap == DOCA_SUCCESS) {
+			if (strncmp(pf_device_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) == 0 ||
+			    strncmp(pf_device_name, ibdev_name, MAX_IB_DEVICE_NAME_LEN) == 0) {
+				result = doca_dev_open(dev_list[i], pf_doca_device);
+				if (result != DOCA_SUCCESS) {
+					doca_devinfo_destroy_list(dev_list);
+					DOCA_LOG_ERR("Failed to open DOCA device %s: %s",
+						     ibdev_name,
+						     doca_error_get_descr(result));
+					return result;
+				}
+			}
+		}
 	}
 
 	doca_devinfo_destroy_list(dev_list);
 
-	if (*doca_device == NULL) {
-		DOCA_LOG_ERR("Couldn't get DOCA device");
+	if (*pf_doca_device == NULL) {
+		DOCA_LOG_ERR("Couldn't get PF DOCA device");
 		return DOCA_ERROR_NOT_FOUND;
 	}
+
+#ifdef DOCA_ARCH_DPU
+	if (*rdma_doca_device == NULL) {
+		DOCA_LOG_ERR("Couldn't get RDMA DOCA device");
+		return DOCA_ERROR_NOT_FOUND;
+	}
+#else
+	*rdma_doca_device = *pf_doca_device;
+#endif
 
 	return result;
 }
@@ -247,48 +326,88 @@ static doca_error_t create_dpa_context(struct a2a_resources *resources)
 {
 	doca_error_t result, tmp_result;
 
-	/* Open doca device */
-	result = open_dpa_device(resources->device_name, &(resources->doca_device));
+	/* Open doca devices */
+	result = open_dpa_devices(resources->pf_device_name,
+				  resources->rdma_device_name,
+				  &(resources->pf_doca_device),
+				  &(resources->rdma_doca_device));
 	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("open_dpa_device() failed");
+		DOCA_LOG_ERR("open_dpa_devices() failed");
 		return result;
 	}
 
 	/* Create doca_dpa context */
-	result = doca_dpa_create(resources->doca_device, &(resources->doca_dpa));
+	result = doca_dpa_create(resources->pf_doca_device, &(resources->pf_doca_dpa));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create DOCA DPA context: %s", doca_error_get_descr(result));
 		goto close_doca_dev;
 	}
 
 	/* Set doca_dpa app */
-	result = doca_dpa_set_app(resources->doca_dpa, dpa_all2all_app);
+	result = doca_dpa_set_app(resources->pf_doca_dpa, dpa_all2all_app);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set DOCA DPA app: %s", doca_error_get_descr(result));
 		goto destroy_doca_dpa;
 	}
 
 	/* Start doca_dpa context */
-	result = doca_dpa_start(resources->doca_dpa);
+	result = doca_dpa_start(resources->pf_doca_dpa);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to start DOCA DPA context: %s", doca_error_get_descr(result));
 		goto destroy_doca_dpa;
 	}
 
+#ifdef DOCA_ARCH_DPU
+	if (resources->rdma_doca_device != resources->pf_doca_device) {
+		result = doca_dpa_device_extend(resources->pf_doca_dpa,
+						resources->rdma_doca_device,
+						&resources->rdma_doca_dpa);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to extend DOCA DPA context: %s", doca_error_get_descr(result));
+			goto destroy_doca_dpa;
+		}
+
+		result = doca_dpa_get_dpa_handle(resources->rdma_doca_dpa, &resources->rdma_doca_dpa_handle);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to get DOCA DPA context handle: %s", doca_error_get_descr(result));
+			goto destroy_rdma_doca_dpa;
+		}
+	} else {
+		resources->rdma_doca_dpa = resources->pf_doca_dpa;
+	}
+#else
+	resources->rdma_doca_dpa = resources->pf_doca_dpa;
+#endif
+
 	return result;
 
+#ifdef DOCA_ARCH_DPU
+destroy_rdma_doca_dpa:
+	tmp_result = doca_dpa_destroy(resources->rdma_doca_dpa);
+	if (tmp_result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to destroy DOCA DPA context: %s", doca_error_get_descr(tmp_result));
+		DOCA_ERROR_PROPAGATE(result, tmp_result);
+	}
+#endif
 destroy_doca_dpa:
-	tmp_result = doca_dpa_destroy(resources->doca_dpa);
+	tmp_result = doca_dpa_destroy(resources->pf_doca_dpa);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to destroy DOCA DPA context: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 close_doca_dev:
-	tmp_result = doca_dev_close(resources->doca_device);
+	tmp_result = doca_dev_close(resources->pf_doca_device);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to close DOCA DPA device: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
+#ifdef DOCA_ARCH_DPU
+	tmp_result = doca_dev_close(resources->rdma_doca_device);
+	if (tmp_result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to close DOCA DPA device: %s", doca_error_get_descr(tmp_result));
+		DOCA_ERROR_PROPAGATE(result, tmp_result);
+	}
+#endif
 
 	return result;
 }
@@ -454,7 +573,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	resources->extent = extent;
 
 	/* create mmap for process send buff */
-	result = create_mmap(resources->doca_device,
+	result = create_mmap(resources->rdma_doca_device,
 			     mem_access_read,
 			     resources->sendbuf,
 			     buf_size,
@@ -466,7 +585,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* create mmap for process receive buff */
-	result = create_mmap(resources->doca_device,
+	result = create_mmap(resources->rdma_doca_device,
 			     mem_access_write,
 			     resources->recvbuf,
 			     buf_size,
@@ -479,7 +598,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 
 	/* create mmap export to the receive buffer for rdma operation */
 	result = doca_mmap_export_rdma(resources->recvbuf_mmap,
-				       resources->doca_device,
+				       resources->rdma_doca_device,
 				       &recv_mmap_export,
 				       &recv_mmap_export_len);
 	if (result != DOCA_SUCCESS) {
@@ -557,7 +676,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 		result = doca_mmap_create_from_export(NULL,
 						      (const void *)&(((char *)recvbufs_mmap_exports)[j]),
 						      recvbufs_mmap_exports_lens[i],
-						      resources->doca_device,
+						      resources->rdma_doca_device,
 						      &(resources->export_mmaps[i]));
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create mmap from export: %s", doca_error_get_descr(result));
@@ -566,7 +685,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 
 		/* Get DOCA mmap DPA handle */
 		result = doca_mmap_dev_get_dpa_handle(resources->export_mmaps[i],
-						      resources->doca_device,
+						      resources->rdma_doca_device,
 						      &(resources->export_mmaps_dpa_handle[i]));
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to get DOCA mmap DPA handle: %s", doca_error_get_descr(result));
@@ -598,7 +717,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Allocate DPA memory to hold the recvbufs addresses */
-	result = doca_dpa_mem_alloc(resources->doca_dpa,
+	result = doca_dpa_mem_alloc(resources->rdma_doca_dpa,
 				    (resources->num_ranks * sizeof(uintptr_t)),
 				    &(resources->devptr_recvbufs));
 	if (result != DOCA_SUCCESS) {
@@ -607,7 +726,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Copy the recvbufs addresses array from the host memory to the device memory */
-	result = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	result = doca_dpa_h2d_memcpy(resources->rdma_doca_dpa,
 				     resources->devptr_recvbufs,
 				     (void *)recvbufs,
 				     resources->num_ranks * sizeof(uintptr_t));
@@ -617,7 +736,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Allocate DPA memory to hold the recvbufs mmap handles */
-	result = doca_dpa_mem_alloc(resources->doca_dpa,
+	result = doca_dpa_mem_alloc(resources->rdma_doca_dpa,
 				    (resources->num_ranks * sizeof(doca_dpa_dev_mmap_t)),
 				    &(resources->devptr_recvbufs_mmap_handles));
 	if (result != DOCA_SUCCESS) {
@@ -626,7 +745,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Copy the recvbufs mmap handles array from the host memory to the device memory */
-	result = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	result = doca_dpa_h2d_memcpy(resources->rdma_doca_dpa,
 				     resources->devptr_recvbufs_mmap_handles,
 				     (void *)resources->export_mmaps_dpa_handle,
 				     resources->num_ranks * sizeof(doca_dpa_dev_mmap_t));
@@ -702,8 +821,8 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 		/* skip to export index */
 		j = i * resources->rp_remote_kernel_events_export_sizes[i];
 		result = create_doca_dpa_sync_event_from_export(
-			resources->doca_dpa,
-			resources->doca_device,
+			resources->rdma_doca_dpa,
+			resources->rdma_doca_device,
 			(const uint8_t *)&(((char *)resources->rp_remote_kernel_events_export_data)[j]),
 			resources->rp_remote_kernel_events_export_sizes[i],
 			&(resources->rp_kernel_events[i]),
@@ -715,7 +834,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Allocate DPA memory to hold the remote kernel events */
-	result = doca_dpa_mem_alloc(resources->doca_dpa,
+	result = doca_dpa_mem_alloc(resources->rdma_doca_dpa,
 				    resources->num_ranks * sizeof(*(resources->rp_kernel_events_dpa_handles)),
 				    &(resources->devptr_rp_remote_kernel_events));
 	if (result != DOCA_SUCCESS) {
@@ -724,7 +843,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Copy the remote kernel events from the host memory to the device memory */
-	result = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	result = doca_dpa_h2d_memcpy(resources->rdma_doca_dpa,
 				     resources->devptr_rp_remote_kernel_events,
 				     (void *)resources->rp_kernel_events_dpa_handles,
 				     resources->num_ranks * sizeof(*(resources->rp_kernel_events_dpa_handles)));
@@ -734,7 +853,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Allocate DPA memory to hold the local remote kernel events */
-	result = doca_dpa_mem_alloc(resources->doca_dpa,
+	result = doca_dpa_mem_alloc(resources->rdma_doca_dpa,
 				    resources->num_ranks * sizeof(*(resources->kernel_events_handle)),
 				    &(resources->devptr_kernel_events_handle));
 	if (result != DOCA_SUCCESS) {
@@ -743,7 +862,7 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	}
 
 	/* Copy the remote kernel events from the host memory to the device memory */
-	result = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	result = doca_dpa_h2d_memcpy(resources->rdma_doca_dpa,
 				     resources->devptr_kernel_events_handle,
 				     (void *)resources->kernel_events_handle,
 				     resources->num_ranks * sizeof(*(resources->kernel_events_handle)));
@@ -751,6 +870,8 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 		DOCA_LOG_ERR("Failed to copy DOCA DPA memory from host to device: %s", doca_error_get_descr(result));
 		goto free_kernel_events_handle_dpa;
 	}
+
+	free(recvbufs);
 
 	/* free recv mmaps exports pointers since no longer needed after creating mmaps from exports */
 	free(recvbufs_mmap_exports);
@@ -767,13 +888,13 @@ static doca_error_t prepare_dpa_a2a_memory(struct a2a_resources *resources)
 	return result;
 
 free_kernel_events_handle_dpa:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_kernel_events_handle);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_kernel_events_handle);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 free_rp_remote_kernel_events_dpa:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_rp_remote_kernel_events);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_rp_remote_kernel_events);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -797,13 +918,13 @@ free_remote_kernel_events_exports:
 	free(resources->rp_remote_kernel_events_export_data);
 	free(resources->rp_remote_kernel_events_export_sizes);
 free_devptr_recvbufs_mmap_handles:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_recvbufs_mmap_handles);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_recvbufs_mmap_handles);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 free_devptr_recvbufs:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_recvbufs);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_recvbufs);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -856,6 +977,8 @@ static doca_error_t connect_dpa_a2a_rdmas(struct a2a_resources *resources)
 	const void *remote_connection_details = NULL;
 	/* Length of addresses */
 	size_t local_connection_details_len, remote_connection_details_len;
+	/* rdma connection object */
+	struct doca_rdma_connection *connection = NULL;
 	/* Tags for the MPI send and recv for address and address length */
 	const int addr_tag = 1;
 	const int addr_len_tag = 2;
@@ -869,8 +992,10 @@ static doca_error_t connect_dpa_a2a_rdmas(struct a2a_resources *resources)
 		 * Get the local rdma connection details with the index
 		 * same as the rank of the process we are going to send to
 		 */
-		result =
-			doca_rdma_export(resources->rdmas[i], &local_connection_details, &local_connection_details_len);
+		result = doca_rdma_export(resources->rdmas[i],
+					  &local_connection_details,
+					  &local_connection_details_len,
+					  &connection);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to get DOCA rdma connection details: %s", doca_error_get_descr(result));
 			return result;
@@ -922,7 +1047,8 @@ static doca_error_t connect_dpa_a2a_rdmas(struct a2a_resources *resources)
 		 */
 		result = doca_rdma_connect(resources->rdmas[i],
 					   remote_connection_details,
-					   remote_connection_details_len);
+					   remote_connection_details_len,
+					   connection);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to connect DOCA rdma: %s", doca_error_get_descr(result));
 			free((void *)remote_connection_details);
@@ -957,12 +1083,14 @@ static doca_error_t connect_dpa_a2a_rdmas(struct a2a_resources *resources)
  * @doca_dpa [in]: DPA context to set datapath on
  * @doca_device [in]: device to associate to rdma context
  * @rdma_caps [in]: capabilities enabled on the rdma context
+ * @dpa_completion [in]: DPA completion context to be attached for the rdma context
  * @rdma [out]: Created rdma
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
 static doca_error_t create_rdma(struct doca_dpa *doca_dpa,
 				struct doca_dev *doca_device,
 				unsigned int rdma_caps,
+				struct doca_dpa_completion *dpa_completion,
 				struct doca_rdma **rdma)
 {
 	struct doca_ctx *rdma_as_doca_ctx;
@@ -996,6 +1124,13 @@ static doca_error_t create_rdma(struct doca_dpa *doca_dpa,
 	result = doca_ctx_set_datapath_on_dpa(rdma_as_doca_ctx, doca_dpa);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set datapath for DOCA rdma on DPA: %s", doca_error_get_descr(result));
+		goto destroy_rdma;
+	}
+
+	/* Attach DPA completion context for DOCA rdma context */
+	result = doca_rdma_dpa_completion_attach(*rdma, dpa_completion);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to attach DPA completion context for DOCA rdma: %s", doca_error_get_descr(result));
 		goto destroy_rdma;
 	}
 
@@ -1042,6 +1177,61 @@ static doca_error_t destroy_rdma(struct doca_rdma *rdma, struct doca_dev *doca_d
 }
 
 /*
+ * Prepare the DOCA DPA completion contexts
+ *
+ * @resources [in/out]: All to all resources
+ * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
+ */
+static doca_error_t prepare_dpa_a2a_dpa_completions(struct a2a_resources *resources)
+{
+	int i, j;
+	doca_error_t result, tmp_result;
+
+	/* Create dpa completion contexts as number of the processes */
+	resources->dpa_completions = calloc(resources->num_ranks, sizeof(*(resources->dpa_completions)));
+	if (resources->dpa_completions == NULL) {
+		DOCA_LOG_ERR("Failed to allocate memory for DOCA DPA completions");
+		return DOCA_ERROR_NO_MEMORY;
+	}
+	for (i = 0; i < resources->num_ranks; i++) {
+		result = doca_dpa_completion_create(resources->rdma_doca_dpa,
+						    resources->num_ranks,
+						    &(resources->dpa_completions[i]));
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to create DOCA DPA completion: %s", doca_error_get_descr(result));
+			goto destroy_dpa_completions;
+		}
+
+		result = doca_dpa_completion_start(resources->dpa_completions[i]);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to start DOCA DPA completion: %s", doca_error_get_descr(result));
+			tmp_result = doca_dpa_completion_destroy(resources->dpa_completions[i]);
+			if (tmp_result != DOCA_SUCCESS) {
+				DOCA_LOG_ERR("Failed to destroy DOCA DPA completion instance: %s",
+					     doca_error_get_descr(tmp_result));
+				DOCA_ERROR_PROPAGATE(result, tmp_result);
+			}
+			goto destroy_dpa_completions;
+		}
+	}
+
+	return result;
+
+destroy_dpa_completions:
+	for (j = 0; j < i; j++) {
+		tmp_result = doca_dpa_completion_destroy(resources->dpa_completions[j]);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA DPA completion instance: %s",
+				     doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
+	free(resources->dpa_completions);
+
+	return result;
+}
+
+/*
  * Prepare the DOCA rdma, which includes creating the RDMA contexts and their handlers, connecting them to
  * the remote processes' RDMA contexts and allocating DOCA DPA device memory to hold the handlers so that
  * they can be used in a DOCA DPA kernel function.
@@ -1066,7 +1256,11 @@ static doca_error_t prepare_dpa_a2a_rdmas(struct a2a_resources *resources)
 		return DOCA_ERROR_NO_MEMORY;
 	}
 	for (i = 0; i < resources->num_ranks; i++) {
-		result = create_rdma(resources->doca_dpa, resources->doca_device, rdma_access, &(resources->rdmas[i]));
+		result = create_rdma(resources->rdma_doca_dpa,
+				     resources->rdma_doca_device,
+				     rdma_access,
+				     resources->dpa_completions[i],
+				     &(resources->rdmas[i]));
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create DOCA rdma: %s", doca_error_get_descr(result));
 			goto destroy_rdmas;
@@ -1095,7 +1289,7 @@ static doca_error_t prepare_dpa_a2a_rdmas(struct a2a_resources *resources)
 	}
 
 	/* Allocate DPA memory to hold the RDMA handlers */
-	result = doca_dpa_mem_alloc(resources->doca_dpa,
+	result = doca_dpa_mem_alloc(resources->rdma_doca_dpa,
 				    sizeof(*rdma_handlers) * resources->num_ranks,
 				    &(resources->devptr_rdmas));
 	if (result != DOCA_SUCCESS) {
@@ -1104,7 +1298,7 @@ static doca_error_t prepare_dpa_a2a_rdmas(struct a2a_resources *resources)
 	}
 
 	/* Copy the rdma handlers from the host memory to the device memory */
-	result = doca_dpa_h2d_memcpy(resources->doca_dpa,
+	result = doca_dpa_h2d_memcpy(resources->rdma_doca_dpa,
 				     resources->devptr_rdmas,
 				     (void *)rdma_handlers,
 				     sizeof(*rdma_handlers) * resources->num_ranks);
@@ -1119,7 +1313,7 @@ static doca_error_t prepare_dpa_a2a_rdmas(struct a2a_resources *resources)
 	return result;
 
 free_rdma_handlers_dpa:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_rdmas);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_rdmas);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1128,7 +1322,7 @@ free_rdma_handlers:
 	free(rdma_handlers);
 destroy_rdmas:
 	for (j = 0; j < i; j++) {
-		tmp_result = destroy_rdma(resources->rdmas[j], resources->doca_device);
+		tmp_result = destroy_rdma(resources->rdmas[j], resources->rdma_doca_device);
 		if (tmp_result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to destroy DOCA rdma instance: %s", doca_error_get_descr(tmp_result));
 			DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1250,8 +1444,8 @@ static doca_error_t create_dpa_a2a_events(struct a2a_resources *resources)
 	const uint8_t **lp_remote_kernel_events_export_data_arr = NULL;
 
 	/* Create DOCA DPA kernel completion event*/
-	result = create_doca_dpa_completion_sync_event(resources->doca_dpa,
-						       resources->doca_device,
+	result = create_doca_dpa_completion_sync_event(resources->pf_doca_dpa,
+						       resources->pf_doca_device,
 						       &(resources->comp_event));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create host completion event: %s", doca_error_get_descr(result));
@@ -1266,7 +1460,8 @@ static doca_error_t create_dpa_a2a_events(struct a2a_resources *resources)
 		goto destroy_comp_event;
 	}
 	for (i = 0; i < resources->num_ranks; i++) {
-		result = create_doca_dpa_remote_net_sync_event(resources->doca_dpa, &(resources->kernel_events[i]));
+		result =
+			create_doca_dpa_remote_net_sync_event(resources->rdma_doca_dpa, &(resources->kernel_events[i]));
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create kernel event: %s", doca_error_get_descr(result));
 			goto destroy_kernel_events;
@@ -1284,7 +1479,7 @@ static doca_error_t create_dpa_a2a_events(struct a2a_resources *resources)
 	for (j = 0; j < resources->num_ranks; j++) {
 		/* Export the kernel events */
 		result = doca_sync_event_get_dpa_handle(resources->kernel_events[j],
-							resources->doca_dpa,
+							resources->rdma_doca_dpa,
 							&(resources->kernel_events_handle[j]));
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to export kernel event: %s", doca_error_get_descr(result));
@@ -1365,10 +1560,13 @@ doca_error_t dpa_a2a_init(struct a2a_resources *resources)
 	int i;
 
 	/* divide the two devices (can be the same) on all processes equally */
-	if (resources->my_rank >= ((double)resources->num_ranks / 2.0))
-		strcpy(resources->device_name, device2_name);
-	else
-		strcpy(resources->device_name, device1_name);
+	if (resources->my_rank >= ((double)resources->num_ranks / 2.0)) {
+		strcpy(resources->pf_device_name, pf_device2_name);
+		strcpy(resources->rdma_device_name, rdma_device2_name);
+	} else {
+		strcpy(resources->pf_device_name, pf_device1_name);
+		strcpy(resources->rdma_device_name, rdma_device1_name);
+	}
 
 	/* Create DOCA DPA context*/
 	result = create_dpa_context(resources);
@@ -1383,11 +1581,19 @@ doca_error_t dpa_a2a_init(struct a2a_resources *resources)
 		goto destroy_dpa;
 	}
 
+	/* Prepare DOCA DPA completion contexts all to all resources */
+	result = prepare_dpa_a2a_dpa_completions(resources);
+	if (result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to prepare DOCA DPA completion contexts resources: %s",
+			     doca_error_get_descr(result));
+		goto destroy_events;
+	}
+
 	/* Prepare DOCA RDMA contexts all to all resources */
 	result = prepare_dpa_a2a_rdmas(resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to prepare DOCA RDMA contexts resources: %s", doca_error_get_descr(result));
-		goto destroy_events;
+		goto destroy_dpa_completions;
 	}
 
 	/* Prepare DOCA DPA all to all memory */
@@ -1400,20 +1606,31 @@ doca_error_t dpa_a2a_init(struct a2a_resources *resources)
 	return result;
 
 destroy_rdmas:
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_rdmas);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_rdmas);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 	/* Destroy DOCA RDMA contexts */
 	for (i = 0; i < resources->num_ranks; i++) {
-		tmp_result = destroy_rdma(resources->rdmas[i], resources->doca_device);
+		tmp_result = destroy_rdma(resources->rdmas[i], resources->rdma_doca_device);
 		if (tmp_result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to destroy DOCA rdma instance: %s", doca_error_get_descr(tmp_result));
 			DOCA_ERROR_PROPAGATE(result, tmp_result);
 		}
 	}
 	free(resources->rdmas);
+destroy_dpa_completions:
+	/* Destroy DOCA DPA completion contexts */
+	for (i = 0; i < resources->num_ranks; i++) {
+		tmp_result = doca_dpa_completion_destroy(resources->dpa_completions[i]);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA DPA completion instance: %s",
+				     doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
+	free(resources->dpa_completions);
 destroy_events:
 	free(resources->lp_remote_kernel_events_export_data);
 	free(resources->lp_remote_kernel_events_export_sizes);
@@ -1433,13 +1650,13 @@ destroy_events:
 	}
 destroy_dpa:
 	/* Destroy DOCA DPA context */
-	tmp_result = doca_dpa_destroy(resources->doca_dpa);
+	tmp_result = doca_dpa_destroy(resources->rdma_doca_dpa);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to destroy DOCA DPA context: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 	/* Close DOCA device */
-	tmp_result = doca_dev_close(resources->doca_device);
+	tmp_result = doca_dev_close(resources->rdma_doca_device);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1455,12 +1672,12 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 
 	/* Free DPA device memory*/
 
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_kernel_events_handle);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_kernel_events_handle);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_rp_remote_kernel_events);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_rp_remote_kernel_events);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1477,12 +1694,12 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 	}
 	free(resources->rp_kernel_events_dpa_handles);
 	free(resources->rp_kernel_events);
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_recvbufs);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_recvbufs);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_recvbufs_mmap_handles);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_recvbufs_mmap_handles);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1509,7 +1726,7 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 
-	tmp_result = doca_dpa_mem_free(resources->doca_dpa, resources->devptr_rdmas);
+	tmp_result = doca_dpa_mem_free(resources->rdma_doca_dpa, resources->devptr_rdmas);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to free DOCA DPA device memory: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1517,13 +1734,24 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 
 	/* Destroy DOCA DPA RDMAs*/
 	for (i = 0; i < resources->num_ranks; i++) {
-		tmp_result = destroy_rdma(resources->rdmas[i], resources->doca_device);
+		tmp_result = destroy_rdma(resources->rdmas[i], resources->rdma_doca_device);
 		if (tmp_result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to destroy DOCA rdma instance: %s", doca_error_get_descr(tmp_result));
 			DOCA_ERROR_PROPAGATE(result, tmp_result);
 		}
 	}
 	free(resources->rdmas);
+
+	/* Destroy DOCA DPA completions */
+	for (i = 0; i < resources->num_ranks; i++) {
+		tmp_result = doca_dpa_completion_destroy(resources->dpa_completions[i]);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA DPA completion instance: %s",
+				     doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
+	free(resources->dpa_completions);
 
 	/* Free kernel events handles */
 	free(resources->kernel_events_handle);
@@ -1535,6 +1763,7 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 			DOCA_ERROR_PROPAGATE(result, tmp_result);
 		}
 	}
+	free(resources->kernel_events);
 
 	/* Destroy DOCA DPA completion event */
 	tmp_result = doca_sync_event_destroy(resources->comp_event);
@@ -1544,14 +1773,32 @@ doca_error_t dpa_a2a_destroy(struct a2a_resources *resources)
 	}
 
 	/* Destroy DOCA DPA context */
-	tmp_result = doca_dpa_destroy(resources->doca_dpa);
+#ifdef DOCA_ARCH_DPU
+	if (resources->rdma_doca_dpa != resources->pf_doca_dpa) {
+		tmp_result = doca_dpa_destroy(resources->rdma_doca_dpa);
+		if (tmp_result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to destroy DOCA DPA context: %s", doca_error_get_descr(tmp_result));
+			DOCA_ERROR_PROPAGATE(result, tmp_result);
+		}
+	}
+#endif
+
+	tmp_result = doca_dpa_destroy(resources->pf_doca_dpa);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to destroy DOCA DPA context: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
 	}
 
 	/* Close DOCA device */
-	tmp_result = doca_dev_close(resources->doca_device);
+#ifdef DOCA_ARCH_DPU
+	tmp_result = doca_dev_close(resources->rdma_doca_device);
+	if (tmp_result != DOCA_SUCCESS) {
+		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
+		DOCA_ERROR_PROPAGATE(result, tmp_result);
+	}
+#endif
+
+	tmp_result = doca_dev_close(resources->pf_doca_device);
 	if (tmp_result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to close DOCA device: %s", doca_error_get_descr(tmp_result));
 		DOCA_ERROR_PROPAGATE(result, tmp_result);
@@ -1581,16 +1828,40 @@ doca_error_t dpa_a2a_req_finalize(struct dpa_a2a_request *req)
 doca_error_t dpa_a2a_req_wait(struct dpa_a2a_request *req)
 {
 	doca_error_t result;
+	uint64_t se_val;
+	double elapsed_time_in_sec = 0;
+	struct timespec ts = {
+		.tv_sec = 0,
+		.tv_nsec = SLEEP_IN_NANO_SEC,
+	};
+	double sleep_in_sec = (double)SLEEP_IN_NANO_SEC / 1000000000;
 
 	if (req->resources == NULL) {
-		DOCA_LOG_ERR("Failed to wait for comp_event");
+		DOCA_LOG_ERR("Failed to wait for completion event, resourced uninitialized");
 		return DOCA_ERROR_UNEXPECTED;
 	}
-	result = doca_sync_event_wait_gt(req->resources->comp_event,
-					 req->resources->a2a_seq_num - 1,
-					 SYNC_EVENT_MASK_FFS);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to wait for comp_event: %s", doca_error_get_descr(result));
+
+	while (1) {
+		result = doca_sync_event_get(req->resources->comp_event, &se_val);
+		if (result != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Failed to get completion event value: %s", doca_error_get_descr(result));
+			break;
+		}
+
+		if (se_val > (req->resources->a2a_seq_num - 1)) {
+			result = DOCA_SUCCESS;
+			break;
+		}
+
+		if (elapsed_time_in_sec > MAX_MPI_WAIT_TIME) {
+			result = DOCA_ERROR_TIME_OUT;
+			DOCA_LOG_ERR("Timeout polling completion event");
+			break;
+		}
+
+		nanosleep(&ts, &ts);
+		elapsed_time_in_sec += sleep_in_sec;
+	}
 
 	return result;
 }
@@ -1618,7 +1889,7 @@ doca_error_t dpa_ialltoall(void *sendbuf,
 	/* Get the number of processes */
 	MPI_Comm_size(comm, &num_ranks);
 	if (!req->resources) {
-		req->resources = malloc(sizeof(*(req->resources)));
+		req->resources = (struct a2a_resources *)calloc(1, sizeof(*(req->resources)));
 		if (req->resources == NULL) {
 			DOCA_LOG_ERR("Failed to allocate a2a resources");
 			return DOCA_ERROR_NO_MEMORY;
@@ -1648,13 +1919,14 @@ doca_error_t dpa_ialltoall(void *sendbuf,
 	req->resources->a2a_seq_num++;
 
 	/* Launch all to all kernel*/
-	result = doca_dpa_kernel_launch_update_set(req->resources->doca_dpa,
+	result = doca_dpa_kernel_launch_update_set(req->resources->pf_doca_dpa,
 						   NULL,
 						   0,
 						   req->resources->comp_event,
 						   req->resources->a2a_seq_num,
 						   num_threads,
 						   &alltoall_kernel,
+						   req->resources->rdma_doca_dpa_handle,
 						   req->resources->devptr_rdmas,
 						   (uint64_t)(req->resources->sendbuf),
 						   req->resources->sendbuf_dpa_mmap_handle,
@@ -1751,11 +2023,17 @@ doca_error_t dpa_a2a(int argc, char **argv, struct a2a_config *cfg)
 	buff_size = msg_size / sizeof(int);
 
 	/* Set devices names */
-	strcpy(device1_name, cfg->device1_name);
-	if (strncmp(cfg->device2_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) != 0)
-		strcpy(device2_name, cfg->device2_name);
+	strcpy(pf_device1_name, cfg->pf_device1_name);
+	if (strncmp(cfg->pf_device2_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) != 0)
+		strcpy(pf_device2_name, cfg->pf_device2_name);
 	else
-		strcpy(device2_name, cfg->device1_name);
+		strcpy(pf_device2_name, cfg->pf_device1_name);
+
+	strcpy(rdma_device1_name, cfg->rdma_device1_name);
+	if (strncmp(cfg->rdma_device2_name, IB_DEVICE_DEFAULT_NAME, strlen(IB_DEVICE_DEFAULT_NAME)) != 0)
+		strcpy(rdma_device2_name, cfg->rdma_device2_name);
+	else
+		strcpy(rdma_device2_name, cfg->rdma_device1_name);
 
 	if (my_rank == 0)
 		DOCA_LOG_INFO("Number of processes = %d, message size = %lu, message count = %lu, buffer size = %lu",

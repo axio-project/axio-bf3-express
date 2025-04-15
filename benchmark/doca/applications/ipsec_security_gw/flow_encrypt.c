@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
+ * Copyright (c) 2023-2024 NVIDIA CORPORATION AND AFFILIATES.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -25,6 +25,7 @@
 #include <rte_ethdev.h>
 
 #include <doca_log.h>
+#include <doca_bitfield.h>
 
 #include <pack.h>
 #include <utils.h>
@@ -37,6 +38,7 @@ DOCA_LOG_REGISTER(IPSEC_SECURITY_GW::flow_encrypt);
 #define ENCAP_DST_IP_IDX_IP4 30		  /* index in encap raw data for destination IPv4 */
 #define ENCAP_DST_IP_IDX_IP6 38		  /* index in encap raw data for destination IPv4 */
 #define ENCAP_IP_ID_IDX_IP4 18		  /* index in encap raw data for IPv4 ID */
+#define ENCAP_IDX_SRC_MAC 6		  /* index in encap raw data for source mac */
 #define ENCAP_DST_UDP_PORT_IDX 2	  /* index in encap raw data for UDP destination port */
 #define ENCAP_ESP_SPI_IDX_TUNNEL_IP4 34	  /* index in encap raw data for esp SPI in IPv4 tunnel */
 #define ENCAP_ESP_SPI_IDX_TUNNEL_IP6 54	  /* index in encap raw data for esp SPI in IPv6 tunnel */
@@ -165,26 +167,36 @@ static void create_udp_transport_encap(struct encrypt_rule *rule,
  *
  * @rule [in]: current rule for encapsulation
  * @sw_sn_inc [in]: if true, sequence number will be incremented in software
+ * @eth_header [in]: contains the src mac address
  * @reformat_data [out]: pointer to created data
  * @reformat_data_sz [out]: data size
  */
 static void create_ipv4_tunnel_encap(struct encrypt_rule *rule,
 				     bool sw_sn_inc,
+				     struct doca_flow_header_eth *eth_header,
 				     uint8_t *reformat_data,
 				     uint16_t *reformat_data_sz)
 {
 	uint8_t reformat_encap_data[50] = {
-		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,			    /* mac_dst */
-		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,			    /* mac_src */
-		0x08, 0x00,						    /* mac_type */
-		0x45, 0x00, 0x00, 0x00, 0x00, 0x00,			    /* IP v4 */
-		0x00, 0x00, 0x00, 0x32, 0x00, 0x00, 0x02, 0x02, 0x02, 0x02, /* IP src */
-		0x00, 0x00, 0x00, 0x00,					    /* IP dst */
-		0x00, 0x00, 0x00, 0x00,					    /* SPI */
-		0x00, 0x00, 0x00, 0x00,					    /* SN */
-		0x00, 0x00, 0x00, 0x00,					    /* IV */
+		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, /* mac_dst */
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* mac_src */
+		0x08, 0x00,			    /* mac_type */
+		0x45, 0x00, 0x00, 0x00, 0x00, 0x00, /* IPv4 - Part 1 */
+		0x00, 0x00, 0x00, 0x32, 0x00, 0x00, /* IPv4 - Part 2 */
+		0x02, 0x02, 0x02, 0x02,		    /* IP src */
+		0x00, 0x00, 0x00, 0x00,		    /* IP dst */
+		0x00, 0x00, 0x00, 0x00,		    /* SPI */
+		0x00, 0x00, 0x00, 0x00,		    /* SN */
+		0x00, 0x00, 0x00, 0x00,		    /* IV */
 		0x00, 0x00, 0x00, 0x00,
 	};
+
+	reformat_encap_data[ENCAP_IDX_SRC_MAC] = eth_header->src_mac[0];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 1] = eth_header->src_mac[1];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 2] = eth_header->src_mac[2];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 3] = eth_header->src_mac[3];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 4] = eth_header->src_mac[4];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 5] = eth_header->src_mac[5];
 
 	/* dst IP was already converted to big endian */
 	reformat_encap_data[ENCAP_DST_IP_IDX_IP4] = GET_BYTE(rule->encap_dst_ip4, 0);
@@ -217,32 +229,42 @@ static void create_ipv4_tunnel_encap(struct encrypt_rule *rule,
  *
  * @rule [in]: current rule for encapsulation
  * @sw_sn_inc [in]: if true, sequence number will be incremented in software
+ * @eth_header [in]: contains the src mac address
  * @reformat_data [out]: pointer to created data
  * @reformat_data_sz [out]: data size
  */
 static void create_ipv6_tunnel_encap(struct encrypt_rule *rule,
 				     bool sw_sn_inc,
+				     struct doca_flow_header_eth *eth_header,
 				     uint8_t *reformat_data,
 				     uint16_t *reformat_data_sz)
 {
 	uint8_t reformat_encap_data[70] = {
-		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,		/* mac_dst */
-		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,		/* mac_src */
-		0x86, 0xdd,					/* mac_type */
-		0x60, 0x00, 0x00, 0x00,				/* IP v6 */
-		0x00, 0x00, 0x32, 0x40, 0x02, 0x02, 0x02, 0x02, /* IP src */
-		0x02, 0x02, 0x02, 0x02,				/* IP src */
-		0x02, 0x02, 0x02, 0x02,				/* IP src */
-		0x02, 0x02, 0x02, 0x02,				/* IP src */
-		0x01, 0x01, 0x01, 0x01,				/* IP dst */
-		0x01, 0x01, 0x01, 0x01,				/* IP dst */
-		0x01, 0x01, 0x01, 0x01,				/* IP dst */
-		0x01, 0x01, 0x01, 0x01,				/* IP dst */
-		0x00, 0x00, 0x00, 0x00,				/* SPI */
-		0x00, 0x00, 0x00, 0x00,				/* SN */
-		0x00, 0x00, 0x00, 0x00,				/* IV */
+		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, /* mac_dst */
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* mac_src */
+		0x86, 0xdd,			    /* mac_type */
+		0x60, 0x00, 0x00, 0x00,		    /* IPv6 - Part 1 */
+		0x00, 0x00, 0x32, 0x40,		    /* IPv6 - Part 2 */
+		0x02, 0x02, 0x02, 0x02,		    /* IP src */
+		0x02, 0x02, 0x02, 0x02,		    /* IP src */
+		0x02, 0x02, 0x02, 0x02,		    /* IP src */
+		0x02, 0x02, 0x02, 0x02,		    /* IP src */
+		0x01, 0x01, 0x01, 0x01,		    /* IP dst */
+		0x01, 0x01, 0x01, 0x01,		    /* IP dst */
+		0x01, 0x01, 0x01, 0x01,		    /* IP dst */
+		0x01, 0x01, 0x01, 0x01,		    /* IP dst */
+		0x00, 0x00, 0x00, 0x00,		    /* SPI */
+		0x00, 0x00, 0x00, 0x00,		    /* SN */
+		0x00, 0x00, 0x00, 0x00,		    /* IV */
 		0x00, 0x00, 0x00, 0x00,
 	};
+
+	reformat_encap_data[ENCAP_IDX_SRC_MAC] = eth_header->src_mac[0];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 1] = eth_header->src_mac[1];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 2] = eth_header->src_mac[2];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 3] = eth_header->src_mac[3];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 4] = eth_header->src_mac[4];
+	reformat_encap_data[ENCAP_IDX_SRC_MAC + 5] = eth_header->src_mac[5];
 
 	/* dst IP was already converted to big endian */
 	reformat_encap_data[ENCAP_DST_IP_IDX_IP6] = GET_BYTE(rule->encap_dst_ip6[0], 0);
@@ -461,7 +483,7 @@ static doca_error_t add_vxlan_encap_pipe_entry(struct doca_flow_port *port,
 	actions.encap_cfg.encap.outer.ip4.flags_fragment_offset = RTE_BE16(DOCA_FLOW_IP4_FLAG_DONT_FRAGMENT);
 	actions.encap_cfg.encap.outer.ip4.ttl = 17;
 	actions.encap_cfg.encap.tun.type = DOCA_FLOW_TUN_VXLAN;
-	actions.encap_cfg.encap.tun.vxlan_tun_id = rte_cpu_to_be_32(app_cfg->vni << 8);
+	actions.encap_cfg.encap.tun.vxlan_tun_id = DOCA_HTOBE32(app_cfg->vni);
 
 	result =
 		doca_flow_pipe_add_entry(0, pipe->pipe, &match, &actions, NULL, NULL, DOCA_FLOW_NO_WAIT, &status, entry);
@@ -640,12 +662,6 @@ static doca_error_t create_marker_encap_pipe(struct doca_flow_port *port,
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
 	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_SECURE_EGRESS);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg domain: %s", doca_error_get_descr(result));
@@ -739,7 +755,7 @@ destroy_pipe_cfg:
  * @port_id [in]: port ID to forward the packet to
  * @expected_entries [in]: expected number of entries
  * @app_cfg [in]: application configuration struct
- * @l3_type [in]: DOCA_FLOW_L3_TYPE_IP4 / DOCA_FLOW_L3_TYPE_IP6
+ * @l3_type [in]: DOCA_FLOW_L3_META_IPV4 / DOCA_FLOW_L3_META_IPV6
  * @pipe_info [out]: pipe info struct
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
  */
@@ -747,7 +763,7 @@ static doca_error_t create_ipsec_encrypt_pipe(struct doca_flow_port *port,
 					      uint16_t port_id,
 					      int expected_entries,
 					      struct ipsec_security_gw_config *app_cfg,
-					      enum doca_flow_l3_type l3_type,
+					      enum doca_flow_l3_meta l3_type,
 					      struct security_gateway_pipe_info *pipe_info)
 {
 	int nb_actions = 2;
@@ -767,23 +783,27 @@ static doca_error_t create_ipsec_encrypt_pipe(struct doca_flow_port *port,
 	memset(&fwd, 0, sizeof(fwd));
 
 	meta.rule_id = -1;
-	match_mask.meta.pkt_meta = meta.u32;
+	match_mask.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	match.meta.pkt_meta = 0xffffffff;
-	match_mask.outer.l3_type = l3_type;
-	match.outer.l3_type = l3_type;
+	match_mask.parser_meta.outer_l3_type = l3_type;
+	match.parser_meta.outer_l3_type = l3_type;
 
 	if (app_cfg->offload == IPSEC_SECURITY_GW_ESP_OFFLOAD_BOTH ||
 	    app_cfg->offload == IPSEC_SECURITY_GW_ESP_OFFLOAD_ENCAP)
 		actions.has_crypto_encap = true;
 
 	actions.crypto_encap.action_type = DOCA_FLOW_CRYPTO_REFORMAT_ENCAP;
-	actions.crypto_encap.icv_size = 0xffff;
+	actions.crypto_encap.icv_size = get_icv_len_int(app_cfg->icv_length);
 	actions.crypto.resource_type = DOCA_FLOW_CRYPTO_RESOURCE_IPSEC_SA;
 	if (!app_cfg->sw_sn_inc_enable) {
 		actions.crypto.ipsec_sa.sn_en = !app_cfg->sw_sn_inc_enable;
 	}
 	actions.crypto.action_type = DOCA_FLOW_CRYPTO_ACTION_ENCRYPT;
+#ifdef MLX5DV_HWS
+	actions.crypto.crypto_id = UINT32_MAX;
+#else
 	actions.crypto.crypto_id = ENCRYPT_DUMMY_ID;
+#endif
 
 	if (app_cfg->mode == IPSEC_SECURITY_GW_TUNNEL) {
 		actions.crypto_encap.net_type = DOCA_FLOW_CRYPTO_HEADER_ESP_TUNNEL;
@@ -796,14 +816,14 @@ static doca_error_t create_ipsec_encrypt_pipe(struct doca_flow_port *port,
 		memset(actions_arr[1].crypto_encap.encap_data, 0xff, 70);
 		actions_arr[1].crypto_encap.data_size = 70;
 	} else if (app_cfg->mode == IPSEC_SECURITY_GW_TRANSPORT) {
-		actions.crypto_encap.net_type = (l3_type == DOCA_FLOW_L3_TYPE_IP4) ?
+		actions.crypto_encap.net_type = (l3_type == DOCA_FLOW_L3_META_IPV4) ?
 							DOCA_FLOW_CRYPTO_HEADER_ESP_OVER_IPV4 :
 							DOCA_FLOW_CRYPTO_HEADER_ESP_OVER_IPV6;
 		memset(actions.crypto_encap.encap_data, 0xff, 16);
 		actions.crypto_encap.data_size = 16;
 		actions_arr[0] = actions;
 	} else {
-		actions.crypto_encap.net_type = (l3_type == DOCA_FLOW_L3_TYPE_IP4) ?
+		actions.crypto_encap.net_type = (l3_type == DOCA_FLOW_L3_META_IPV4) ?
 							DOCA_FLOW_CRYPTO_HEADER_UDP_ESP_OVER_IPV4 :
 							DOCA_FLOW_CRYPTO_HEADER_UDP_ESP_OVER_IPV6;
 		memset(actions.crypto_encap.encap_data, 0xff, 24);
@@ -827,12 +847,6 @@ static doca_error_t create_ipsec_encrypt_pipe(struct doca_flow_port *port,
 	result = doca_flow_pipe_cfg_set_type(pipe_cfg, DOCA_FLOW_PIPE_BASIC);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg type: %s", doca_error_get_descr(result));
-		goto destroy_pipe_cfg;
-	}
-	result = doca_flow_pipe_cfg_set_enable_strict_matching(pipe_cfg, true);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to set doca_flow_pipe_cfg enable_strict_matching: %s",
-			     doca_error_get_descr(result));
 		goto destroy_pipe_cfg;
 	}
 	result = doca_flow_pipe_cfg_set_domain(pipe_cfg, DOCA_FLOW_PIPE_DOMAIN_SECURE_EGRESS);
@@ -1412,14 +1426,16 @@ static void create_ipsec_encrypt_shared_object_transport_over_udp(struct doca_fl
  *
  * @crypto_cfg [in]: shared object config
  * @rule [in]: encrypt rule
+ * @eth_header [in]: contains the src mac address
  */
 static void create_ipsec_encrypt_shared_object_tunnel(struct doca_flow_crypto_encap_action *crypto_cfg,
-						      struct encrypt_rule *rule)
+						      struct encrypt_rule *rule,
+						      struct doca_flow_header_eth *eth_header)
 {
 	if (rule->encap_l3_type == DOCA_FLOW_L3_TYPE_IP4)
-		create_ipv4_tunnel_encap(rule, false, crypto_cfg->encap_data, &crypto_cfg->data_size);
+		create_ipv4_tunnel_encap(rule, false, eth_header, crypto_cfg->encap_data, &crypto_cfg->data_size);
 	else
-		create_ipv6_tunnel_encap(rule, false, crypto_cfg->encap_data, &crypto_cfg->data_size);
+		create_ipv6_tunnel_encap(rule, false, eth_header, crypto_cfg->encap_data, &crypto_cfg->data_size);
 }
 
 /*
@@ -1440,7 +1456,7 @@ static doca_error_t create_ipsec_encrypt_shared_object(struct ipsec_security_gw_
 	memset(&cfg, 0, sizeof(cfg));
 
 	cfg.domain = DOCA_FLOW_PIPE_DOMAIN_SECURE_EGRESS;
-	cfg.ipsec_sa_cfg.icv_len = app_sa_attrs->icv_length;
+	cfg.ipsec_sa_cfg.icv_len = app_cfg->icv_length;
 	cfg.ipsec_sa_cfg.salt = app_sa_attrs->salt;
 	cfg.ipsec_sa_cfg.key_cfg.key_type = app_sa_attrs->key_type;
 	cfg.ipsec_sa_cfg.key_cfg.key = (void *)&app_sa_attrs->enc_key_data;
@@ -1460,6 +1476,7 @@ static doca_error_t create_ipsec_encrypt_shared_object(struct ipsec_security_gw_
 	return DOCA_SUCCESS;
 }
 
+#ifndef MLX5DV_HWS
 /*
  * Create dummy SA, and config and bind doca flow shared resource with it
  *
@@ -1470,7 +1487,6 @@ static doca_error_t create_ipsec_encrypt_dummy_shared_object(struct ipsec_securi
 {
 	doca_error_t result;
 	struct ipsec_security_gw_sa_attrs dummy_sa_attr = {
-		.icv_length = DOCA_FLOW_CRYPTO_ICV_LENGTH_16,
 		.key_type = DOCA_FLOW_CRYPTO_KEY_256,
 		.enc_key_data[0] = 0x01,
 		.salt = 0x12345678,
@@ -1482,6 +1498,7 @@ static doca_error_t create_ipsec_encrypt_dummy_shared_object(struct ipsec_securi
 
 	return DOCA_SUCCESS;
 }
+#endif
 
 /*
  * Get the relevant pipe for adding the rule
@@ -1551,7 +1568,7 @@ static doca_error_t add_src_ip6_entry(struct doca_flow_port *port,
 	get_pipe_for_rule(rule, pipes, true, &pipe);
 
 	memcpy(match.outer.ip6.src_ip, rule->ip6.src_ip, sizeof(rule->ip6.src_ip));
-	actions.meta.u32[0] = src_ip_id;
+	actions.meta.u32[0] = DOCA_HTOBE32(src_ip_id);
 
 	if (hairpin_status->entries_in_queue == QUEUE_DEPTH - 1)
 		flags = DOCA_FLOW_NO_WAIT;
@@ -1646,13 +1663,13 @@ static doca_error_t add_five_tuple_match_entry(struct doca_flow_port *port,
 		match.outer.ip4.dst_ip = rule->ip4.dst_ip;
 		match.outer.ip4.src_ip = rule->ip4.src_ip;
 	} else {
-		match.meta.u32[0] = src_ip_id;
+		match.meta.u32[0] = DOCA_HTOBE32(src_ip_id);
 		memcpy(match.outer.ip6.dst_ip, rule->ip6.dst_ip, sizeof(rule->ip6.dst_ip));
 	}
 
 	meta.encrypt = 1;
 	meta.rule_id = i;
-	actions.meta.pkt_meta = meta.u32;
+	actions.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 	actions.action_idx = 0;
 
 	if (i == nb_rules - 1 || hairpin_status->entries_in_queue == QUEUE_DEPTH - 1)
@@ -1745,13 +1762,13 @@ doca_error_t add_encrypt_entry(struct encrypt_rule *rule,
 	memset(&match, 0, sizeof(match));
 
 	meta.rule_id = rule_id;
-	match.meta.pkt_meta = meta.u32;
+	match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 
 	actions.action_idx = 0;
 	actions.crypto.crypto_id = rule_id;
 
 	if (app_cfg->mode == IPSEC_SECURITY_GW_TUNNEL) {
-		create_ipsec_encrypt_shared_object_tunnel(&actions.crypto_encap, rule);
+		create_ipsec_encrypt_shared_object_tunnel(&actions.crypto_encap, rule, &ports[SECURED_IDX]->eth_header);
 		if (rule->encap_l3_type == DOCA_FLOW_L3_TYPE_IP4)
 			actions.action_idx = 0;
 		else
@@ -1760,7 +1777,6 @@ doca_error_t add_encrypt_entry(struct encrypt_rule *rule,
 		create_ipsec_encrypt_shared_object_transport(&actions.crypto_encap, rule);
 	else
 		create_ipsec_encrypt_shared_object_transport_over_udp(&actions.crypto_encap, rule);
-	actions.crypto_encap.icv_size = get_icv_len_int(rule->sa_attrs.icv_length);
 	/* add entry to encrypt pipe*/
 	if (app_cfg->debug_mode) {
 		snprintf(encrypt_pipe->entries_info[encrypt_pipe->nb_entries].name, MAX_NAME_LEN, "rule%d", rule_id);
@@ -1807,10 +1823,13 @@ doca_error_t add_encrypt_entry(struct encrypt_rule *rule,
 static doca_error_t bind_encrypt_ids(int nb_rules, struct doca_flow_port *port)
 {
 	doca_error_t result;
-	int i;
+	int i, array_len = nb_rules;
 	uint32_t *res_array;
 
-	res_array = (uint32_t *)malloc((nb_rules + 1) * sizeof(uint32_t));
+#ifndef MLX5DV_HWS
+	array_len++;
+#endif
+	res_array = (uint32_t *)malloc(array_len * sizeof(uint32_t));
 	if (res_array == NULL) {
 		DOCA_LOG_ERR("Failed to allocate ids array");
 		return DOCA_ERROR_NO_MEMORY;
@@ -1819,9 +1838,11 @@ static doca_error_t bind_encrypt_ids(int nb_rules, struct doca_flow_port *port)
 	for (i = 0; i < nb_rules; i++) {
 		res_array[i] = i;
 	}
+#ifndef MLX5DV_HWS
 	res_array[nb_rules] = ENCRYPT_DUMMY_ID;
+#endif
 
-	result = doca_flow_shared_resources_bind(DOCA_FLOW_SHARED_RESOURCE_IPSEC_SA, res_array, nb_rules + 1, port);
+	result = doca_flow_shared_resources_bind(DOCA_FLOW_SHARED_RESOURCE_IPSEC_SA, res_array, array_len, port);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to bind encrypt IDs to the port");
 		free(res_array);
@@ -1903,12 +1924,14 @@ doca_error_t add_encrypt_entries(struct ipsec_security_gw_config *app_cfg,
 		memset(&match, 0, sizeof(match));
 
 		meta.rule_id = rule_id;
-		match.meta.pkt_meta = meta.u32;
+		match.meta.pkt_meta = DOCA_HTOBE32(meta.u32);
 
 		actions.action_idx = 0;
 		actions.crypto.crypto_id = rule_id;
 		if (app_cfg->mode == IPSEC_SECURITY_GW_TUNNEL) {
-			create_ipsec_encrypt_shared_object_tunnel(&actions.crypto_encap, &rules[rule_id]);
+			create_ipsec_encrypt_shared_object_tunnel(&actions.crypto_encap,
+								  &rules[rule_id],
+								  &ports[SECURED_IDX]->eth_header);
 			if (rules[rule_id].encap_l3_type == DOCA_FLOW_L3_TYPE_IP4)
 				actions.action_idx = 0;
 			else
@@ -1917,7 +1940,6 @@ doca_error_t add_encrypt_entries(struct ipsec_security_gw_config *app_cfg,
 			create_ipsec_encrypt_shared_object_transport(&actions.crypto_encap, &rules[rule_id]);
 		else
 			create_ipsec_encrypt_shared_object_transport_over_udp(&actions.crypto_encap, &rules[rule_id]);
-		actions.crypto_encap.icv_size = get_icv_len_int(rules[rule_id].sa_attrs.icv_length);
 
 		if (rule_id == nb_rules - 1 || encrypt_status.entries_in_queue == QUEUE_DEPTH - 1)
 			flags = DOCA_FLOW_NO_WAIT;
@@ -1974,8 +1996,8 @@ doca_error_t ipsec_security_gw_create_encrypt_egress(struct ipsec_security_gw_po
 
 	if (app_cfg->socket_ctx.socket_conf)
 		expected_entries = MAX_NB_RULES;
-	else if (app_cfg->app_rules.nb_encrypted_rules > 0)
-		expected_entries = app_cfg->app_rules.nb_encrypted_rules;
+	else if (app_cfg->app_rules.nb_encrypt_rules > 0)
+		expected_entries = app_cfg->app_rules.nb_encrypt_rules;
 	else /* default value - no entries expected so putting a default value so that pipe creation won't fail */
 		expected_entries = DEF_EXPECTED_ENTRIES;
 
@@ -1987,15 +2009,16 @@ doca_error_t ipsec_security_gw_create_encrypt_egress(struct ipsec_security_gw_po
 		is_root = false;
 	}
 
-	result = bind_encrypt_ids(app_cfg->app_rules.nb_encrypted_rules, secured_port);
+	result = bind_encrypt_ids(app_cfg->app_rules.nb_encrypt_rules, secured_port);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to bind IDs: %s", doca_error_get_descr(result));
 		return result;
 	}
-
+#ifndef MLX5DV_HWS
 	result = create_ipsec_encrypt_dummy_shared_object(app_cfg);
 	if (result != DOCA_SUCCESS)
 		return result;
+#endif
 
 	if (app_cfg->vxlan_encap) {
 		if (app_cfg->marker_encap) {
@@ -2020,7 +2043,7 @@ doca_error_t ipsec_security_gw_create_encrypt_egress(struct ipsec_security_gw_po
 					   ports[SECURED_IDX]->port_id,
 					   expected_entries,
 					   app_cfg,
-					   DOCA_FLOW_L3_TYPE_IP4,
+					   DOCA_FLOW_L3_META_IPV4,
 					   &app_cfg->encrypt_pipes.ipv4_encrypt_pipe);
 	if (result != DOCA_SUCCESS)
 		return result;
@@ -2030,7 +2053,7 @@ doca_error_t ipsec_security_gw_create_encrypt_egress(struct ipsec_security_gw_po
 					   ports[SECURED_IDX]->port_id,
 					   expected_entries,
 					   app_cfg,
-					   DOCA_FLOW_L3_TYPE_IP6,
+					   DOCA_FLOW_L3_META_IPV6,
 					   &app_cfg->encrypt_pipes.ipv6_encrypt_pipe);
 	if (result != DOCA_SUCCESS)
 		return result;
@@ -2058,8 +2081,8 @@ doca_error_t ipsec_security_gw_insert_encrypt_rules(struct ipsec_security_gw_por
 
 	if (app_cfg->socket_ctx.socket_conf)
 		expected_entries = MAX_NB_RULES;
-	else if (app_cfg->app_rules.nb_encrypted_rules > 0)
-		expected_entries = app_cfg->app_rules.nb_encrypted_rules;
+	else if (app_cfg->app_rules.nb_encrypt_rules > 0)
+		expected_entries = app_cfg->app_rules.nb_encrypt_rules;
 	else /* default value - no entries expected so putting a default value so that pipe creation won't fail */
 		expected_entries = DEF_EXPECTED_ENTRIES;
 
@@ -2204,7 +2227,7 @@ static doca_error_t prepare_packet_tunnel(struct rte_mbuf **m,
 	struct rte_ipv6_hdr *ipv6;
 	struct rte_mbuf *last_seg;
 	struct encrypt_rule *rule = &ctx->encrypt_rules[rule_idx];
-	uint32_t icv_len = get_icv_len_int(rule->sa_attrs.icv_length);
+	uint32_t icv_len = get_icv_len_int(ctx->config->icv_length);
 	bool sw_sn_inc = ctx->config->sw_sn_inc_enable;
 	void *trailer_pointer;
 	uint32_t payload_len, esp_len, encrypted_len, padding_len, trailer_len, padding_offset;
@@ -2246,13 +2269,21 @@ static doca_error_t prepare_packet_tunnel(struct rte_mbuf **m,
 
 	/* add the new IP and ESP headers */
 	if (rule->encap_l3_type == DOCA_FLOW_L3_TYPE_IP4) {
-		create_ipv4_tunnel_encap(rule, sw_sn_inc, (void *)nh, &reformat_encap_data_len);
+		create_ipv4_tunnel_encap(rule,
+					 sw_sn_inc,
+					 &ctx->ports[SECURED_IDX]->eth_header,
+					 (void *)nh,
+					 &reformat_encap_data_len);
 		ipv4 = (void *)(nh + 1);
 		ipv4->total_length = rte_cpu_to_be_16((*m)->pkt_len - sizeof(struct rte_ether_hdr));
 		ipv4->hdr_checksum = 0;
 		ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
 	} else {
-		create_ipv6_tunnel_encap(rule, sw_sn_inc, (void *)nh, &reformat_encap_data_len);
+		create_ipv6_tunnel_encap(rule,
+					 sw_sn_inc,
+					 &ctx->ports[SECURED_IDX]->eth_header,
+					 (void *)nh,
+					 &reformat_encap_data_len);
 		ipv6 = (void *)(nh + 1);
 		ipv6->payload_len = rte_cpu_to_be_16((*m)->pkt_len - sizeof(struct rte_ether_hdr) - sizeof(*ipv6));
 	}
@@ -2294,7 +2325,7 @@ static doca_error_t prepare_packet_transport(struct rte_mbuf **m,
 	struct rte_ipv6_hdr *ipv6;
 	struct rte_mbuf *last_seg;
 	struct encrypt_rule *rule = &ctx->encrypt_rules[rule_idx];
-	uint32_t icv_len = get_icv_len_int(rule->sa_attrs.icv_length);
+	uint32_t icv_len = get_icv_len_int(ctx->config->icv_length);
 	void *trailer_pointer;
 	uint32_t payload_len, esp_len, encrypted_len, padding_len, trailer_len, padding_offset, l2_l3_len;
 	uint16_t reformat_encap_data_len;

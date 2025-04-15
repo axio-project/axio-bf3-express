@@ -133,7 +133,7 @@ static doca_error_t args_validation_callback(void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -179,7 +179,7 @@ static doca_error_t file_path_callback(void *param, void *config)
 }
 
 /*
- * ARGP Callback - Handle Comm Channel DOCA device representor PCI address parameter
+ * ARGP Callback - Handle Comch DOCA device representor PCI address parameter
  *
  * @param [in]: Input parameter
  * @config [in/out]: Program configuration context
@@ -441,7 +441,7 @@ doca_error_t register_dma_copy_params(void)
 		return result;
 	}
 
-	/* Create and register Comm Channel DOCA device PCI address */
+	/* Create and register DOCA Comch device PCI address */
 	result = doca_argp_param_create(&dev_pci_addr_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
@@ -449,7 +449,7 @@ doca_error_t register_dma_copy_params(void)
 	}
 	doca_argp_param_set_short_name(dev_pci_addr_param, "p");
 	doca_argp_param_set_long_name(dev_pci_addr_param, "pci-addr");
-	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comm Channel device PCI address");
+	doca_argp_param_set_description(dev_pci_addr_param, "DOCA Comch device PCI address");
 	doca_argp_param_set_callback(dev_pci_addr_param, dev_pci_addr_callback);
 	doca_argp_param_set_type(dev_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	doca_argp_param_set_mandatory(dev_pci_addr_param);
@@ -459,7 +459,7 @@ doca_error_t register_dma_copy_params(void)
 		return result;
 	}
 
-	/* Create and register Comm Channel DOCA device representor PCI address */
+	/* Create and register DOCA Comch device representor PCI address */
 	result = doca_argp_param_create(&rep_pci_addr_param);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to create ARGP param: %s", doca_error_get_descr(result));
@@ -468,7 +468,7 @@ doca_error_t register_dma_copy_params(void)
 	doca_argp_param_set_short_name(rep_pci_addr_param, "r");
 	doca_argp_param_set_long_name(rep_pci_addr_param, "rep-pci");
 	doca_argp_param_set_description(rep_pci_addr_param,
-					"DOCA Comm Channel device representor PCI address (needed only on DPU)");
+					"DOCA Comch device representor PCI address (needed only on DPU)");
 	doca_argp_param_set_callback(rep_pci_addr_param, rep_pci_addr_callback);
 	doca_argp_param_set_type(rep_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(rep_pci_addr_param);
@@ -905,6 +905,7 @@ doca_error_t host_start_dma_copy(struct dma_copy_cfg *dma_cfg, struct comch_cfg 
 
 	if (dma_cfg->comch_state == COMCH_ERROR) {
 		DOCA_LOG_ERR("Failure was detected in dma copy");
+		result = DOCA_ERROR_BAD_STATE;
 		goto free_buffer;
 	}
 
@@ -1164,6 +1165,7 @@ doca_error_t dpu_start_dma_copy(struct dma_copy_cfg *dma_cfg, struct comch_cfg *
 
 	if (dma_cfg->comch_state == COMCH_ERROR) {
 		DOCA_LOG_ERR("Comch DMA metadata negotiation failed");
+		result = DOCA_ERROR_BAD_STATE;
 		goto stop_dma;
 	}
 

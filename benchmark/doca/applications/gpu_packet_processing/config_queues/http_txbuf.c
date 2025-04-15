@@ -140,7 +140,18 @@ doca_error_t create_tx_buf(struct tx_buf *buf,
 				    buf->gpu_pkt_addr,
 				    buf->num_packets * buf->max_pkt_sz,
 				    &(buf->dmabuf_fd));
-	if (status == DOCA_SUCCESS) {
+	if (status != DOCA_SUCCESS) {
+		DOCA_LOG_INFO("Mapping send queue buffer (0x%p size %dB) with legacy nvidia-peermem mode",
+			      buf->gpu_pkt_addr,
+			      buf->num_packets * buf->max_pkt_sz);
+
+		/* If failed, use nvidia-peermem legacy method */
+		status = doca_mmap_set_memrange(buf->mmap, buf->gpu_pkt_addr, (buf->num_packets * buf->max_pkt_sz));
+		if (status != DOCA_SUCCESS) {
+			DOCA_LOG_ERR("Unable to start buf: doca mmap internal error");
+			return status;
+		}
+	} else {
 		DOCA_LOG_INFO("Mapping send queue buffer (0x%p size %dB dmabuf fd %d) with dmabuf mode",
 			      buf->gpu_pkt_addr,
 			      (buf->num_packets * buf->max_pkt_sz),
@@ -153,19 +164,6 @@ doca_error_t create_tx_buf(struct tx_buf *buf,
 						       (buf->num_packets * buf->max_pkt_sz));
 		if (status != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to set dmabuf memrange for mmap %s", doca_error_get_descr(status));
-			return status;
-		}
-	}
-
-	if (status != DOCA_SUCCESS) {
-		DOCA_LOG_INFO("Mapping send queue buffer (0x%p size %dB) with legacy nvidia-peermem mode",
-			      buf->gpu_pkt_addr,
-			      buf->num_packets * buf->max_pkt_sz);
-
-		/* If failed, use nvidia-peermem legacy method */
-		status = doca_mmap_set_memrange(buf->mmap, buf->gpu_pkt_addr, (buf->num_packets * buf->max_pkt_sz));
-		if (status != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Unable to start buf: doca mmap internal error");
 			return status;
 		}
 	}

@@ -31,6 +31,7 @@
 
 #include <doca_log.h>
 #include <doca_flow.h>
+#include <doca_bitfield.h>
 
 #include "doca_error.h"
 #include "flow_common.h"
@@ -246,7 +247,7 @@ static doca_error_t create_random_sampling_pipe(struct doca_flow_port *port,
 	memset(&fwd, 0, sizeof(fwd));
 
 	/* Calculate the mask according to requested percentage */
-	match_mask.parser_meta.random = get_random_mask(percentage);
+	match_mask.parser_meta.random = DOCA_HTOBE16(get_random_mask(percentage));
 	/*
 	 * Specific value 0, 0 is valid value for any supported percentage.
 	 */
@@ -337,7 +338,7 @@ static doca_error_t create_random_distribution_pipe(struct doca_flow_port *port,
 	memset(&fwd, 0, sizeof(fwd));
 
 	/* The distribution is determined by number of entries, we can use full mask */
-	match_mask.parser_meta.random = UINT16_MAX;
+	match_mask.parser_meta.random = DOCA_HTOBE16(UINT16_MAX);
 
 	result = doca_flow_pipe_cfg_create(&pipe_cfg, port);
 	if (result != DOCA_SUCCESS) {
@@ -362,8 +363,9 @@ static doca_error_t create_random_distribution_pipe(struct doca_flow_port *port,
 	}
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = &rss_queues;
-	fwd.num_of_queues = UINT32_MAX;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = &rss_queues;
+	fwd.rss.nr_queues = UINT32_MAX;
 
 	result = doca_flow_pipe_create(pipe_cfg, &fwd, NULL, pipe);
 destroy_pipe_cfg:
@@ -393,8 +395,9 @@ static doca_error_t add_random_distribution_pipe_entries(struct doca_flow_pipe *
 	memset(&fwd, 0, sizeof(fwd));
 
 	fwd.type = DOCA_FLOW_FWD_RSS;
-	fwd.rss_queues = &queue;
-	fwd.num_of_queues = 1;
+	fwd.rss_type = DOCA_FLOW_RESOURCE_TYPE_NON_SHARED;
+	fwd.rss.queues_array = &queue;
+	fwd.rss.nr_queues = 1;
 
 	for (i = 0; i < nb_entries; i++) {
 		queue = i;
@@ -476,8 +479,8 @@ static doca_error_t random_distribution_results(uint16_t port_id,
 {
 	struct rte_mbuf *packets[PACKET_BURST];
 	struct doca_flow_resource_query root_query_stats;
-	double actuall_percentage;
-	uint32_t total_packets;
+	double actuall_percentage, total_percentage = 0;
+	uint32_t total_packets, total_dist_packets = 0;
 	uint16_t nb_packets;
 	doca_error_t result;
 	int i;
@@ -497,6 +500,8 @@ static doca_error_t random_distribution_results(uint16_t port_id,
 	for (i = 0; i < nb_queues; i++) {
 		nb_packets = rte_eth_rx_burst(port_id, i, packets, PACKET_BURST);
 		actuall_percentage = GET_PERCENTAGE(nb_packets, total_packets);
+		total_dist_packets += nb_packets;
+		total_percentage += actuall_percentage;
 
 		DOCA_LOG_INFO("Queue %u received %u packets which is %g%% of the traffic (%u/%u)",
 			      i,
@@ -505,6 +510,12 @@ static doca_error_t random_distribution_results(uint16_t port_id,
 			      nb_packets,
 			      total_packets);
 	}
+
+	DOCA_LOG_INFO("The distribution pipe received %u packets which is %g%% of the traffic (%u/%u)",
+		      total_dist_packets,
+		      total_percentage,
+		      total_dist_packets,
+		      total_packets);
 
 	return DOCA_SUCCESS;
 }
@@ -516,16 +527,18 @@ static doca_error_t random_distribution_results(uint16_t port_id,
  *  1. Sampling certain percentage of traffic.
  *  2. Random distribution over port/queues.
  *
- * @nb_queues [in]: number of queues the sample will use
+ * @nb_steering_queues [in]: number of steering queues the sample will use
+ * @nb_rss_queues [in]: number of rss queues the sample will use
  * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise.
  */
-doca_error_t flow_random(int nb_queues)
+doca_error_t flow_random(int nb_steering_queues, int nb_rss_queues)
 {
 	int nb_ports = 2;
 	struct flow_resources resource = {0};
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe *root_pipe;
 	struct doca_flow_pipe *sampling_pipe;
 	struct doca_flow_pipe *distribution_pipe;
@@ -534,21 +547,22 @@ doca_error_t flow_random(int nb_queues)
 	struct doca_flow_pipe_entry *random_entry[nb_ports];
 	struct entries_status status;
 	double requested_percentage = 12.5;
-	uint32_t num_of_entries = 3 + nb_queues;
+	uint32_t num_of_entries = 3 + nb_rss_queues;
 	doca_error_t result;
 	int port_id;
 
 	memset(&status, 0, sizeof(status));
 	resource.nr_counters = num_of_entries;
 
-	result = init_doca_flow(nb_queues, "vnf,hws", &resource, nr_shared_resources);
+	result = init_doca_flow(nb_steering_queues, "vnf,hws", &resource, nr_shared_resources);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA Flow: %s", doca_error_get_descr(result));
 		return result;
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_steering_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();
@@ -558,7 +572,7 @@ doca_error_t flow_random(int nb_queues)
 	for (port_id = 0; port_id < nb_ports; port_id++) {
 		memset(&status, 0, sizeof(status));
 
-		result = create_random_distribution_pipe(ports[port_id], nb_queues, &distribution_pipe);
+		result = create_random_distribution_pipe(ports[port_id], nb_rss_queues, &distribution_pipe);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to create random distribution pipe: %s", doca_error_get_descr(result));
 			stop_doca_flow_ports(nb_ports, ports);
@@ -566,7 +580,7 @@ doca_error_t flow_random(int nb_queues)
 			return result;
 		}
 
-		result = add_random_distribution_pipe_entries(distribution_pipe, nb_queues, &status);
+		result = add_random_distribution_pipe_entries(distribution_pipe, nb_rss_queues, &status);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to add random distribution pipe entries: %s",
 				     doca_error_get_descr(result));
@@ -640,7 +654,7 @@ doca_error_t flow_random(int nb_queues)
 		}
 
 		/* Show the results for distribution */
-		result = random_distribution_results(port_id, nb_queues, root2distribution_entry[port_id]);
+		result = random_distribution_results(port_id, nb_rss_queues, root2distribution_entry[port_id]);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to show distribution results in port %u: %s",
 				     port_id,

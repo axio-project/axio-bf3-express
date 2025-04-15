@@ -66,7 +66,7 @@ process_packet(struct flexio_dev_thread_ctx *dtctx)
   /* Ring DB */
   // __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
   dev_ctx.sq_ctx.sq_pi++;
-  flexio_dev_qp_sq_ring_db(dtctx, dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
+  flexio_dev_qp_sq_ring_db(dev_ctx.sq_ctx.sq_pi, dev_ctx.sq_ctx.sq_number);
   // __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
   // flexio_dev_dbr_rq_inc_pi(dev_ctx.rq_ctx.rq_dbr);
 }

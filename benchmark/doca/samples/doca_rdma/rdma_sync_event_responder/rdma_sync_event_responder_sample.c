@@ -112,6 +112,7 @@ destroy_se:
 /*
  * Write the connection details and the mmap details for the requester to read,
  * and read the connection details of the requester
+ * In DC transport mode it is only needed to read the remote connection details
  *
  * @cfg [in]: Configuration parameters
  * @resources [in/out]: DOCA RDMA resources
@@ -142,6 +143,10 @@ static doca_error_t write_read_connection(struct rdma_config *cfg, struct rdma_r
 	DOCA_LOG_INFO("You can now copy %s and %s to the requester",
 		      cfg->local_connection_desc_path,
 		      cfg->remote_resource_desc_path);
+
+	if (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
+		return result;
+	}
 	DOCA_LOG_INFO("Please copy %s from the requester and then press enter", cfg->remote_connection_desc_path);
 
 	/* Wait for enter */
@@ -173,7 +178,8 @@ static doca_error_t rdma_sync_event_responder_export_and_connect(struct rdma_res
 	/* Export DOCA RDMA */
 	result = doca_rdma_export(resources->rdma,
 				  &(resources->rdma_conn_descriptor),
-				  &(resources->rdma_conn_descriptor_size));
+				  &(resources->rdma_conn_descriptor_size),
+				  &(resources->connections[0]));
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to export DOCA RDMA: %s", doca_error_get_descr(result));
 		return result;
@@ -196,10 +202,14 @@ static doca_error_t rdma_sync_event_responder_export_and_connect(struct rdma_res
 		return result;
 	}
 
+	if (resources->cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
+		return result;
+	}
 	/* Connect RDMA */
 	result = doca_rdma_connect(resources->rdma,
 				   resources->remote_rdma_conn_descriptor,
-				   resources->remote_rdma_conn_descriptor_size);
+				   resources->remote_rdma_conn_descriptor_size,
+				   resources->connections[0]);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to connect the responder's DOCA RDMA to the requester's DOCA RDMA: %s",
 			     doca_error_get_descr(result));
@@ -305,14 +315,9 @@ static void rdma_sync_event_responder_state_change_callback(const union doca_dat
 
 		result = rdma_sync_event_responder_export_and_connect(resources);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Rdma_sync_event_responder_export_and_connect() failed: %s",
+			DOCA_LOG_ERR("rdma_sync_event_responder_export_and_connect() failed: %s",
 				     doca_error_get_descr(result));
-			DOCA_ERROR_PROPAGATE(resources->first_encountered_error, result);
-
-			if (resources->cfg->use_rdma_cm == true)
-				(void)rdma_cm_disconnect(resources);
-
-			(void)doca_ctx_stop(ctx);
+			break;
 		} else
 			DOCA_LOG_INFO("RDMA context finished initialization");
 
@@ -321,7 +326,7 @@ static void rdma_sync_event_responder_state_change_callback(const union doca_dat
 
 		result = responder_wait_for_requester_finish(resources);
 		if (result != DOCA_SUCCESS) {
-			DOCA_ERROR_PROPAGATE(resources->first_encountered_error, result);
+			DOCA_LOG_ERR("responder_wait_for_requester_finish() failed: %s", doca_error_get_descr(result));
 		}
 		break;
 	case DOCA_CTX_STATE_STOPPING:
@@ -342,6 +347,12 @@ static void rdma_sync_event_responder_state_change_callback(const union doca_dat
 		break;
 	default:
 		break;
+	}
+
+	/* If something failed - update that an error was encountered and stop the ctx */
+	if (result != DOCA_SUCCESS) {
+		DOCA_ERROR_PROPAGATE(resources->first_encountered_error, result);
+		(void)doca_ctx_stop(ctx);
 	}
 }
 

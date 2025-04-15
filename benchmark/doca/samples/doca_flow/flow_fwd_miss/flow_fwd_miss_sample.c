@@ -269,7 +269,8 @@ static doca_error_t create_push_pipe(struct doca_flow_port *port,
 
 	actions.has_push = true;
 	actions.push.type = DOCA_FLOW_PUSH_ACTION_VLAN;
-	actions.push.vlan.tci = rte_cpu_to_be_16(0x0123);
+	actions.push.vlan.eth_type = rte_cpu_to_be_16(DOCA_FLOW_ETHER_TYPE_VLAN);
+	actions.push.vlan.vlan_hdr.tci = rte_cpu_to_be_16(0x0123);
 
 	result = create_basic_pipe(port, "PUSH_PIPE", &match, actions_arr, NULL, fwd, NULL, 1, 1, false, false, &pipe);
 	if (result != DOCA_SUCCESS) {
@@ -509,6 +510,7 @@ doca_error_t flow_fwd_miss(int nb_queues)
 	uint32_t nr_shared_resources[SHARED_RESOURCE_NUM_VALUES] = {0};
 	struct doca_flow_port *port, *ports[nb_ports];
 	struct doca_dev *dev_arr[nb_ports];
+	uint32_t actions_mem_size[nb_ports];
 	struct doca_flow_pipe **pipes, *pipes_array[nb_ports][NUMBER_OF_PIPES];
 	struct doca_flow_fwd fwd_port = {.type = DOCA_FLOW_FWD_PORT};
 	struct entries_status status;
@@ -523,7 +525,8 @@ doca_error_t flow_fwd_miss(int nb_queues)
 	}
 
 	memset(dev_arr, 0, sizeof(struct doca_dev *) * nb_ports);
-	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr);
+	ARRAY_INIT(actions_mem_size, ACTIONS_MEM_SIZE(nb_queues, num_of_entries));
+	result = init_doca_flow_ports(nb_ports, ports, true, dev_arr, actions_mem_size);
 	if (result != DOCA_SUCCESS) {
 		DOCA_LOG_ERR("Failed to init DOCA ports: %s", doca_error_get_descr(result));
 		doca_flow_destroy();

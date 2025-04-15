@@ -37,6 +37,7 @@ subdir('grpc')
 
 app_dependencies += dependency_psp_gateway_grpc
 app_dependencies += grpc_dependencies
+app_dependencies += json_c_dependency
 
 app_srcs = files([
 	'psp_gw_flows.cpp',
@@ -55,8 +56,9 @@ vanilla_app_srcs = [
 executable(DOCA_PREFIX + APP_NAME,
 	app_srcs + vanilla_app_srcs,
 	override_options: ['cpp_std=c++17'],
-	c_args : base_c_args,
-	cpp_args: base_cpp_args + grpc_cpp_args,
+	c_args : grpc_c_args,
+	cpp_args: grpc_cpp_args,
+	link_args : grpc_link_args,
 	dependencies : app_dependencies,
 	include_directories : app_inc_dirs,
 	install: install_apps)

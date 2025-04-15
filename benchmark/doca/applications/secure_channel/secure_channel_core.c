@@ -244,6 +244,7 @@ static doca_error_t prepare_local_memory(struct local_memory_bufs *local_mem,
 					 uint32_t permissions)
 {
 	size_t data_length = buf_len * num_bufs;
+	size_t modulo;
 	doca_error_t result;
 
 	/* Open device to use for local memory registration */
@@ -253,7 +254,10 @@ static doca_error_t prepare_local_memory(struct local_memory_bufs *local_mem,
 		return result;
 	}
 
-	local_mem->buf_data = (char *)aligned_alloc(CACHE_ALIGN, data_length);
+	/* Aligned_alloc requires the length to be a multiple of the alignment value so may need to pad up */
+	modulo = data_length % CACHE_ALIGN;
+	local_mem->buf_data =
+		(char *)aligned_alloc(CACHE_ALIGN, data_length + (modulo == 0 ? 0 : CACHE_ALIGN - modulo));
 	if (local_mem->buf_data == NULL) {
 		DOCA_LOG_ERR("Failed allocate buffer memory of length: %lu", data_length);
 		result = DOCA_ERROR_NO_MEMORY;
@@ -1065,7 +1069,7 @@ doca_error_t register_secure_channel_params(void)
 	}
 	doca_argp_param_set_short_name(pci_addr_param, "p");
 	doca_argp_param_set_long_name(pci_addr_param, "pci-addr");
-	doca_argp_param_set_description(pci_addr_param, "DOCA Comm Channel device PCI address");
+	doca_argp_param_set_description(pci_addr_param, "DOCA Comch device PCI address");
 	doca_argp_param_set_callback(pci_addr_param, dev_pci_addr_callback);
 	doca_argp_param_set_type(pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	doca_argp_param_set_mandatory(pci_addr_param);
@@ -1084,7 +1088,7 @@ doca_error_t register_secure_channel_params(void)
 	doca_argp_param_set_short_name(rep_pci_addr_param, "r");
 	doca_argp_param_set_long_name(rep_pci_addr_param, "rep-pci");
 	doca_argp_param_set_description(rep_pci_addr_param,
-					"DOCA Comm Channel device representor PCI address (needed only on DPU)");
+					"DOCA Comch device representor PCI address (needed only on DPU)");
 	doca_argp_param_set_callback(rep_pci_addr_param, rep_pci_addr_callback);
 	doca_argp_param_set_type(rep_pci_addr_param, DOCA_ARGP_TYPE_STRING);
 	result = doca_argp_register_param(rep_pci_addr_param);
