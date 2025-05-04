@@ -36,6 +36,9 @@ third_party/doca_*
 # nicc specific
 build/
 bin/
+benchmark/doca/applications/
+benchmark/doca/samples/
+benchmark/flexio/
 *.a
 *.o
 
