@@ -1,2 +1,0 @@
-option('cpu', type: 'array', value: ['bf3'], choices: ['cx7', 'bf3', 'cx8'],
-       description: 'Indicates which types of DPA CPU are going to be used.')
