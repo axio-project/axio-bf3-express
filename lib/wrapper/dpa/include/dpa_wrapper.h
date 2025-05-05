@@ -1,10 +1,12 @@
 #ifndef DPA_WRAPPER_H_
 #define DPA_WRAPPER_H_
 
+#include <stddef.h>
+
 // #include <libflexio-libc/stdio.h>
-// #include <libflexio-libc/string.h>
+#include <libflexio-libc/string.h>
 #include <libflexio-dev/flexio_dev.h>
-// #include <libflexio-dev/flexio_dev_err.h>
+#include <libflexio-dev/flexio_dev_err.h>
 #include <libflexio-dev/flexio_dev_queue_access.h>
 #include <dpaintrin.h>
 
@@ -12,7 +14,7 @@
 
 
 /* ----------------------------User defined functions---------------------------- */
-extern void process_packet(struct flexio_dev_thread_ctx *ctx);
+extern void process_packet(void);
 
 // /*
 //  * Initialize the CQ context
@@ -63,25 +65,25 @@ extern void process_packet(struct flexio_dev_thread_ctx *ctx);
 // 	ctx->sq_dbr++;
 // }
 
-// /*
-//  * Increase consumer index of the CQ,
-//  * Once a CQE is polled, the consumer index is increased.
-//  * Upon completing a CQ epoch, the HW owner bit is flipped.
-//  *
-//  * @cq_ctx [in]: CQ context
-//  * @cq_idx_mask [in]: CQ index mask which indicates when the CQ is full
-//  */
-// static void
-// step_cq(struct cq_ctx_t *cq_ctx, uint32_t cq_idx_mask)
-// {
-// 	cq_ctx->cq_idx++;
-// 	cq_ctx->cqe = &cq_ctx->cq_ring[cq_ctx->cq_idx & cq_idx_mask];
-// 	/* check for wrap around */
-// 	if (!(cq_ctx->cq_idx & cq_idx_mask))
-// 		cq_ctx->cq_hw_owner_bit = !cq_ctx->cq_hw_owner_bit;
+/*
+ * Increase consumer index of the CQ,
+ * Once a CQE is polled, the consumer index is increased.
+ * Upon completing a CQ epoch, the HW owner bit is flipped.
+ *
+ * @cq_ctx [in]: CQ context
+ * @cq_idx_mask [in]: CQ index mask which indicates when the CQ is full
+ */
+static void
+step_cq(struct cq_ctx_t *cq_ctx, uint32_t cq_idx_mask)
+{
+	cq_ctx->cq_idx++;
+	cq_ctx->cqe = &cq_ctx->cq_ring[cq_ctx->cq_idx & cq_idx_mask];
+	/* check for wrap around */
+	if (!(cq_ctx->cq_idx & cq_idx_mask))
+		cq_ctx->cq_hw_owner_bit = !cq_ctx->cq_hw_owner_bit;
 
-// 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-// 	flexio_dev_dbr_cq_set_ci(cq_ctx->cq_dbr, cq_ctx->cq_idx);
-// }
+	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	flexio_dev_dbr_cq_set_ci(cq_ctx->cq_dbr, cq_ctx->cq_idx);
+}
 
 #endif

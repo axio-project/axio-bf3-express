@@ -30,15 +30,13 @@ DOCA_TOOLS="/opt/mellanox/doca/tools"
 DPACC="${DOCA_TOOLS}/dpacc"
 
 # Device CC flags
-# DEV_CC_FLAGS="-Wall,-Wextra,-Wpedantic,-Werror,-O0,-g,-DE_MODE_LE,-ffreestanding,-mabi=lp64,-mno-relax,-mcmodel=medany,-nostdlib,-Wdouble-promotion"
-DEVICE_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra,-O3,-ffreestanding,-mcmodel=medany,-DE_MODE_LE"         
+DEV_CC_FLAGS="-DE_MODE_LE,-DFLEXIO_DEV_ALLOW_EXPERIMENTAL_API,-Wall,-Wextra,-Wpedantic,-Wdouble-promotion,-Wno-empty-translation-unit,-Wmissing-prototypes,-Wno-unused-function,-Wstrict-prototypes,-ffreestanding,-mcmodel=medany,-g,-O2,-gdwarf-4,-Werror" # error on warnings
+
 DEV_INC_DIR="-I$CUR_DIR/include -I$LIB_DIR"
 DEVICE_OPTIONS="${DEV_CC_FLAGS},${DEV_INC_DIR}"
 
 # Host flags
-HOST_CC_FLAGS="-Wno-deprecated-declarations -Werror -Wall -Wextra"
-# HOST_OPTIONS="-Wno-deprecated-declarations"
-HOST_OPTIONS="${HOST_CC_FLAGS}"
+HOST_OPTIONS="-fPIC,-DFLEXIO_ALLOW_EXPERIMENTAL_API,-Wno-deprecated-declarations,-Werror,-Wall,-Wextra"
 
 # Compile the DPA (kernel) device source code using the DPACC
 ${DPACC} ${SOURCE_FILE} -c \

@@ -17,20 +17,19 @@
 /* ----------------------------Structure defination used on host---------------------------- */
 // metadata of a dpa cq
 struct dpa_cq {
-    uint32_t cq_num;
-    uint32_t log_cq_depth;
-    flexio_uintptr_t cq_ring_daddr;
-    flexio_uintptr_t cq_dbr_daddr;
+    uint32_t cq_num;                /* CQ number */
+    uint32_t log_cq_depth;          /* Depth of CQ in the logarithm */
+    flexio_uintptr_t cq_ring_daddr; /* CQ ring address in DPA */
+    flexio_uintptr_t cq_dbr_daddr;  /* CQ Doorbell register address in DPA */
 } __attribute__((__packed__, aligned(8)));
-
 
 // metadata of a dpa wq, used for Ethernet mode
 struct dpa_eth_wq {
-    uint32_t wq_num;
-    uint32_t wqd_mkey_id;
-    flexio_uintptr_t wq_ring_daddr;
-    flexio_uintptr_t wq_dbr_daddr;
-    flexio_uintptr_t wqd_daddr;
+    uint32_t wq_num;                 /* WQ number */
+    uint32_t wqd_mkey_id;            /* WQ MKEY ID */
+    flexio_uintptr_t wq_ring_daddr;  /* WQ ring address in DPA */
+    flexio_uintptr_t wq_dbr_daddr;   /* WQ Doorbell register address in DPA */
+    flexio_uintptr_t wqd_daddr;      /* WQ data start address in DPA */
 } __attribute__((__packed__, aligned(8)));
 
 // metadata of a dpa qp, used for RDMA mode
@@ -68,7 +67,9 @@ struct dpa_data_queues {
 } __attribute__((__packed__, aligned(8)));
 
 /* ----------------------------Structure defination used on device---------------------------- */
-/* CQ Context */
+/* Sample DPA CQ metadata structure.
+ * Contains all data needed to DPA to work with CQ.
+ */
 struct cq_ctx_t {
 	uint32_t cq_number;			/* CQ number */
 	struct flexio_dev_cqe64 *cq_ring;	/* CQEs buffer */
@@ -78,14 +79,18 @@ struct cq_ctx_t {
 	uint32_t *cq_dbr;			/* CQ doorbell record */
 };
 
-/* RQ Context */
+/* Sample DPA RQ metadata structure.
+ * Contains all data needed to DPA to work with RQ.
+ */
 struct rq_ctx_t {
 	uint32_t rq_number;				/* RQ number */
 	struct flexio_dev_wqe_rcv_data_seg *rq_ring;	/* WQEs buffer */
 	uint32_t *rq_dbr;				/* RQ doorbell record */
 };
 
-/* SQ Context */
+/* Sample DPA SQ metadata structure.
+ * Contains all data needed to DPA to work with SQ.
+ */
 struct sq_ctx_t {
 	uint32_t sq_number;			/* SQ number */
 	uint32_t sq_wqe_seg_idx;		/* WQE segment index */
@@ -94,7 +99,9 @@ struct sq_ctx_t {
 	uint32_t sq_pi;				/* SQ producer index */
 };
 
-/* SQ data buffer */
+/* Sample DPA send metadata structure.
+ * Contains SQ ring and data buffer for sending.
+ */
 struct dt_ctx_t {
 	void *sq_tx_buff;	/* SQ TX buffer */
 	uint32_t tx_buff_idx;	/* TX buffer index */

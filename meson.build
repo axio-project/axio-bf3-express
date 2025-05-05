@@ -102,12 +102,12 @@ endif
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
   if doca_version == '2.5'
     doca_modules = ['doca-grpc-libs', 'doca-libs']
-  else # 2.8
+  else # 2.9.2
     doca_modules = [
       'doca-aes-gcm',
       'doca-apsh',
       'doca-comch',
-      'doca-comm-channel',
+    #   'doca-comm-channel',
       'doca-common',
       'doca-compress',
       'doca-devemu',
@@ -120,6 +120,7 @@ if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
       'doca-pcc',
       'doca-rdma',
       'doca-sha',
+	  'doca-telemetry',
       'doca-telemetry-exporter',
       'doca-urom'
     ]
@@ -127,12 +128,12 @@ if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
 elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64'
   if doca_version == '2.5'
     doca_modules = ['doca-grpc-libs', 'doca-libs']
-  else # 2.8
+  else # 2.9.2
     doca_modules = [
       'doca-aes-gcm',
       'doca-apsh',
       'doca-comch',
-      'doca-comm-channel',
+    #   'doca-comm-channel',
       'doca-common',
       'doca-compress',
       'doca-devemu',
@@ -145,6 +146,7 @@ elif host_machine.cpu_family() == 'arm' or host_machine.cpu_family() == 'aarch64
       'doca-pcc',
       'doca-rdma',
       'doca-sha',
+	  'doca-telemetry',
       'doca-telemetry-exporter',
       'doca-urom'
     ]
