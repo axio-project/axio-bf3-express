@@ -9,5 +9,5 @@ git clone --recurse-submodules git@github.com:axio-project/nicc.git
 ```
 
 ```bash
-sudo apt-get install binutils-dev nlohmann-json3-dev ntpdate
+sudo apt-get install binutils-dev meson nlohmann-json3-dev ntpdate
 ```
