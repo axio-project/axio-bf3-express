@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-#include <libflexio-libc/stdio.h>
+// #include <libflexio-libc/stdio.h>
 #include <libflexio-libc/string.h>
 #include <libflexio-dev/flexio_dev.h>
 #include <libflexio-dev/flexio_dev_err.h>

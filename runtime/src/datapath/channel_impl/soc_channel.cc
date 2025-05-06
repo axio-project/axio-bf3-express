@@ -4,16 +4,16 @@ namespace nicc {
 
 // GIDs are currently used only for RoCE. This default value works for most
 // clusters, but we need a more robust GID selection method. Some observations:
-//  * On physical clusters, gid_index = 0 always works (in my experience)
+//  * On physical clusters, gid depends on the Ethernet is three layer or two layer; i.e., if two layer, choose the one gid without ip address.
 //  * On VM clusters (AWS/KVM), gid_index = 0 does not work, gid_index = 1 works
 //  * Mellanox's `show_gids` script lists all GIDs on all NICs
-static constexpr size_t kDefaultGIDIndex = 1;   // Currently, the GRH (ipv4 + udp port) is set by CPU
+static constexpr size_t kDefaultGIDIndex = 1;   
 
 nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
     
     this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
-    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, _resolve);
+    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, this->_resolve);
 
     if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
         NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
@@ -85,21 +85,92 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     }
     this->_resolve.port_lid = port_attr.lid;
 
-    if (ibv_query_gid(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &this->_resolve.gid)) {
-        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
+    // Query GID information using ibv_query_gid_ex
+    struct ibv_gid_entry gid_entry;
+    if (ibv_query_gid_ex(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
+        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", 
+                   this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
-    // validate gid
-    uint64_t *gid_data = (uint64_t *)&this->_resolve.gid;
-    if (gid_data[0] == 0 && gid_data[1] == 0) {
-        NICC_WARN_C("invalid gid (all zeros), dev_port_id(%u), gid_index(%u)", this->_resolve.dev_port_id, kDefaultGIDIndex);
+    // Validate GID
+    if (gid_entry.gid_type != IBV_GID_TYPE_ROCE_V2) {
+        NICC_WARN_C("invalid gid type: expected RoCE v2, got %d", gid_entry.gid_type);
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
-    // set ipv4 address
-    memset(&this->_resolve.ipv4_addr_, 0, sizeof(ipaddr_t));
-    this->_resolve.ipv4_addr_.ip = this->_resolve.gid.global.interface_id & 0xffffffff;
+    // Copy GID information
+    memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
+    this->_resolve.gid_index = gid_entry.gid_index;
+
+    // Get interface name from index
+    char ifname[IF_NAMESIZE];
+    if (if_indextoname(gid_entry.ndev_ifindex, ifname) == nullptr) {
+        NICC_WARN_C("failed to get interface name for index %u", gid_entry.ndev_ifindex);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Read MAC address from sysfs
+    char sys_path[256];
+    snprintf(sys_path, sizeof(sys_path), "/sys/class/net/%s/address", ifname);
+    FILE *maddr_file = fopen(sys_path, "r");
+    if (maddr_file == nullptr) {
+        NICC_WARN_C("failed to open MAC address file: %s", sys_path);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    auto ret = fscanf(maddr_file, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx%*c",
+                     &this->_resolve.mac_addr[0],
+                     &this->_resolve.mac_addr[1],
+                     &this->_resolve.mac_addr[2],
+                     &this->_resolve.mac_addr[3],
+                     &this->_resolve.mac_addr[4],
+                     &this->_resolve.mac_addr[5]);
+    fclose(maddr_file);
+
+    if (ret != 6) {
+        NICC_WARN_C("failed to read MAC address from file: %s", sys_path);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // Get IPv4 address using ioctl
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        NICC_WARN_C("failed to create socket for ioctl");
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+
+    if (ioctl(sockfd, SIOCGIFADDR, &ifr) < 0) {
+        NICC_WARN_C("failed to get IPv4 address for interface %s", ifname);
+        close(sockfd);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    struct sockaddr_in *addr = (struct sockaddr_in *)&ifr.ifr_addr;
+    this->_resolve.ipv4_addr.ip = ntohl(addr->sin_addr.s_addr);
+
+    close(sockfd);
+
+    // Log the resolved information
+    // NICC_DEBUG("MAC address: %02x:%02x:%02x:%02x:%02x:%02x", 
+    //           this->_resolve.mac_addr[0], this->_resolve.mac_addr[1], this->_resolve.mac_addr[2], 
+    //           this->_resolve.mac_addr[3], this->_resolve.mac_addr[4], this->_resolve.mac_addr[5]);
+    // NICC_DEBUG("GID index: %u", this->_resolve.gid_index);
+    // NICC_DEBUG("GID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", 
+    //           this->_resolve.gid.raw[0], this->_resolve.gid.raw[1], this->_resolve.gid.raw[2], this->_resolve.gid.raw[3], 
+    //           this->_resolve.gid.raw[4], this->_resolve.gid.raw[5], this->_resolve.gid.raw[6], this->_resolve.gid.raw[7], 
+    //           this->_resolve.gid.raw[8], this->_resolve.gid.raw[9], this->_resolve.gid.raw[10], this->_resolve.gid.raw[11], 
+    //           this->_resolve.gid.raw[12], this->_resolve.gid.raw[13], this->_resolve.gid.raw[14], this->_resolve.gid.raw[15]);
+    // NICC_DEBUG("IPv4 address: %u.%u.%u.%u", 
+    //           (this->_resolve.ipv4_addr.ip >> 24) & 0xFF,
+    //           (this->_resolve.ipv4_addr.ip >> 16) & 0xFF,
+    //           (this->_resolve.ipv4_addr.ip >> 8) & 0xFF,
+    //           this->_resolve.ipv4_addr.ip & 0xFF);
 
     return retval;
 }
@@ -166,6 +237,7 @@ nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
 }
 
 void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
+    NICC_ASSERT(qp_info->is_initialized == false);
     NICC_CHECK_POINTER(qp_info);
     NICC_CHECK_POINTER(qp);
     qp_info->qp_num = qp->_qp_id;
@@ -173,8 +245,11 @@ void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
     for (size_t i = 0; i < 16; i++) {
         qp_info->gid[i] = this->_resolve.gid.raw[i];
     }
+    qp_info->gid_table_index = this->_resolve.gid_index;
     qp_info->mtu = RDMA_SoC_QP::kMTU;
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
+    memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
+    qp_info->is_initialized = true;
 }
 
 nicc_retval_t Channel_SoC::__create_ah(const QPInfo *local_qp_info, const QPInfo *remote_qp_info, RDMA_SoC_QP *qp) {

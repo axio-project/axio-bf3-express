@@ -35,11 +35,16 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, dev
     }
 
     // run the pipeline
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__run_pipeline()
-    ))){
-        NICC_WARN_C("failed to run the pipeline: retval(%u)", retval);
-        goto exit;
+    // if(unlikely(NICC_SUCCESS != (
+    //     retval = this->__run_pipeline()
+    // ))){
+    //     NICC_WARN_C("failed to run the pipeline: retval(%u)", retval);
+    //     goto exit;
+    // }
+
+    // \todo remove this
+    while (1) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     goto exit;
@@ -238,30 +243,27 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
     std::vector<std::string> remote_connect_to = this->_app_dag->get_host_config("remote")->connect_to;
     std::vector<std::string> local_connect_to = this->_app_dag->get_host_config("local")->connect_to;
 
-    /* \todo, update MAT rules */
-
-    /* connect channels based on the app DAG */
     // Obtain the remote host and local host's QPInfo
-    QPInfo remote_qp_info, local_qp_info;
+    QPInfo remote_host_qp_info, local_host_qp_info;
     bool is_connected_to_remote = false, is_connected_to_local = false;
     TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
     TCPClient mgnt_client;
-    memset(&remote_qp_info, 0, sizeof(QPInfo));
-    memset(&local_qp_info, 0, sizeof(QPInfo));
+    memset(&remote_host_qp_info, 0, sizeof(QPInfo));
+    memset(&local_host_qp_info, 0, sizeof(QPInfo));
     mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), this->_app_dag->get_host_config("local")->mgnt_port);
-    local_qp_info.deserialize(mgnt_client.receiveMsg());
+    local_host_qp_info.deserialize(mgnt_client.receiveMsg());
 
     mgnt_server.acceptConnection();
-    remote_qp_info.deserialize(mgnt_server.receiveMsg());
+    remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
 
-    /* iteratively connect channels based on the app DAG */
+    /* iteratively component blocks in the app DAG */
     typename std::vector<ComponentBlock*>::iterator cb_iter;
     ComponentBlock *prior_component_block = nullptr, *cur_component_block = nullptr;
     for(cb_iter = this->_component_blocks.begin(); cb_iter != this->_component_blocks.end(); cb_iter++){
         NICC_CHECK_POINTER(cur_component_block = *cb_iter);
-        
         std::string component_name = cur_component_block->get_block_name();
-        
+
+        /* connect channels based on the app DAG */
         if (std::find(remote_connect_to.begin(), remote_connect_to.end(), component_name) != remote_connect_to.end()) {
             is_connected_to_remote = true;
         }
@@ -274,9 +276,9 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
                                     /* prior block */ prior_component_block,
                                     /* next block*/ nullptr,
                                     is_connected_to_remote,
-                                    /* remote qp info */ &remote_qp_info,
+                                    /* remote qp info */ &remote_host_qp_info,
                                     is_connected_to_local,
-                                    /* local qp info */ &local_qp_info)))){
+                                    /* local qp info */ &local_host_qp_info)))){
             NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
             return retval;
         }
@@ -304,6 +306,13 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
             }
         }
         prior_component_block = cur_component_block;
+
+        /* \todo add control plane rule to redirect all traffic to the component block */
+        /// Currently, only DPA component block has control plane rule
+        if (cur_component_block->get_component_id() == kComponent_DPA) {
+            ComponentBlock_DPA *dpa_block = reinterpret_cast<ComponentBlock_DPA*>(cur_component_block);
+            dpa_block->add_control_plane_rule(device_state.rx_domain);
+        }
     }
     // Check if remote host and local host are connected
     if (!(is_connected_to_remote && is_connected_to_local)){

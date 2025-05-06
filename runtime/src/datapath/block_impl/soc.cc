@@ -62,15 +62,15 @@ exit:
 nicc_retval_t ComponentBlock_SoC::connect_to_neighbour( const ComponentBlock *prior_component_block, 
                                                         const ComponentBlock *next_component_block,
                                                         bool is_connected_to_remote,
-                                                        const QPInfo *remote_qp_info,
+                                                        const QPInfo *remote_host_qp_info,
                                                         bool is_connected_to_local,
-                                                        const QPInfo *local_qp_info){
+                                                        const QPInfo *local_host_qp_info){
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(this->_function_state->channel);
 
     if (is_connected_to_remote){
         if(unlikely(NICC_SUCCESS != (
-            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_qp_info)
+            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_host_qp_info)
         ))) {
             NICC_WARN_C("failed to connect to remote component: nicc_retval(%u)", retval);
             return retval;
@@ -78,7 +78,7 @@ nicc_retval_t ComponentBlock_SoC::connect_to_neighbour( const ComponentBlock *pr
     }
     if (is_connected_to_local){
         if(unlikely(NICC_SUCCESS != (
-            retval = this->_function_state->channel->connect_qp(false, nullptr, local_qp_info)
+            retval = this->_function_state->channel->connect_qp(false, nullptr, local_host_qp_info)
         ))) {
             NICC_WARN_C("failed to connect to local component: nicc_retval(%u)", retval);
             return retval;
@@ -113,7 +113,7 @@ nicc_retval_t ComponentBlock_SoC::run_block(){
         goto exit;
     }
     /// wait thread join. 
-    this->_function_state->wrapper_thread->join();
+    // this->_function_state->wrapper_thread->join();
 
 exit:
     return retval;

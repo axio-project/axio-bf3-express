@@ -5,7 +5,16 @@
 
 #pragma once
 #include "common.h"
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
 #include "datapath/component_block.h"
+#include "utils/verbs_common.h"
+#include "utils/qpinfo.hh"
+#include "common/iphdr.h"
 
 namespace nicc {
 /**

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <libflexio/flexio.h>
+#include <net/ethernet.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 
 #include "mlx5/mlx5dv.h"
 #include "mlx5/mlx5_api.h"
@@ -18,10 +21,14 @@ class Channel_DPA : public Channel {
         this->_mode_of_prior = channel_mode_of_prior;
         this->_typeid_of_next = channel_type_of_next;
         this->_mode_of_next = channel_mode_of_next;
+
         this->dev_queues_for_prior = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
         memset(this->dev_queues_for_prior, 0, sizeof(struct dpa_data_queues));
         this->dev_queues_for_next = (struct dpa_data_queues *)calloc(1, sizeof(struct dpa_data_queues));
         memset(this->dev_queues_for_next, 0, sizeof(struct dpa_data_queues));
+
+        this->qp_for_prior_info = (QPInfo*)malloc(sizeof(QPInfo));
+        this->qp_for_next_info = (QPInfo*)malloc(sizeof(QPInfo));
     }
     ~Channel_DPA() {};
     
@@ -43,13 +50,26 @@ class Channel_DPA : public Channel {
                                     struct mlx5dv_devx_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
-                                    struct ibv_context *ibv_ctx);
+                                    struct ibv_context *ibv_ctx,
+                                    const char *dev_name,
+                                    uint8_t phy_port);
 
     /**
      * \brief   deallocate resources for dpa channel, including CQ, SQ, RQ
      * \return  NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t deallocate_channel(struct flexio_process *flexio_process);
+
+    /**
+     * @brief Connect QP to a component block or remote/local host
+     * @param is_prior [in] whether the connection is for qp_for_prior or qp_for_next
+     * @param neighbour_component_block [in] the neighbour component block
+     * @param qp_info [in] QP info of the remote/local host
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t connect_qp(bool is_prior, 
+                             const ComponentBlock *neighbour_component_block, 
+                             const QPInfo *qp_info);
 
 /**
  * ----------------------Util Methods----------------------
@@ -72,12 +92,20 @@ class Channel_DPA : public Channel {
     ///        to read dev_queues_for_prior/next content
     flexio_uintptr_t		    dev_metadata_for_prior;		// mirror of dev_queues_for_prior on device
     flexio_uintptr_t		    dev_metadata_for_next;		// mirror of dev_queues_for_next on device
-
+    /// \brief QP info for prior and next component block, used for connect QP to component block (currently only used for RDMA mode)
+    QPInfo *qp_for_prior_info;
+    QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel method----------------------
  */ 
  private:
-/*!
+    /**
+     * @brief Resolve InfiniBand-specific fields in \p resolve
+     * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+     */
+    nicc_retval_t __roce_resolve_phy_port();
+
+    /*!
      *  \brief  (de)allocate SQ/RQ and corresponding CQ for DPA process
      *  \note   these functions are called within __allocate_device_resources
      *  \return NICC_SUCCESS for successful (de)allocation
@@ -222,10 +250,48 @@ class Channel_DPA : public Channel {
         struct flexio_process *process, struct ibv_pd *pd, flexio_uintptr_t daddr, int log_bsize, int access, struct flexio_mkey **mkey
     );
 
+    /**
+     *  \brief  set QP info for prior and next
+     *  \param  ibv_ctx     ibv context
+     *  \return NICC_SUCCESS on success
+     */
+    void __set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *dev_queues);
+
+    /**
+     *  \brief  connect QP to component block
+     *  \param  dev_queues      device queues
+     *  \param  neighbour_component_block  neighbour component block
+     *  \param  local_qp_info  local QP info
+     *  \return NICC_SUCCESS on success
+     */
+    nicc_retval_t __connect_qp_to_component_block(dpa_data_queues *dev_queues, 
+                                                  const ComponentBlock *neighbour_component_block, 
+                                                  const QPInfo *local_qp_info);
+
+    /**
+     *  \brief  connect QP to host
+     *  \param  dev_queues      device queues
+     *  \param  qp_info  QP info
+     *  \return NICC_SUCCESS on success
+     */
+    nicc_retval_t __connect_qp_to_host( dpa_data_queues *dev_queues, 
+                                        struct flexio_queues_handler *flexio_queues_handler,
+                                        const QPInfo *qp_info, 
+                                        const QPInfo *local_qp_info);
 /**
  * ----------------------Internel parameters----------------------
  */
  private:
+    /// Info resolved from \p phy_port, must be filled by constructor.
+    class IBResolve : public VerbsResolve {
+    public:
+      ipaddr_t ipv4_addr;           ///< The port's IPv4 address in host-byte order
+      uint16_t port_lid = 0;        ///< Port LID. 0 is invalid.
+      union ibv_gid gid;            ///< GID, used only for RoCE
+      uint8_t gid_index = 0;        ///< GID index, used only for RoCE
+      uint8_t mac_addr[6] = {0};    ///< MAC address of the device port
+    } _resolve;
+
     /// \brief  SQ
     struct flexio_mkey          *_sqd_mkey;
     /// \brief  RQ
@@ -233,6 +299,10 @@ class Channel_DPA : public Channel {
 
     struct flexio_queues_handler	_flexio_queues_handler_for_prior;
     struct flexio_queues_handler	_flexio_queues_handler_for_next;
+
+    /// Temp parameter for connect QP to host
+    uint8_t _remote_mac_addr[6];
+    union ibv_gid _remote_gid = {0};
 };
 
 }

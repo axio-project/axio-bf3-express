@@ -2,6 +2,9 @@
 
 namespace nicc {
 
+/**
+ * ===========================Public methods===========================
+ */
 
 nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
@@ -79,15 +82,6 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     // insert to function map
     this->_function_state = func_state;
 
-    // add control plane rule to redirect all traffic to the DPA block
-    /// \todo delete this
-    if(unlikely(NICC_SUCCESS != (
-        retval = this->__add_control_plane_rule(device_state.rx_domain)
-    ))){
-        NICC_WARN_C("failed to add control plane rule to redirect all traffic to the DPA block: retval(%u)", retval);
-        goto exit;
-    }
-
 
  exit:
     // TODO: destory if failed
@@ -125,6 +119,75 @@ nicc_retval_t ComponentBlock_DPA::unregister_app_function(){
     return retval;
 }
 
+nicc_retval_t ComponentBlock_DPA::connect_to_neighbour(const ComponentBlock *prior_component_block, 
+                                                       const ComponentBlock *next_component_block, 
+                                                       bool is_connected_to_remote, 
+                                                       const QPInfo *remote_host_qp_info, 
+                                                       bool is_connected_to_local, 
+                                                       const QPInfo *local_host_qp_info) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(this->_function_state->channel);
+
+    if (is_connected_to_remote){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, nullptr, remote_host_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to remote component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (is_connected_to_local){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, nullptr, local_host_qp_info)
+        ))) {
+            NICC_WARN_C("failed to connect to local component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (prior_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(true, prior_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to prior component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    if (next_component_block != nullptr){
+        if(unlikely(NICC_SUCCESS != (
+            retval = this->_function_state->channel->connect_qp(false, next_component_block, nullptr)
+        ))) {
+            NICC_WARN_C("failed to connect to next component: nicc_retval(%u)", retval);
+            return retval;
+        }
+    }
+    
+    return retval;
+}
+
+    nicc_retval_t ComponentBlock_DPA::add_control_plane_rule(struct mlx5dv_dr_domain *domain) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    /// Currently, only Ethernet Channel needs to add control plane rule to redirect all traffic to the DPA block
+    if (this->_function_state->channel->dev_queues_for_prior->type == Channel::ETHERNET) {
+        retval = this->__add_control_plane_rule(domain);
+    }
+    return retval;
+}
+
+nicc_retval_t ComponentBlock_DPA::run_block() {
+    nicc_retval_t retval = NICC_SUCCESS;
+    // run the event handler; 
+    flexio_status ret;
+    ret = flexio_event_handler_run(this->_function_state->event_handler, 0);
+    if(unlikely(ret != FLEXIO_STATUS_SUCCESS)){
+        NICC_WARN_C("failed to run event handler on DPA block: flexio_retval(%d)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    return retval;
+}
+
+/**
+ * ===========================Internel methods===========================
+ */
 
 nicc_retval_t ComponentBlock_DPA::__setup_ibv_device(ComponentFuncState_DPA_t *func_state) {
     nicc_retval_t retval = NICC_SUCCESS;
@@ -188,7 +251,8 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
             &func_state->flexio_process
         ))
     )){
-        NICC_WARN_C("failed to create event handler on flexio driver on DPA block: flexio_retval(%d)", res);
+        NICC_WARN_C("failed to create event handler on flexio driver on DPA block: flexio_retval(%d), device: %s", 
+                    res, func_state->ibv_ctx->device->name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -196,7 +260,7 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     // obtain uar from the created process
     func_state->flexio_uar = flexio_process_get_uar(func_state->flexio_process);
     if(unlikely(func_state->flexio_uar == nullptr)){
-        NICC_WARN_C("no uar extracted");
+        NICC_WARN_C("no uar extracted from flexio process, device: %s", func_state->ibv_ctx->device->name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -247,15 +311,18 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
     NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
-    this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
+    // this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
+    this->_function_state->channel = new Channel_DPA(Channel::RDMA, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(
-        retval = this->_function_state->channel->allocate_channel(func_state->pd, 
-                                                                  func_state->uar, 
+        retval = this->_function_state->channel->allocate_channel(func_state->pd,       /* used in ethernet channel */
+                                                                  func_state->uar,      /* used in ethernet channel */
                                                                   func_state->flexio_process, 
                                                                   func_state->event_handler, 
-                                                                  func_state->ibv_ctx)
+                                                                  func_state->ibv_ctx,
+                                                                  "mlx5_2", /* RDMA device name, mlx5_0 does not support RoCEv2 */
+                                                                  0         /* RDMA port */) 
     ))){
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval
@@ -407,18 +474,6 @@ nicc_retval_t ComponentBlock_DPA::__add_control_plane_rule(struct mlx5dv_dr_doma
         NICC_WARN_C("failed to create rx rule");
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit_with_action;
-    }
-
-    // run the event handler; 
-    /// \todo move this to __pipeline_run()
-    ret = flexio_event_handler_run(this->_function_state->event_handler, 0);
-    if(unlikely(ret != FLEXIO_STATUS_SUCCESS)){
-        NICC_WARN_C("failed to run event handler on DPA block: flexio_retval(%d)", ret);
-        retval = NICC_ERROR_HARDWARE_FAILURE;
-        goto exit;
-    }
-    while (1) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     // Clean up and return
