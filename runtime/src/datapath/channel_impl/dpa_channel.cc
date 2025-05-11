@@ -84,6 +84,12 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
         goto exit;
     }
 
+    /// Try to get gid
+    if (this->__get_gid(ibv_ctx) != NICC_SUCCESS) {
+        NICC_WARN_C("failed to get gid: dev_port_id(%u)", 1);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
     // Set QP info for prior and next
     if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
         this->__set_local_qp_info(this->qp_for_prior_info, dev_queues_for_prior);
@@ -384,6 +390,32 @@ nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
     //           (this->_resolve.ipv4_addr.ip >> 16) & 0xFF,
     //           (this->_resolve.ipv4_addr.ip >> 8) & 0xFF,
     //           this->_resolve.ipv4_addr.ip & 0xFF);
+
+    return retval;
+}
+
+nicc_retval_t Channel_DPA::__get_gid(struct ibv_context *ibv_ctx) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    struct ibv_port_attr port_attr;
+    if (ibv_query_port(ibv_ctx, 1, &port_attr) != 0) {
+        NICC_WARN_C("failed to query port: dev_port_id(%u), retval(%u)", 1, retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    ibv_gid testgid;
+    int rc = ibv_query_gid(ibv_ctx, 1, 0, &testgid);
+    
+    struct ibv_gid_entry *gid_tbl_entries = new struct ibv_gid_entry[32];
+    memset(gid_tbl_entries, 0, 32 * sizeof(struct ibv_gid_entry));
+
+	auto num_entries = ibv_query_gid_table(ibv_ctx, gid_tbl_entries, 32, 0);
+
+    printf("num_entries: %d\n", num_entries);
+
+    if (num_entries == 0) {
+        NICC_WARN_C("no GID entries found");
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
 
     return retval;
 }
@@ -1011,8 +1043,8 @@ void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *d
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
     memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
-    std::cout << "Local QP Info:" << std::endl;
-    qp_info->print();
+    // std::cout << "Local QP Info:" << std::endl;
+    // qp_info->print();
 }
 
 nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_queues, 
@@ -1039,15 +1071,16 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
         NICC_WARN_C("QP info is not initialized: qp_num(%u)", qp_info->qp_num);
         return NICC_ERROR_NOT_FOUND;
     }
+
     /// Print local and remote QPinfo
-    std::cout << "Local QP Info:" << std::endl;
+    std::cout << "========== Local QP Info: ==========" << std::endl;
     local_qp_info->print();
-    std::cout << "Remote QP Info:" << std::endl;
+    std::cout << "========== Remote QP Info: ==========" << std::endl;
     qp_info->print();
     memcpy(this->_remote_mac_addr, qp_info->mac_addr, 6);
     memcpy(&this->_remote_gid, qp_info->gid, sizeof(union ibv_gid));
 	qp_fattr.remote_qp_num     = qp_info->qp_num;
-    qp_fattr.dest_mac = this->_remote_mac_addr;
+    qp_fattr.dest_mac          = this->_remote_mac_addr;
     qp_fattr.rgid_or_rip       = this->_remote_gid;
 	qp_fattr.gid_table_index   = qp_info->gid_table_index;
 	qp_fattr.rlid              = qp_info->lid;

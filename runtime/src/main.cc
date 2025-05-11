@@ -59,7 +59,7 @@ int main(){
      * \note   options: kComponent_FlowEngine | kComponent_DPA
      *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::AppDAG app_dag("/home/ubuntu/hxy/proj/nicc/examples/rdma_simple/dp_spec.json");
+    nicc::AppDAG app_dag("/home/ubuntu/hxy/proj/axio-bf3-express/examples/rdma_simple/dp_spec.json");
     app_dag.print();
     nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/

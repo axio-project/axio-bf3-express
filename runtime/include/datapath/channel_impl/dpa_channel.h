@@ -278,6 +278,10 @@ class Channel_DPA : public Channel {
                                         struct flexio_queues_handler *flexio_queues_handler,
                                         const QPInfo *qp_info, 
                                         const QPInfo *local_qp_info);
+
+
+    nicc_retval_t __get_gid(struct ibv_context *ibv_ctx);
+
 /**
  * ----------------------Internel parameters----------------------
  */
