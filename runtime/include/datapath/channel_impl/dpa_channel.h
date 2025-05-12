@@ -181,8 +181,8 @@ class Channel_DPA : public Channel {
      *  \param  wqe_size        size of wqe on the ring
      *  \return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __allocate_qp_data_memory(struct flexio_process *process, struct dpa_qp *qp_transf, 
-                                            int log_sq_depth, int log_rq_depth, uint64_t wqe_size);
+    nicc_retval_t __allocate_qp_memory(struct flexio_process *process, struct dpa_qp *qp_transf, 
+                                       int log_sq_depth, int log_rq_depth, uint64_t wqe_size);
 
     /*!
      *  \brief  allocate memory resource for SQ/CQ
@@ -296,10 +296,16 @@ class Channel_DPA : public Channel {
       uint8_t mac_addr[6] = {0};    ///< MAC address of the device port
     } _resolve;
 
-    /// \brief  SQ
+    /// \brief  mkey for eth SQ
     struct flexio_mkey          *_sqd_mkey;
-    /// \brief  RQ
+    /// \brief  mkey for eth RQ
     struct flexio_mkey          *_rqd_mkey;
+    /// \brief  mkey for rdma QP
+    struct flexio_mkey          *_qpd_mkey;
+    /// \brief  mr for rdma QP
+    struct ibv_mr               *_qpd_mr;
+    /// \brief  start address of the first mbuf
+    uint64_t                    _qpd_mbuf_start_addr;
 
     struct flexio_queues_handler	_flexio_queues_handler_for_prior;
     struct flexio_queues_handler	_flexio_queues_handler_for_next;

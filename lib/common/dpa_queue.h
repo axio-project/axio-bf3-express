@@ -35,8 +35,9 @@ struct dpa_eth_wq {
 // metadata of a dpa qp, used for RDMA mode
 struct dpa_qp {
     uint32_t qp_num;
-    uint32_t sqd_mkey_id;
-    uint32_t rqd_mkey_id;
+    // uint32_t sqd_mkey_id;       
+    // uint32_t rqd_mkey_id;       
+    uint32_t qpd_mkey_id;               // as we use a unified memory for both sq and rq, we only need one mkey id
     uint32_t reserved;
     uint32_t log_qp_sq_depth;
     uint32_t log_qp_rq_depth;
@@ -45,14 +46,16 @@ struct dpa_qp {
     uint32_t sq_pi_idx;
     uint32_t rq_pi_idx;
 
-    uint64_t sqd_lkey;
-    uint64_t rqd_lkey;
+    // uint64_t sqd_lkey;       
+    // uint64_t rqd_lkey;
+    uint64_t qpd_lkey;                  // as we use a unified memory for both sq and rq, we only need one lkey
 
     flexio_uintptr_t qp_dbr_daddr;      // doorbell record address
-    flexio_uintptr_t qp_sq_daddr;       // SQ address
-    flexio_uintptr_t qp_rq_daddr;       // RQ address
-    flexio_uintptr_t sqd_daddr;         // data buffer address of first SQ entry
-    flexio_uintptr_t rqd_daddr;         // data buffer address of first RQ entry
+    flexio_uintptr_t qp_sq_daddr;       // SQ ring address
+    flexio_uintptr_t qp_rq_daddr;       // RQ ring address
+    // flexio_uintptr_t sqd_daddr;         // data buffer address of first SQ entry
+    // flexio_uintptr_t rqd_daddr;         // data buffer address of first RQ entry
+    flexio_uintptr_t qpd_daddr;          // first mbuf address of the unified memory (i.e., memory pool)
 } __attribute__((__packed__, aligned(8)));
 
 /* Transport data from HOST application to DEV application */

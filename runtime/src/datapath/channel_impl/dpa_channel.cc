@@ -744,9 +744,9 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
         NICC_WARN_C("failed to allocate doorbell record for QP: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
         return retval;
     }
-    // allocate QP data memories
+    // allocate QP memory resources
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_qp_data_memory(
+        retval = this->__allocate_qp_memory(
             flexio_process,
             &dev_queues->qp_data,
             DPA_LOG_SQ_RING_DEPTH,
@@ -758,6 +758,33 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
+    dev_queues->qp_data.qpd_daddr = this->_qpd_mbuf_start_addr;
+
+    // create mkey for QP data buffers
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__create_dpa_mkey(
+            /* process */ flexio_process,
+            /* pd */ pd,
+            /* daddr */ this->_qpd_mbuf_start_addr,
+            /* log_bsize */ DPA_LOG_SQ_RING_DEPTH + 1 + DPA_LOG_WQ_DATA_ENTRY_BSIZE,    // this is ugly, we assume SQ Ring Depth = RQ Ring Depth, thus we add 1 to the log_bsize
+            /* access */ IBV_ACCESS_LOCAL_WRITE  |
+                         IBV_ACCESS_REMOTE_WRITE |
+                         IBV_ACCESS_REMOTE_READ  |
+                         IBV_ACCESS_RELAXED_ORDERING,
+            /* mkey */ &this->_qpd_mkey
+        )
+    ))){
+        NICC_WARN_C("failed to create mkey for QP data buffers: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
+        goto exit;
+    }
+    dev_queues->qp_data.qpd_mkey_id = flexio_mkey_get_id(this->_qpd_mkey);
+    /// create mr and lkey for qpd, then we can post receive for this qp
+    this->_qpd_mr = new struct ibv_mr;
+    memset(this->_qpd_mr, 0, sizeof(struct ibv_mr));
+    this->_qpd_mr->lkey = dev_queues->qp_data.qpd_mkey_id;
+    this->_qpd_mr->rkey = this->_qpd_mr->lkey;
+    dev_queues->qp_data.qpd_lkey = this->_qpd_mr->lkey;
+
     // create QP
     flexio_qp_fattr.transport_type              = FLEXIO_QPC_ST_RC;
     flexio_qp_fattr.log_sq_depth                = DPA_LOG_SQ_RING_DEPTH;
@@ -785,7 +812,6 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
     dev_queues->qp_data.qp_num = flexio_qp_get_qp_num(flexio_queues_handler->flexio_qp_ptr);
     dev_queues->qp_data.log_qp_sq_depth = DPA_LOG_SQ_RING_DEPTH;
     dev_queues->qp_data.log_qp_rq_depth = DPA_LOG_RQ_RING_DEPTH;
-
     
 exit:
     // TODO: if unsuccessful, free allocated memories
@@ -851,6 +877,57 @@ exit:
             NICC_ASSERT(ret == FLEXIO_STATUS_SUCCESS);
         }
     }
+
+    return retval;
+}
+
+nicc_retval_t Channel_DPA::__allocate_qp_memory(struct flexio_process *process,
+                                                struct dpa_qp *qp_transf,
+                                                int log_sq_depth,
+                                                int log_rq_depth,
+                                                uint64_t wqe_size){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+    flexio_uintptr_t buff_daddr;
+	size_t buff_bsize = 0;
+	size_t rq_bsize = 0;
+	size_t sq_bsize = 0;
+
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(qp_transf);
+    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
+
+    // allocate data buffers, these memories is used by dpa kernel
+    /// mempool has sq ring depth + rq ring depth mbufs
+    /// then, total size is (sq ring depth + rq ring depth) * MTU size
+    /// _qpd_mbuf_start_addr is used to store the start address of the first mbuf
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_alloc(process, (LOG2VALUE(log_sq_depth) + LOG2VALUE(log_rq_depth)) * LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), &this->_qpd_mbuf_start_addr))
+    )) {
+        NICC_WARN_C(
+            "failed to allocate QP data buffer: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // allocate wqe queue, these memories is used by flexio driver
+    rq_bsize = LOG2VALUE(log_rq_depth) * wqe_size;
+    sq_bsize = LOG2VALUE(log_sq_depth) * wqe_size;
+    buff_bsize = rq_bsize + sq_bsize;
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_buf_dev_alloc(process, buff_bsize, &buff_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to allocate buffer for QP: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    /* ring buffer start from RQ, and after RQ is SQ*/
+    qp_transf->qp_rq_daddr = buff_daddr;
+    qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
 
     return retval;
 }
@@ -1012,42 +1089,6 @@ nicc_retval_t Channel_DPA::__create_dpa_mkey(struct flexio_process *process,
         );
         return NICC_ERROR_HARDWARE_FAILURE;
     }
-
-    return retval;
-}
-
-nicc_retval_t Channel_DPA::__allocate_qp_data_memory(struct flexio_process *process,
-                                                     struct dpa_qp *qp_transf,
-                                                     int log_sq_depth,
-                                                     int log_rq_depth,
-                                                     uint64_t wqe_size){
-    nicc_retval_t retval = NICC_SUCCESS;
-    flexio_status ret;
-    flexio_uintptr_t buff_daddr;
-	size_t buff_bsize = 0;
-	size_t rq_bsize = 0;
-	size_t sq_bsize = 0;
-
-    NICC_CHECK_POINTER(process);
-    NICC_CHECK_POINTER(qp_transf);
-    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
-
-    rq_bsize = LOG2VALUE(log_rq_depth) * wqe_size;
-    sq_bsize = LOG2VALUE(log_sq_depth) * wqe_size;
-    buff_bsize = rq_bsize + sq_bsize;
-
-    if(unlikely(FLEXIO_STATUS_SUCCESS != (
-        ret = flexio_buf_dev_alloc(process, buff_bsize, &buff_daddr)
-    ))){
-        NICC_WARN_C(
-            "failed to allocate buffer for QP: flexio_process(%p), flexio_retval(%u)",
-            process, ret
-        );
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-    /* buffer start from RQ, and after RQ is SQ*/
-    qp_transf->qp_rq_daddr = buff_daddr;
-    qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
 
     return retval;
 }
