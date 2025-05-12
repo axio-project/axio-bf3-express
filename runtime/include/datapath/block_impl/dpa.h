@@ -145,7 +145,11 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return the qp info of the current component
      */
     QPInfo *get_qp_info(bool is_prior) override {
-        return nullptr;
+        if (is_prior) {
+            return this->_function_state->channel->qp_for_prior_info;
+        } else {
+            return this->_function_state->channel->qp_for_next_info;
+        }
     }
 
 /**

@@ -321,7 +321,7 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
                                                                   func_state->flexio_process, 
                                                                   func_state->event_handler, 
                                                                   func_state->ibv_ctx,
-                                                                  "mlx5_2", /* RDMA device name, mlx5_0 does not support RoCEv2 */
+                                                                  "mlx5_0", /* RDMA device name, mlx5_0 does not support RoCEv2 */
                                                                   0         /* RDMA port */) 
     ))){
         NICC_WARN_C(

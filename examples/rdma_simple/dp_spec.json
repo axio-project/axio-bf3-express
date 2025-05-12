@@ -6,7 +6,7 @@
             "ipv4": "10.0.4.101",
             "mgnt_port": 20086,
             "data_port": 10010,
-            "connect_to": ["soc"]
+            "connect_to": ["dpa"]
         }
     ],
     "local_host": [
