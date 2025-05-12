@@ -323,7 +323,8 @@ nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
     // memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
     // this->_resolve.gid_index = gid_entry.gid_index;
 
-    // Manually assign GID
+    // Manually assign GID, seems that the GID should be obtained from the host side
+    // \todo: obtain the GID from the host side
     // rocep202s0f0    1       1       fe80:0000:0000:0000:a288:c2ff:febf:9b10
     this->_resolve.gid_index = 1;
     this->_resolve.gid.raw[0] = 0xfe;

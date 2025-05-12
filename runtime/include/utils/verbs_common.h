@@ -119,13 +119,15 @@ static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size
                               link_layer_str(port_attr.link_layer));
   }
 
-  // Check the MTU
-  size_t active_mtu = enum_to_mtu(port_attr.active_mtu);
-  if (mtu > active_mtu) {
-    throw std::runtime_error("Transport's required MTU is " +
-                              std::to_string(mtu) + ", active_mtu is " +
-                              std::to_string(active_mtu));
-  }
+  // seems that the active_mtu should be checked on host side
+  // \todo: check the MTU on host side
+  // Check the MTU 
+  // size_t active_mtu = enum_to_mtu(port_attr.active_mtu);
+  // if (mtu > active_mtu) {
+  //   throw std::runtime_error("Transport's required MTU is " +
+  //                             std::to_string(mtu) + ", active_mtu is " +
+  //                             std::to_string(active_mtu));
+  // }
 
   resolve.device_id = dev_idx;
   resolve.ib_ctx = ib_ctx;

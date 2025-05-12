@@ -5,7 +5,7 @@
 #define DPA_LOG_SQ_RING_DEPTH       7       // 2^7 entries
 #define DPA_LOG_RQ_RING_DEPTH       7       // 2^7 entries
 #define DPA_LOG_CQ_RING_DEPTH       7       // 2^7 entries
-#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 10      // WQ buffer logarithmic size
+#define DPA_LOG_WQ_DATA_ENTRY_BSIZE 11      // WQ buffer logarithmic size
 #define DPA_LOG_WQE_BSIZE           6       // size of wqe inside SQ/RQ of DPA (sizeof(struct mlx5_wqe_data_seg))
 
 /* Queues index mask, represents the index of the last CQE/WQE in the queue */
