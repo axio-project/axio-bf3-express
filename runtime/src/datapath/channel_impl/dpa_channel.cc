@@ -13,7 +13,7 @@ static constexpr size_t kDefaultGIDIndex = 1;
  * ===========================Public methods===========================
  */
 nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct flexio_event_handler	*event_handler,
                                             struct ibv_context *ibv_ctx,
@@ -446,7 +446,7 @@ nicc_retval_t Channel_DPA::__get_gid(struct ibv_context *ibv_ctx) {
 }
 
 nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct ibv_context *ibv_ctx,
                                             struct dpa_data_queues *dev_queues,
@@ -460,7 +460,7 @@ nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd,
       .log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
       // SQ does not need APU CQ
       .element_type = FLEXIO_CQ_ELEMENT_TYPE_NON_DPA_CQ,   
-      .uar_id = uar->page_id
+      .uar_id = flexio_uar_get_id(uar)
     };
 
     // allocate CQ & doorbell on DPA heap memory
@@ -497,7 +497,7 @@ nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd,
 
 
 nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct flexio_event_handler	*event_handler,
                                             struct ibv_context *ibv_ctx,
@@ -512,8 +512,8 @@ nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd,
         .log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
         .element_type = FLEXIO_CQ_ELEMENT_TYPE_DPA_THREAD,
         .thread = flexio_event_handler_get_thread(event_handler),
-        .uar_id = uar->page_id,
-        .uar_base_addr = uar->base_addr
+        .uar_id = flexio_uar_get_id(uar)
+        // .uar_base_addr = uar->base_addr      // seems not needed in doca v2.9.2
     };
 
     // allocate CQ & doorbell on DPA heap memory
@@ -549,7 +549,7 @@ nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd,
 }
 
 nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
-                                       struct mlx5dv_devx_uar *uar,
+                                       struct flexio_uar *uar,
                                        struct flexio_process *flexio_process,
                                        struct dpa_data_queues *dev_queues,
                                        struct flexio_queues_handler *flexio_queues_handler,
@@ -579,7 +579,7 @@ nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
 }
 
 nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
-                                                struct mlx5dv_devx_uar *uar,
+                                                struct flexio_uar *uar,
                                                 struct flexio_process *flexio_process,
                                                 struct dpa_data_queues *dev_queues,
                                                 struct flexio_queues_handler *flexio_queues_handler){
@@ -589,7 +589,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
     // attributes of SQ
     struct flexio_wq_attr sq_attr = {
       .log_wq_depth = DPA_LOG_SQ_RING_DEPTH,
-      .uar_id = uar->page_id,
+      .uar_id = flexio_uar_get_id(uar),
       .pd = pd
     };
     // RQ attributes
@@ -728,7 +728,7 @@ exit:
 }
 
 nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
-                                            struct mlx5dv_devx_uar *uar,
+                                            struct flexio_uar *uar,
                                             struct flexio_process *flexio_process,
                                             struct dpa_data_queues *dev_queues,
                                             struct flexio_queues_handler *flexio_queues_handler){
@@ -792,7 +792,7 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
     flexio_qp_fattr.qp_wq_buff_qmem.daddr       = dev_queues->qp_data.qp_rq_daddr;
     flexio_qp_fattr.qp_wq_dbr_qmem.memtype      = FLEXIO_MEMTYPE_DPA;
     flexio_qp_fattr.qp_wq_dbr_qmem.daddr        = dev_queues->qp_data.qp_dbr_daddr;
-    flexio_qp_fattr.uar_id                      = uar->page_id;
+    flexio_qp_fattr.uar_id                      = flexio_uar_get_id(uar);
     flexio_qp_fattr.rq_cqn                      = dev_queues->rq_cq_data.cq_num;
     flexio_qp_fattr.sq_cqn                      = dev_queues->sq_cq_data.cq_num;
     flexio_qp_fattr.rq_type                     = FLEXIO_QP_QPC_RQ_TYPE_REGULAR;
@@ -1139,10 +1139,10 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
     }
 
     /// Print local and remote QPinfo
-    std::cout << "========== Local QP Info: ==========" << std::endl;
-    local_qp_info->print();
-    std::cout << "========== Remote QP Info: ==========" << std::endl;
-    qp_info->print();
+    // std::cout << "========== Local QP Info: ==========" << std::endl;
+    // local_qp_info->print();
+    // std::cout << "========== Remote QP Info: ==========" << std::endl;
+    // qp_info->print();
     memcpy(this->_remote_mac_addr, qp_info->mac_addr, 6);
     memcpy(&this->_remote_gid, qp_info->gid, sizeof(union ibv_gid));
 	qp_fattr.remote_qp_num     = qp_info->qp_num;

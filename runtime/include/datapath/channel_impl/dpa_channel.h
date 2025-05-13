@@ -47,7 +47,7 @@ class Channel_DPA : public Channel {
      * \return  NICC_SUCCESS on success and NICC_ERROR otherwise
      */
     nicc_retval_t allocate_channel( struct ibv_pd *pd, 
-                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
                                     struct ibv_context *ibv_ctx,
@@ -111,13 +111,13 @@ class Channel_DPA : public Channel {
      *  \return NICC_SUCCESS for successful (de)allocation
      */
     nicc_retval_t __allocate_sq_cq( struct ibv_pd *pd, 
-                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct ibv_context *ibv_ctx,
                                     struct dpa_data_queues *dev_queues,
                                     struct flexio_queues_handler *flexio_queues_handler);
     nicc_retval_t __allocate_rq_cq( struct ibv_pd *pd, 
-                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct flexio_event_handler	*event_handler,
                                     struct ibv_context *ibv_ctx,
@@ -130,18 +130,18 @@ class Channel_DPA : public Channel {
                                      struct dpa_data_queues *dev_queues,
                                      struct flexio_queues_handler *flexio_queues_handler);
     nicc_retval_t __create_qp(struct ibv_pd *pd, 
-                              struct mlx5dv_devx_uar *uar, 
+                              struct flexio_uar *uar, 
                               struct flexio_process *flexio_process,
                               struct dpa_data_queues *dev_queues,
                               struct flexio_queues_handler *flexio_queues_handler,
                               channel_typeid_t type);
     nicc_retval_t __create_ethernet_qp(struct ibv_pd *pd, 
-                                       struct mlx5dv_devx_uar *uar, 
+                                       struct flexio_uar *uar, 
                                        struct flexio_process *flexio_process,
                                        struct dpa_data_queues *dev_queues,
                                        struct flexio_queues_handler *flexio_queues_handler);
     nicc_retval_t __create_rdma_qp(struct ibv_pd *pd, 
-                                    struct mlx5dv_devx_uar *uar, 
+                                    struct flexio_uar *uar, 
                                     struct flexio_process *flexio_process,
                                     struct dpa_data_queues *dev_queues,
                                     struct flexio_queues_handler *flexio_queues_handler);
@@ -306,6 +306,8 @@ class Channel_DPA : public Channel {
     struct ibv_mr               *_qpd_mr;
     /// \brief  start address of the first mbuf
     uint64_t                    _qpd_mbuf_start_addr;
+    /// \brief  rdma rq pi, used for rdma rq post receive
+    size_t                      _rdma_rq_pi = 0;
 
     struct flexio_queues_handler	_flexio_queues_handler_for_prior;
     struct flexio_queues_handler	_flexio_queues_handler_for_next;

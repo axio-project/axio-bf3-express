@@ -64,6 +64,7 @@ typedef struct ComponentFuncState_DPA {
     // Hanlder and PU
     struct flexio_process       *flexio_process;	// FlexIO process
     struct flexio_uar		    *flexio_uar;	    // FlexIO UAR
+    struct ibv_pd               *flexio_pd;         // Protection domain for flexio process
     struct flexio_event_handler	*event_handler;		// Event handler on device
 
     // Communication Channel
