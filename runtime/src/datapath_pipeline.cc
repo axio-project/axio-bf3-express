@@ -35,12 +35,12 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, dev
     }
 
     // run the pipeline
-    // if(unlikely(NICC_SUCCESS != (
-    //     retval = this->__run_pipeline()
-    // ))){
-    //     NICC_WARN_C("failed to run the pipeline: retval(%u)", retval);
-    //     goto exit;
-    // }
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__run_pipeline()
+    ))){
+        NICC_WARN_C("failed to run the pipeline: retval(%u)", retval);
+        goto exit;
+    }
 
     // \todo remove this
     while (1) {

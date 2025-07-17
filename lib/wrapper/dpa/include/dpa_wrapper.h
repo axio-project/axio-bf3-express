@@ -16,23 +16,23 @@
 /* ----------------------------User defined functions---------------------------- */
 extern void process_packet(void);
 
-// /*
-//  * Initialize the CQ context
-//  *
-//  * @app_cq [in]: CQ HW context
-//  * @ctx [out]: CQ context
-//  */
-// static void
-// init_cq(const struct dpa_cq app_cq, struct cq_ctx_t *ctx)
-// {
-// 	ctx->cq_number = app_cq.cq_num;
-// 	ctx->cq_ring = (struct flexio_dev_cqe64 *)app_cq.cq_ring_daddr;
-// 	ctx->cq_dbr = (uint32_t *)app_cq.cq_dbr_daddr;
+/*
+ * Initialize the CQ context
+ *
+ * @app_cq [in]: CQ HW context
+ * @ctx [out]: CQ context
+ */
+static void
+init_cq(const struct dpa_cq app_cq, struct cq_ctx_t *ctx)
+{
+	ctx->cq_number = app_cq.cq_num;
+	ctx->cq_ring = (struct flexio_dev_cqe64 *)app_cq.cq_ring_daddr;
+	ctx->cq_dbr = (uint32_t *)app_cq.cq_dbr_daddr;
 
-// 	ctx->cqe = ctx->cq_ring; /* Points to the first CQE */
-// 	ctx->cq_idx = 0;
-// 	ctx->cq_hw_owner_bit = 0x1;
-// }
+	ctx->cqe = ctx->cq_ring; /* Points to the first CQE */
+	ctx->cq_idx = 0;
+	ctx->cq_hw_owner_bit = 0x1;
+}
 
 // /*
 //  * Initialize the RQ context
