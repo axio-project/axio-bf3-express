@@ -32,8 +32,8 @@ Temporary Items
 
 # third party
 third_party/doca_*
-third_parties/ovs/
-third_parties/rdma-core/
+# third_parties/ovs/
+# third_parties/rdma-core/
 # nicc specific
 build/
 bin/
