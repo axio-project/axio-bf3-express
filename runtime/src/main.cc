@@ -42,6 +42,7 @@ int main(){
     NICC_CHECK_POINTER(dpa_init_desp);
     dpa_init_desp->base_desp.quota = 128;
     dpa_init_desp->device_name = device_name_cstr;
+    dpa_init_desp->phy_port = 0;
     dpa_init_desp->core_id = 0;
 
     nicc::ComponentDesp_FlowEngine_t *flow_engine_init_desp = new nicc::ComponentDesp_FlowEngine_t;
@@ -59,7 +60,7 @@ int main(){
      * \note   options: kComponent_FlowEngine | kComponent_DPA
      *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::AppDAG app_dag("/home/ubuntu/hxy/proj/nicc/examples/rdma_simple/dp_spec.json");
+    nicc::AppDAG app_dag("./examples/rdma_simple/dp_spec.json");
     app_dag.print();
     nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/
@@ -101,7 +102,8 @@ int main(){
             .quota = 1,
             .block_name = "dpa" /* \todo: use the component name from the config file */
         },
-        .device_name = device_name_cstr
+        .device_name = device_name_cstr,
+        .phy_port = 0
     };
     nicc::AppFunction dpa_app_func = nicc::AppFunction(
         /* handlers_ */ { &dpa_app_init_handler, &dpa_app_event_handler },

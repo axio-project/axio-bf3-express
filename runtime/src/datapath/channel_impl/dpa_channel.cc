@@ -7,13 +7,13 @@ namespace nicc {
 //  * On physical clusters, gid depends on the Ethernet is three layer or two layer; i.e., if two layer, choose the one gid without ip address.
 //  * On VM clusters (AWS/KVM), gid_index = 0 does not work, gid_index = 1 works
 //  * Mellanox's `show_gids` script lists all GIDs on all NICs
-static constexpr size_t kDefaultGIDIndex = 1;   
+static constexpr size_t kDefaultGIDIndex = 3;   
 
 /**
  * ===========================Public methods===========================
  */
 nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct flexio_event_handler	*event_handler,
                                             struct ibv_context *ibv_ctx,
@@ -26,6 +26,8 @@ nicc_retval_t Channel_DPA::allocate_channel(struct ibv_pd *pd,
     NICC_CHECK_POINTER(flexio_process);
     NICC_CHECK_POINTER(event_handler);
     NICC_CHECK_POINTER(ibv_ctx);
+
+    this->_flexio_process = flexio_process;
 
     // query mlx5 port attributes
     common_resolve_phy_port(dev_name, phy_port, LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), this->_resolve);
@@ -273,10 +275,10 @@ nicc_retval_t Channel_DPA::connect_qp(bool is_prior,
         }
         NICC_DEBUG_C("QP connected to host: qp_num(%u), is_prior(%d)", qp_info->qp_num, is_prior);
         /// fill the RECV queue
-        // if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(dev_queues)))){
-        //     NICC_WARN_C("failed to fill RECV queue for QP: retval(%u)", retval);
-        //     return retval;
-        // }
+        if(unlikely(NICC_SUCCESS != (retval = this->__fill_recv_queue(&dev_queues->qp_data)))){
+            NICC_WARN_C("failed to fill RECV queue for QP: retval(%u)", retval);
+            return retval;
+        }
     }
     this->_state |= (is_prior ? kChannel_State_Prior_Connected : kChannel_State_Next_Connected);
     return retval;
@@ -312,9 +314,11 @@ nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
+    
     // Copy GID information
     memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
     this->_resolve.gid_index = gid_entry.gid_index;
+
 
     // Get interface name from index
     char ifname[IF_NAMESIZE];
@@ -389,7 +393,7 @@ nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
 }
 
 nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct ibv_context *ibv_ctx,
                                             struct dpa_data_queues *dev_queues,
@@ -403,7 +407,7 @@ nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd,
       .log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
       // SQ does not need APU CQ
       .element_type = FLEXIO_CQ_ELEMENT_TYPE_NON_DPA_CQ,   
-      .uar_id = uar->page_id
+      .uar_id = flexio_uar_get_id(uar)
     };
 
     // allocate CQ & doorbell on DPA heap memory
@@ -440,7 +444,7 @@ nicc_retval_t Channel_DPA::__allocate_sq_cq(struct ibv_pd *pd,
 
 
 nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd, 
-                                            struct mlx5dv_devx_uar *uar, 
+                                            struct flexio_uar *uar, 
                                             struct flexio_process *flexio_process,
                                             struct flexio_event_handler	*event_handler,
                                             struct ibv_context *ibv_ctx,
@@ -455,8 +459,8 @@ nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd,
         .log_cq_depth = DPA_LOG_CQ_RING_DEPTH,
         .element_type = FLEXIO_CQ_ELEMENT_TYPE_DPA_THREAD,
         .thread = flexio_event_handler_get_thread(event_handler),
-        .uar_id = uar->page_id,
-        .uar_base_addr = uar->base_addr
+        .uar_id = flexio_uar_get_id(uar)
+        // .uar_base_addr = uar->base_addr      // seems not needed in doca v2.9.2
     };
 
     // allocate CQ & doorbell on DPA heap memory
@@ -492,7 +496,7 @@ nicc_retval_t Channel_DPA::__allocate_rq_cq(struct ibv_pd *pd,
 }
 
 nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
-                                       struct mlx5dv_devx_uar *uar,
+                                       struct flexio_uar *uar,
                                        struct flexio_process *flexio_process,
                                        struct dpa_data_queues *dev_queues,
                                        struct flexio_queues_handler *flexio_queues_handler,
@@ -522,7 +526,7 @@ nicc_retval_t Channel_DPA::__create_qp(struct ibv_pd *pd,
 }
 
 nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
-                                                struct mlx5dv_devx_uar *uar,
+                                                struct flexio_uar *uar,
                                                 struct flexio_process *flexio_process,
                                                 struct dpa_data_queues *dev_queues,
                                                 struct flexio_queues_handler *flexio_queues_handler){
@@ -532,7 +536,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
     // attributes of SQ
     struct flexio_wq_attr sq_attr = {
       .log_wq_depth = DPA_LOG_SQ_RING_DEPTH,
-      .uar_id = uar->page_id,
+      .uar_id = flexio_uar_get_id(uar),
       .pd = pd
     };
     // RQ attributes
@@ -576,7 +580,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
             /* daddr */ dev_queues->sq_data.wqd_daddr,
             /* log_bsize */ DPA_LOG_SQ_RING_DEPTH + DPA_LOG_WQ_DATA_ENTRY_BSIZE,
             /* access */ IBV_ACCESS_LOCAL_WRITE,
-            /* mkey */ &this->_sqd_mkey
+            /* mkey */ &(flexio_queues_handler->sqd_mkey)
         )
     ))){
         NICC_WARN_C(
@@ -586,7 +590,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
         goto exit;
     }
 
-    dev_queues->sq_data.wqd_mkey_id = flexio_mkey_get_id(this->_sqd_mkey);
+    dev_queues->sq_data.wqd_mkey_id = flexio_mkey_get_id(flexio_queues_handler->sqd_mkey);
 
     // ------------------------- RQ -------------------------
     // allocate RQ memories (data buffers and the ring)
@@ -609,7 +613,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
             /* daddr */ dev_queues->rq_data.wqd_daddr,
             /* log_bsize */ DPA_LOG_RQ_RING_DEPTH + DPA_LOG_WQ_DATA_ENTRY_BSIZE,
             /* access */ IBV_ACCESS_LOCAL_WRITE,
-            /* mkey */ &this->_rqd_mkey
+            /* mkey */ &(flexio_queues_handler->rqd_mkey)
         )
     ))){
         NICC_WARN_C(
@@ -618,7 +622,7 @@ nicc_retval_t Channel_DPA::__create_ethernet_qp(struct ibv_pd *pd,
         );
         goto exit;
     }
-    dev_queues->rq_data.wqd_mkey_id = flexio_mkey_get_id(this->_rqd_mkey);
+    dev_queues->rq_data.wqd_mkey_id = flexio_mkey_get_id(flexio_queues_handler->rqd_mkey);
 
     // init WQEs on the RQ ring
     if(unlikely(NICC_SUCCESS != (
@@ -671,7 +675,7 @@ exit:
 }
 
 nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
-                                            struct mlx5dv_devx_uar *uar,
+                                            struct flexio_uar *uar,
                                             struct flexio_process *flexio_process,
                                             struct dpa_data_queues *dev_queues,
                                             struct flexio_queues_handler *flexio_queues_handler){
@@ -687,10 +691,11 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
         NICC_WARN_C("failed to allocate doorbell record for QP: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
         return retval;
     }
-    // allocate QP data memories
+    // allocate QP memory resources
     if(unlikely(NICC_SUCCESS != (
-        retval = this->__allocate_qp_data_memory(
+        retval = this->__allocate_qp_memory(
             flexio_process,
+            flexio_queues_handler,
             &dev_queues->qp_data,
             DPA_LOG_SQ_RING_DEPTH,
             DPA_LOG_RQ_RING_DEPTH,
@@ -701,6 +706,46 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
+    dev_queues->qp_data.qpd_daddr = flexio_queues_handler->qpd_mbuf_start_addr;
+
+    // create mkey for QP data buffers
+    if(unlikely(NICC_SUCCESS != (
+        retval = this->__create_dpa_mkey(
+            /* process */ flexio_process,
+            /* pd */ pd,
+            /* daddr */ flexio_queues_handler->qpd_mbuf_start_addr,
+            /* log_bsize */ DPA_LOG_SQ_RING_DEPTH + 1 + DPA_LOG_WQ_DATA_ENTRY_BSIZE,    // this is ugly, we assume SQ Ring Depth = RQ Ring Depth, thus we add 1 to the log_bsize
+            /* access */ IBV_ACCESS_LOCAL_WRITE  |
+                         IBV_ACCESS_REMOTE_WRITE |
+                         IBV_ACCESS_REMOTE_READ  |
+                         IBV_ACCESS_RELAXED_ORDERING,
+            /* mkey */ &(flexio_queues_handler->qpd_mkey)
+        )
+    ))){
+        NICC_WARN_C("failed to create mkey for QP data buffers: flexio_process(%p), doca_retval(%u), ", flexio_process, retval);
+        goto exit;
+    }
+    dev_queues->qp_data.qpd_mkey_id = flexio_mkey_get_id(flexio_queues_handler->qpd_mkey);
+    /// create mr and lkey for qpd, then we can post receive for this qp
+    flexio_queues_handler->qpd_mr = new struct ibv_mr;
+    memset(flexio_queues_handler->qpd_mr, 0, sizeof(struct ibv_mr));
+    flexio_queues_handler->qpd_mr->lkey = dev_queues->qp_data.qpd_mkey_id;
+    flexio_queues_handler->qpd_mr->rkey = flexio_queues_handler->qpd_mr->lkey;
+    dev_queues->qp_data.qpd_lkey = flexio_queues_handler->qpd_mr->lkey;
+
+    // init WQEs on the RQ ring
+    if (unlikely(NICC_SUCCESS != (retval = this->__init_rq_ring_wqes(
+        /* process */ flexio_process,
+        /* rq_ring_daddr */ dev_queues->qp_data.qp_rq_daddr,
+        /* log_depth */ DPA_LOG_RQ_RING_DEPTH,
+        /* data_daddr */ dev_queues->qp_data.qpd_daddr,
+        /* wqd_mkey_id */ flexio_queues_handler->qpd_mr->lkey
+        )
+    ))){
+        NICC_WARN_C("failed to initialize WQEs within RQ ring");
+        goto exit;
+    }
+
     // create QP
     flexio_qp_fattr.transport_type              = FLEXIO_QPC_ST_RC;
     flexio_qp_fattr.log_sq_depth                = DPA_LOG_SQ_RING_DEPTH;
@@ -708,7 +753,7 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
     flexio_qp_fattr.qp_wq_buff_qmem.daddr       = dev_queues->qp_data.qp_rq_daddr;
     flexio_qp_fattr.qp_wq_dbr_qmem.memtype      = FLEXIO_MEMTYPE_DPA;
     flexio_qp_fattr.qp_wq_dbr_qmem.daddr        = dev_queues->qp_data.qp_dbr_daddr;
-    flexio_qp_fattr.uar_id                      = uar->page_id;
+    flexio_qp_fattr.uar_id                      = flexio_uar_get_id(uar);
     flexio_qp_fattr.rq_cqn                      = dev_queues->rq_cq_data.cq_num;
     flexio_qp_fattr.sq_cqn                      = dev_queues->sq_cq_data.cq_num;
     flexio_qp_fattr.rq_type                     = FLEXIO_QP_QPC_RQ_TYPE_REGULAR;
@@ -729,7 +774,8 @@ nicc_retval_t Channel_DPA::__create_rdma_qp(struct ibv_pd *pd,
     dev_queues->qp_data.log_qp_sq_depth = DPA_LOG_SQ_RING_DEPTH;
     dev_queues->qp_data.log_qp_rq_depth = DPA_LOG_RQ_RING_DEPTH;
 
-    
+    /// the doorbell
+
 exit:
     // TODO: if unsuccessful, free allocated memories
 
@@ -794,6 +840,58 @@ exit:
             NICC_ASSERT(ret == FLEXIO_STATUS_SUCCESS);
         }
     }
+
+    return retval;
+}
+
+nicc_retval_t Channel_DPA::__allocate_qp_memory(struct flexio_process *process,
+                                                struct flexio_queues_handler *flexio_queues_handler,
+                                                struct dpa_qp *qp_transf,
+                                                int log_sq_depth,
+                                                int log_rq_depth,
+                                                uint64_t wqe_size){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
+    flexio_uintptr_t buff_daddr;
+	size_t buff_bsize = 0;
+	size_t rq_bsize = 0;
+	size_t sq_bsize = 0;
+
+    NICC_CHECK_POINTER(process);
+    NICC_CHECK_POINTER(qp_transf);
+    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
+
+    // allocate data buffers, these memories is used by dpa kernel
+    /// mempool has sq ring depth + rq ring depth mbufs
+    /// then, total size is (sq ring depth + rq ring depth) * MTU size
+    /// qpd_mbuf_start_addr is used to store the start address of the first mbuf
+    if(unlikely(FLEXIO_STATUS_SUCCESS !=
+        (ret = flexio_buf_dev_alloc(process, (LOG2VALUE(log_sq_depth) + LOG2VALUE(log_rq_depth)) * LOG2VALUE(DPA_LOG_WQ_DATA_ENTRY_BSIZE), &flexio_queues_handler->qpd_mbuf_start_addr))
+    )) {
+        NICC_WARN_C(
+            "failed to allocate QP data buffer: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+
+    // allocate wqe queue, these memories is used by flexio driver
+    rq_bsize = LOG2VALUE(log_rq_depth) * wqe_size;
+    sq_bsize = LOG2VALUE(log_sq_depth) * wqe_size;
+    buff_bsize = rq_bsize + sq_bsize;
+
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_buf_dev_alloc(process, buff_bsize, &buff_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to allocate buffer for QP: flexio_process(%p), flexio_retval(%u)",
+            process, ret
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    /* ring buffer start from RQ, and after RQ is SQ*/
+    qp_transf->qp_rq_daddr = buff_daddr;
+    qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
 
     return retval;
 }
@@ -959,42 +1057,6 @@ nicc_retval_t Channel_DPA::__create_dpa_mkey(struct flexio_process *process,
     return retval;
 }
 
-nicc_retval_t Channel_DPA::__allocate_qp_data_memory(struct flexio_process *process,
-                                                     struct dpa_qp *qp_transf,
-                                                     int log_sq_depth,
-                                                     int log_rq_depth,
-                                                     uint64_t wqe_size){
-    nicc_retval_t retval = NICC_SUCCESS;
-    flexio_status ret;
-    flexio_uintptr_t buff_daddr;
-	size_t buff_bsize = 0;
-	size_t rq_bsize = 0;
-	size_t sq_bsize = 0;
-
-    NICC_CHECK_POINTER(process);
-    NICC_CHECK_POINTER(qp_transf);
-    NICC_ASSERT(wqe_size > 0 && wqe_size % 2 == 0);
-
-    rq_bsize = LOG2VALUE(log_rq_depth) * wqe_size;
-    sq_bsize = LOG2VALUE(log_sq_depth) * wqe_size;
-    buff_bsize = rq_bsize + sq_bsize;
-
-    if(unlikely(FLEXIO_STATUS_SUCCESS != (
-        ret = flexio_buf_dev_alloc(process, buff_bsize, &buff_daddr)
-    ))){
-        NICC_WARN_C(
-            "failed to allocate buffer for QP: flexio_process(%p), flexio_retval(%u)",
-            process, ret
-        );
-        return NICC_ERROR_HARDWARE_FAILURE;
-    }
-    /* buffer start from RQ, and after RQ is SQ*/
-    qp_transf->qp_rq_daddr = buff_daddr;
-    qp_transf->qp_sq_daddr = buff_daddr + rq_bsize;
-
-    return retval;
-}
-
 void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *dev_queues){
     NICC_ASSERT(qp_info->is_initialized == false);
     NICC_CHECK_POINTER(qp_info);
@@ -1011,8 +1073,6 @@ void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *d
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
     memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
-    std::cout << "Local QP Info:" << std::endl;
-    qp_info->print();
 }
 
 nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_queues, 
@@ -1039,15 +1099,16 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
         NICC_WARN_C("QP info is not initialized: qp_num(%u)", qp_info->qp_num);
         return NICC_ERROR_NOT_FOUND;
     }
+
     /// Print local and remote QPinfo
-    std::cout << "Local QP Info:" << std::endl;
+    std::cout << "========== Local QP Info: ==========" << std::endl;
     local_qp_info->print();
-    std::cout << "Remote QP Info:" << std::endl;
+    std::cout << "========== Remote QP Info: ==========" << std::endl;
     qp_info->print();
     memcpy(this->_remote_mac_addr, qp_info->mac_addr, 6);
     memcpy(&this->_remote_gid, qp_info->gid, sizeof(union ibv_gid));
 	qp_fattr.remote_qp_num     = qp_info->qp_num;
-    qp_fattr.dest_mac = this->_remote_mac_addr;
+    qp_fattr.dest_mac          = this->_remote_mac_addr;
     qp_fattr.rgid_or_rip       = this->_remote_gid;
 	qp_fattr.gid_table_index   = qp_info->gid_table_index;
 	qp_fattr.rlid              = qp_info->lid;
@@ -1094,7 +1155,25 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
     return retval;
 }
 
+nicc_retval_t Channel_DPA::__fill_recv_queue(struct dpa_qp *qp_transf){
+    nicc_retval_t retval = NICC_SUCCESS;
+    flexio_status ret;
 
+    __be32 dbr;
+    // modify RQ's DBR record to count for the number of WQEs
+    dbr = htobe32(LOG2VALUE(DPA_LOG_RQ_RING_DEPTH) & 0xffff);    // only need to update recv counter
+    if(unlikely(FLEXIO_STATUS_SUCCESS != (
+        ret = flexio_host2dev_memcpy(this->_flexio_process, &dbr, sizeof(dbr), qp_transf->qp_dbr_daddr)
+    ))){
+        NICC_WARN_C(
+            "failed to modify DBR for RQ for counting all allocated slot: flexio_retval(%u), flexio_process(%p)",
+            ret, this->_flexio_process
+        );
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    return retval;
+}
 
 
 /* ----------------------------- deallocate ----------------------------- */

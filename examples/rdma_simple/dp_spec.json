@@ -3,15 +3,15 @@
     "enabled_components": ["flow_engine", "dpa", "soc"],
     "remote_host": [
         {
-            "ipv4": "10.0.4.101",
-            "mgnt_port": 20086,
+            "ipv4": "10.0.0.3",
+            "mgnt_port": 30086,
             "data_port": 10010,
-            "connect_to": ["soc"]
+            "connect_to": ["dpa"]
         }
     ],
     "local_host": [
         {
-            "ipv4": "10.0.4.102",
+            "ipv4": "10.0.0.4",
             "mgnt_port": 20086,
             "data_port": 10010,
             "connect_to": ["dpa"]

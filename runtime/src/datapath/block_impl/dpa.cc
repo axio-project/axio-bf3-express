@@ -17,12 +17,13 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
 
     // TODO: this is ugly, remove ibv_ctx from func_state!
     NICC_CHECK_POINTER(func_state->ibv_ctx = device_state.ibv_ctx);
-    if(unlikely(
-        NICC_SUCCESS != (retval = this->__setup_ibv_device(func_state))
-    )){
-        NICC_WARN_C("failed to setu ibv device for newly applocated function, abort");
-        goto exit;
-    }
+    // if(unlikely(
+    //     // seems uar and pd can obtain from flexio process, may delete this function
+    //     NICC_SUCCESS != (retval = this->__setup_ibv_device(func_state))
+    // )){
+    //     NICC_WARN_C("failed to setu ibv device for newly applocated function, abort");
+    //     goto exit;
+    // }
 
     if(unlikely(app_func->handlers.size() == 0)){
         NICC_WARN_C("no handlers included in app_func context, nothing registered");
@@ -242,6 +243,13 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     NICC_CHECK_POINTER(app_handler->binary.dpa.kernel);
     NICC_CHECK_POINTER(app_handler->binary.dpa.host_stub);
 
+    // set flexio api version
+    if (flexio_version_set(FLEXIO_VER_USED)) {
+        NICC_WARN_C("failed to set flexio api version");
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+
     // create flexio process
     if(unlikely(FLEXIO_STATUS_SUCCESS != 
         (res = flexio_process_create(
@@ -257,10 +265,16 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
         goto exit;
     }
 
-    // obtain uar from the created process
+    // obtain uar and pd from the created process
     func_state->flexio_uar = flexio_process_get_uar(func_state->flexio_process);
     if(unlikely(func_state->flexio_uar == nullptr)){
         NICC_WARN_C("no uar extracted from flexio process, device: %s", func_state->ibv_ctx->device->name);
+        retval = NICC_ERROR_HARDWARE_FAILURE;
+        goto exit;
+    }
+    func_state->flexio_pd = flexio_process_get_pd(func_state->flexio_process);
+    if(unlikely(func_state->flexio_pd == nullptr)){
+        NICC_WARN_C("no pd extracted from flexio process, device: %s", func_state->ibv_ctx->device->name);
         retval = NICC_ERROR_HARDWARE_FAILURE;
         goto exit;
     }
@@ -316,13 +330,13 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
 
     // allocate channel
     if(unlikely(NICC_SUCCESS !=(
-        retval = this->_function_state->channel->allocate_channel(func_state->pd,       /* used in ethernet channel */
-                                                                  func_state->uar,      /* used in ethernet channel */
+        retval = this->_function_state->channel->allocate_channel(func_state->flexio_pd,       
+                                                                  func_state->flexio_uar,      
                                                                   func_state->flexio_process, 
                                                                   func_state->event_handler, 
                                                                   func_state->ibv_ctx,
-                                                                  "mlx5_2", /* RDMA device name, mlx5_0 does not support RoCEv2 */
-                                                                  0         /* RDMA port */) 
+                                                                  this->_desp->device_name, /* RDMA device name */
+                                                                  this->_desp->phy_port /* RDMA port */) 
     ))){
         NICC_WARN_C(
             "failed to allocate and init DPA channel: nicc_retval(%u)", retval

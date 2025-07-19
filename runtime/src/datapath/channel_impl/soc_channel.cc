@@ -483,8 +483,6 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
     return retval;
 }
 
-
-
 nicc_retval_t Channel_SoC::__fill_recv_queue(RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     // Fill the RECV queue. post_recvs() can use fast RECV and therefore not

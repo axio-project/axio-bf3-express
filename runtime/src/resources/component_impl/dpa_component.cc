@@ -44,6 +44,7 @@ nicc_retval_t Component_DPA::allocate_block(ComponentBaseDesp_t* desp, Component
     desired_cb->_base_desp->quota = desp->quota;
     /// specific descriptor
     desired_cb->_desp->device_name = func_input_desp->device_name;
+    desired_cb->_desp->phy_port = func_input_desp->phy_port;
     desired_cb->_desp->core_id = 0; // \todo allocate core group
 
     /* Step 3: set target cb's state to default */

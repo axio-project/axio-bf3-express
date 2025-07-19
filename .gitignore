@@ -6,6 +6,10 @@
 .AppleDouble
 .LSOverride
 
+### vscode ###
+.vscode
+.cache
+
 # Icon must end with two \r
 Icon
 

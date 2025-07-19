@@ -42,6 +42,7 @@ typedef struct ComponentDesp_DPA {
     /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;
+    uint8_t phy_port;
     // core id
     //! \todo use core mask instead of core id
     uint8_t core_id;
@@ -64,6 +65,7 @@ typedef struct ComponentFuncState_DPA {
     // Hanlder and PU
     struct flexio_process       *flexio_process;	// FlexIO process
     struct flexio_uar		    *flexio_uar;	    // FlexIO UAR
+    struct ibv_pd               *flexio_pd;         // Protection domain for flexio process
     struct flexio_event_handler	*event_handler;		// Event handler on device
 
     // Communication Channel
@@ -145,7 +147,11 @@ class ComponentBlock_DPA : public ComponentBlock {
      *  \return the qp info of the current component
      */
     QPInfo *get_qp_info(bool is_prior) override {
-        return nullptr;
+        if (is_prior) {
+            return this->_function_state->channel->qp_for_prior_info;
+        } else {
+            return this->_function_state->channel->qp_for_next_info;
+        }
     }
 
 /**

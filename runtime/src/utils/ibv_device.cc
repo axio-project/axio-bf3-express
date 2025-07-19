@@ -36,11 +36,15 @@ struct ibv_context* utils_ibv_open_device(const char *device_name){
         NICC_WARN("failed to get device context of device %s", device_name);
     }
     struct ibv_port_attr port_attr;
-    if (ibv_query_port(ibv_ctx, 1, &port_attr) != IBV_PORT_ACTIVE) {
+    if (ibv_query_port(ibv_ctx, 1, &port_attr) != 0) {
         NICC_WARN("failed to query port %d of device %s", 1, device_name);
         goto exit;
     }
     
+    if (port_attr.state != IBV_PORT_ACTIVE) {
+        NICC_WARN("port %d of device %s is not active (state: %d)", 1, device_name, port_attr.state);
+        goto exit;
+    }
 
     ibv_free_device_list(dev_list);
 
