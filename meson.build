@@ -106,6 +106,7 @@ if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
     doca_modules = [
       'doca-aes-gcm',
       'doca-apsh',
+	  'doca-argp',
       'doca-comch',
     #   'doca-comm-channel',
       'doca-common',
@@ -121,7 +122,7 @@ if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
       'doca-rdma',
       'doca-sha',
 	  'doca-telemetry',
-      'doca-telemetry-exporter',
+    #   'doca-telemetry-exporter',
       'doca-urom'
     ]
   endif
