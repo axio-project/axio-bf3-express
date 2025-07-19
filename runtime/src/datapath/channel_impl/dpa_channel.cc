@@ -7,7 +7,7 @@ namespace nicc {
 //  * On physical clusters, gid depends on the Ethernet is three layer or two layer; i.e., if two layer, choose the one gid without ip address.
 //  * On VM clusters (AWS/KVM), gid_index = 0 does not work, gid_index = 1 works
 //  * Mellanox's `show_gids` script lists all GIDs on all NICs
-static constexpr size_t kDefaultGIDIndex = 1;   
+static constexpr size_t kDefaultGIDIndex = 3;   
 
 /**
  * ===========================Public methods===========================
@@ -301,54 +301,31 @@ nicc_retval_t Channel_DPA::__roce_resolve_phy_port() {
     this->_resolve.port_lid = port_attr.lid;
 
     // Query GID information using ibv_query_gid_ex
-    // struct ibv_gid_entry gid_entry;
-    // if (ibv_query_gid_ex(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
-    //     NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", 
-    //                this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
-    //     return NICC_ERROR_HARDWARE_FAILURE;
-    // }
+    struct ibv_gid_entry gid_entry;
+    if (ibv_query_gid_ex(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
+        NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", 
+                   this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
 
-    // // Validate GID
-    // if (gid_entry.gid_type != IBV_GID_TYPE_ROCE_V2) {
-    //     NICC_WARN_C("invalid gid type: expected RoCE v2, got %d", gid_entry.gid_type);
-    //     return NICC_ERROR_HARDWARE_FAILURE;
-    // }
+    // Validate GID
+    if (gid_entry.gid_type != IBV_GID_TYPE_ROCE_V2) {
+        NICC_WARN_C("invalid gid type: expected RoCE v2, got %d", gid_entry.gid_type);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
 
     
     // Copy GID information
-    // memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
-    // this->_resolve.gid_index = gid_entry.gid_index;
+    memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
+    this->_resolve.gid_index = gid_entry.gid_index;
 
-    // Manually assign GID, seems that the GID should be obtained from the host side
-    // \todo: obtain the GID from the host side
-    // rocep202s0f0    1       1       fe80:0000:0000:0000:a288:c2ff:febf:9b10
-    this->_resolve.gid_index = 1;
-    this->_resolve.gid.raw[0] = 0xfe;
-    this->_resolve.gid.raw[1] = 0x80;
-    this->_resolve.gid.raw[2] = 0x00;
-    this->_resolve.gid.raw[3] = 0x00;
-    this->_resolve.gid.raw[4] = 0x00;
-    this->_resolve.gid.raw[5] = 0x00;
-    this->_resolve.gid.raw[6] = 0x00;
-    this->_resolve.gid.raw[7] = 0x00;
-    this->_resolve.gid.raw[8] = 0xa2;
-    this->_resolve.gid.raw[9] = 0x88;
-    this->_resolve.gid.raw[10] = 0xc2;
-    this->_resolve.gid.raw[11] = 0xff;
-    this->_resolve.gid.raw[12] = 0xfe;
-    this->_resolve.gid.raw[13] = 0xbf;
-    this->_resolve.gid.raw[14] = 0x9b;
-    this->_resolve.gid.raw[15] = 0x10;
 
     // Get interface name from index
     char ifname[IF_NAMESIZE];
-    // if (if_indextoname(gid_entry.ndev_ifindex, ifname) == nullptr) {
-    //     NICC_WARN_C("failed to get interface name for index %u", gid_entry.ndev_ifindex);
-    //     return NICC_ERROR_HARDWARE_FAILURE;
-    // }
-    // Manually assign interface name
-    strncpy(ifname, "p0", IFNAMSIZ - 1);
-    ifname[IFNAMSIZ - 1] = '\0';
+    if (if_indextoname(gid_entry.ndev_ifindex, ifname) == nullptr) {
+        NICC_WARN_C("failed to get interface name for index %u", gid_entry.ndev_ifindex);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
 
     // Read MAC address from sysfs
     char sys_path[256];
@@ -1096,8 +1073,6 @@ void Channel_DPA::__set_local_qp_info(QPInfo *qp_info, struct dpa_data_queues *d
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
     memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
-    std::cout << "Local QP Info:" << std::endl;
-    qp_info->print();
 }
 
 nicc_retval_t Channel_DPA::__connect_qp_to_component_block(dpa_data_queues *dev_queues, 
@@ -1126,10 +1101,10 @@ nicc_retval_t Channel_DPA::__connect_qp_to_host(dpa_data_queues *dev_queues,
     }
 
     /// Print local and remote QPinfo
-    // std::cout << "========== Local QP Info: ==========" << std::endl;
-    // local_qp_info->print();
-    // std::cout << "========== Remote QP Info: ==========" << std::endl;
-    // qp_info->print();
+    std::cout << "========== Local QP Info: ==========" << std::endl;
+    local_qp_info->print();
+    std::cout << "========== Remote QP Info: ==========" << std::endl;
+    qp_info->print();
     memcpy(this->_remote_mac_addr, qp_info->mac_addr, 6);
     memcpy(&this->_remote_gid, qp_info->gid, sizeof(union ibv_gid));
 	qp_fattr.remote_qp_num     = qp_info->qp_num;

@@ -20,6 +20,16 @@ public:
             std::cerr << "Error creating socket." << std::endl;
             exit(1);
         }
+        
+        // 添加设置socket选项的代码
+        struct linger lin;
+        lin.l_onoff = 1;
+        lin.l_linger = 0;
+        setsockopt(sockfd, SOL_SOCKET, SO_LINGER, (const char *)&lin, sizeof(lin));
+        
+        // 允许地址重用
+        int opt = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
     }
 
     void connectToServer(const char* ip, int port) {
@@ -67,6 +77,16 @@ public:
             std::cerr << "Socket creation failed." << std::endl;
             exit(1);
         }
+
+        // 添加设置socket选项的代码
+        struct linger lin;
+        lin.l_onoff = 1;
+        lin.l_linger = 0;
+        setsockopt(server_fd, SOL_SOCKET, SO_LINGER, (const char *)&lin, sizeof(lin));
+        
+        // 允许地址重用
+        int opt = 1;
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
 
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;

@@ -122,12 +122,12 @@ static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size
   // seems that the active_mtu should be checked on host side
   // \todo: check the MTU on host side
   // Check the MTU 
-  // size_t active_mtu = enum_to_mtu(port_attr.active_mtu);
-  // if (mtu > active_mtu) {
-  //   throw std::runtime_error("Transport's required MTU is " +
-  //                             std::to_string(mtu) + ", active_mtu is " +
-  //                             std::to_string(active_mtu));
-  // }
+  size_t active_mtu = enum_to_mtu(port_attr.active_mtu);
+  if (mtu > active_mtu) {
+    throw std::runtime_error("Transport's required MTU is " +
+                              std::to_string(mtu) + ", active_mtu is " +
+                              std::to_string(active_mtu));
+  }
 
   resolve.device_id = dev_idx;
   resolve.ib_ctx = ib_ctx;
@@ -143,7 +143,8 @@ static void common_resolve_phy_port(const char *dev_name, uint8_t phy_port, size
     case 16: gbps_per_lane = 14.0; break;
     case 32: gbps_per_lane = 25.0; break;
     case 64: gbps_per_lane = 50.0; break;
-    default: rt_assert(false, "Invalid active speed");
+    case 128: gbps_per_lane = 100.0; break;
+    default: rt_assert(false, "Invalid active speed, active speed: " + std::to_string(port_attr.active_speed));
   };
 
   size_t num_lanes = SIZE_MAX;

@@ -42,6 +42,7 @@ typedef struct ComponentDesp_DPA {
     /* ========== ComponentBlock_DPA fields ========== */
     // IB device name
     const char *device_name;
+    uint8_t phy_port;
     // core id
     //! \todo use core mask instead of core id
     uint8_t core_id;
