@@ -5,14 +5,16 @@
         {
             "ipv4": "10.0.4.101",
             "mgnt_port": 20086,
-            "data_port": 10010
+            "data_port": 10010,
+            "connect_to": ["soc"]
         }
     ],
     "local_host": [
         {
             "ipv4": "10.0.4.102",
             "mgnt_port": 20086,
-            "data_port": 10010
+            "data_port": 10010,
+            "connect_to": ["soc"]
         }
     ],
     "dp_graph": [
