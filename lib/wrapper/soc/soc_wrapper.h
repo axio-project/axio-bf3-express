@@ -6,6 +6,11 @@
 
 namespace nicc {
 
+// SoC user function type definition
+typedef nicc_retval_t (*soc_init_handler_t)(void* user_state);
+typedef nicc_retval_t (*soc_pkt_handler_t)(Buffer* pkt, void* user_state);  
+typedef nicc_retval_t (*soc_msg_handler_t)(Buffer* msg, void* user_state);
+
 /**
  * \brief Wrapper for executing SoC functions, created and initialized by ComponentBlock_SoC
  */
@@ -50,6 +55,13 @@ class SoCWrapper {
         /// e.g. function state ptr
         /// e.g. event handler ptr
         /// lock-free queue
+        
+        /* ========== user defined handlers and state ========== */
+        soc_init_handler_t init_handler;    /// user defined init handler
+        soc_pkt_handler_t pkt_handler;      /// user defined packet handler  
+        soc_msg_handler_t msg_handler;      /// user defined message handler
+        void* user_state;                   /// user defined state object
+        size_t user_state_size;             /// user state object size
     };
 
 /**

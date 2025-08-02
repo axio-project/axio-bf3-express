@@ -26,6 +26,17 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
             return;
         }
     }
+    
+    // call user defined init handler if available
+    if (this->_context->init_handler) {
+        nicc_retval_t ret = this->_context->init_handler(this->_context->user_state);
+        if (ret != NICC_SUCCESS) {
+            NICC_ERROR_C("User init handler failed: ret=%d", ret);
+            return;
+        }
+        NICC_LOG("User init handler called successfully");
+    }
+    
     /// run the SoCWrapper
     this->__run(10.0);
     return;
@@ -75,12 +86,25 @@ void SoCWrapper::__launch() {
     /// \todo get packets per message within header; now assume 1 packet per message
     size_t msg_num = worker_queue_size / 1;
     if (msg_num > kAppRxMsgBatchSize) {
-        /// handle received messages, \todo add user's msg handler
-
-        /// dequeue from worker queue, and enqueue into next worker for pipelined processing
+        /// handle received messages with user defined msg handler
         for (size_t i = 0; i < msg_num * 1; i++) {
             Buffer *m = (Buffer*)this->_tmp_worker_rx_queue->dequeue();
-            this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+            
+            // call user defined message handler if available
+            if (this->_context->msg_handler) {
+                nicc_retval_t ret = this->_context->msg_handler(m, this->_context->user_state);
+                if (ret == NICC_SUCCESS) {
+                    // successful processing, forward to next component
+                    this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                } else {
+                    // processing failed, log warning but still forward (or could drop based on policy)
+                    NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
+                    this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                }
+            } else {
+                // no user handler registered, default behavior: forward message
+                this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+            }
         }
     }
 

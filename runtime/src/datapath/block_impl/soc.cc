@@ -6,7 +6,7 @@ static void __soc_wrapper_thread_func(ComponentFuncState_SoC_t *func_state);
 nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint64_t i;
-    AppHandler *app_handler = nullptr, *init_handler = nullptr, *event_handler = nullptr;
+    AppHandler *app_handler = nullptr;
     ComponentFuncState_SoC_t *func_state;
 
     NICC_CHECK_POINTER(app_func);
@@ -23,10 +23,13 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
         NICC_CHECK_POINTER(app_handler = app_func->handlers[i]);
         switch(app_handler->tid){
         case handler_typeid_t::Init:
-            init_handler = app_handler;
+            this->_init_handler = app_handler;
             break;
         case handler_typeid_t::Pkt_Handler:
-            event_handler = app_handler;
+            this->_pkt_handler = app_handler;
+            break;
+        case handler_typeid_t::Msg_Handler:
+            this->_msg_handler = app_handler;
             break;
         default:
             NICC_ERROR_C_DETAIL("unregornized handler id for SoC, this is a bug: handler_id(%u)", app_handler->tid);
@@ -34,6 +37,21 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
     }
     // check handlers
     /* ...... */
+    
+    /* Step 1.5: Handle user state from AppFunction */
+    if (app_func->user_state && app_func->user_state_size > 0) {
+        // allocate memory for user state copy
+        this->_user_state = malloc(app_func->user_state_size);
+        if (this->_user_state == nullptr) {
+            NICC_ERROR_C("Failed to allocate memory for user state");
+            retval = NICC_ERROR_MEMORY_FAILURE;
+            goto exit;
+        }
+        // copy user state
+        memcpy(this->_user_state, app_func->user_state, app_func->user_state_size);
+        this->_user_state_size = app_func->user_state_size;
+        NICC_LOG("Successfully copied user state: size=%zu", this->_user_state_size);
+    }
     
     /* Step 2: Allocate and record funciton state */
     // allocate wrapper resources, including channel
@@ -55,6 +73,15 @@ nicc_retval_t ComponentBlock_SoC::unregister_app_function(){
     NICC_CHECK_POINTER( this->_function_state );
     // deallocate all resources for registered funcitons
     /* ...... */
+    
+    // free user state memory if allocated
+    if (this->_user_state) {
+        free(this->_user_state);
+        this->_user_state = nullptr;
+        this->_user_state_size = 0;
+        NICC_LOG("User state memory freed");
+    }
+    
 exit:
     return retval;
 }
@@ -150,6 +177,29 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
     // NICC_CHECK_POINTER(context->match_action_table = func_state->match_action_table);
     NICC_CHECK_POINTER(func_state->context->qp_for_prior = func_state->channel->qp_for_prior);
     NICC_CHECK_POINTER(func_state->context->qp_for_next = func_state->channel->qp_for_next);
+
+    // pass user defined handlers to wrapper context
+    if (this->_init_handler) {
+        func_state->context->init_handler = (soc_init_handler_t)this->_init_handler->binary.soc;
+    } else {
+        func_state->context->init_handler = nullptr;
+    }
+    
+    if (this->_pkt_handler) {
+        func_state->context->pkt_handler = (soc_pkt_handler_t)this->_pkt_handler->binary.soc;
+    } else {
+        func_state->context->pkt_handler = nullptr;
+    }
+    
+    if (this->_msg_handler) {
+        func_state->context->msg_handler = (soc_msg_handler_t)this->_msg_handler->binary.soc;
+    } else {
+        func_state->context->msg_handler = nullptr;
+    }
+    
+    // pass user state to wrapper context
+    func_state->context->user_state = this->_user_state;
+    func_state->context->user_state_size = this->_user_state_size;
 
     // create wrapper process for the function
     NICC_CHECK_POINTER(func_state->wrapper_thread = new std::thread(__soc_wrapper_thread_func, func_state));

@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <thread>
+#include <cstdlib>  // for malloc, free
 
 #include "common.h"
 #include "log.h"
@@ -58,6 +59,7 @@ typedef struct ComponentFuncState_SoC {
     // Communication Channel
     Channel_SoC                 *channel;           // Communication channel for SoC
     /* ========== Specific fields ========== */
+
 } ComponentFuncState_SoC_t;
 
 
@@ -75,7 +77,14 @@ class ComponentBlock_SoC : public ComponentBlock {
         NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
         NICC_CHECK_POINTER(this->_base_function_state = &this->_function_state->base_state);
     }
-    ~ComponentBlock_SoC(){};
+    ~ComponentBlock_SoC(){
+        // free user state memory if allocated
+        if (_user_state) {
+            free(_user_state);
+            _user_state = nullptr;
+            _user_state_size = 0;
+        }
+    };
 
     /**
      *  \brief  typeid of handlers register into SoC
@@ -186,6 +195,19 @@ private:
      * block, using for running the function on this component block
      */
     ComponentFuncState_SoC_t *_function_state = nullptr;
+
+    /**
+     * \brief  the application handler to be registered into this component
+     */
+    AppHandler *_init_handler = nullptr;
+    AppHandler *_pkt_handler = nullptr;
+    AppHandler *_msg_handler = nullptr;
+    
+    /**
+     * \brief  user defined state from AppFunction
+     */
+    void* _user_state = nullptr;        /// copy of user state object
+    size_t _user_state_size = 0;        /// size of user state object
     
 };
 

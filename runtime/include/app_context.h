@@ -56,9 +56,16 @@ class AppFunction {
     /*!
      *  \brief  constructor
      *  \param  handlers   list of pointers to the actual function to be executed
+     *  \param  user_state user defined state object pointer
+     *  \param  user_state_size user state object size (for copying)
      */
-    AppFunction(std::vector<AppHandler*>&& handlers_, ComponentBaseDesp_t* cb_desp_, component_typeid_t cid)
-        : handlers(handlers_), cb_desp(cb_desp_), component_id(cid)
+    AppFunction(std::vector<AppHandler*>&& handlers_, 
+                ComponentBaseDesp_t* cb_desp_, 
+                component_typeid_t cid,
+                void* user_state_ = nullptr,
+                size_t user_state_size_ = 0)
+        : handlers(handlers_), cb_desp(cb_desp_), component_id(cid),
+          user_state(user_state_), user_state_size(user_state_size_)
     {
         if(unlikely(handlers.size() == 0)){
             NICC_WARN_C("try to create app function without handler inserted, empty app function created");
@@ -74,6 +81,10 @@ class AppFunction {
 
     // index of the deploy component of this function
     component_typeid_t component_id;
+    
+    // user state
+    void* user_state;           // user defined state object pointer
+    size_t user_state_size;     // user state object size (for copying)
 
  private:
 };
