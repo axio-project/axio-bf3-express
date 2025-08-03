@@ -1,33 +1,61 @@
-// 用户状态和处理器示例
+// 新的用户状态和处理器示例 - 用户自己管理内存
 #include <iostream>
+#include <cstring>
+#include <cstdlib>
 #include "../../lib/common.h"
 #include "../../runtime/include/app_context.h"
 #include "../../lib/wrapper/soc/soc_wrapper.h"
-#include "../../lib/common/buffer.h"
 
 // 用户定义的状态类
 struct MyAppState {
     int message_counter;
     char processing_buffer[1024];
     double processing_time_sum;
+    bool is_initialized;
     
-    MyAppState() : message_counter(0), processing_time_sum(0.0) {
+    MyAppState() : message_counter(0), processing_time_sum(0.0), is_initialized(false) {
         std::memset(processing_buffer, 0, sizeof(processing_buffer));
     }
 };
 
-// 用户定义的初始化处理器
-nicc::nicc_retval_t my_init_handler(void* user_state) {
-    MyAppState* state = static_cast<MyAppState*>(user_state);
+// 用户定义的初始化处理器 - 分配并返回user_state和大小信息
+nicc::soc_user_state_info my_init_handler() {
+    // 用户在这里分配自己的状态
+    MyAppState* state = new MyAppState();
     state->message_counter = 0;
     state->processing_time_sum = 0.0;
-    std::printf("MyAppState initialized: counter=%d\n", state->message_counter);
-    return nicc::NICC_SUCCESS;
+    state->is_initialized = true;
+    
+    std::printf("MyAppState allocated and initialized: counter=%d, size=%zu\n", 
+               state->message_counter, sizeof(MyAppState));
+    
+    // 返回状态指针和大小信息
+    return {static_cast<void*>(state), sizeof(MyAppState)};
+}
+
+// 用户定义的清理处理器 - 释放user_state
+void my_cleanup_handler(void* user_state) {
+    if (user_state) {
+        MyAppState* state = static_cast<MyAppState*>(user_state);
+        std::printf("Cleaning up MyAppState: processed %d messages, total time=%.3f\n", 
+                   state->message_counter, state->processing_time_sum);
+        delete state;
+    }
 }
 
 // 用户定义的消息处理器
 nicc::nicc_retval_t my_msg_handler(nicc::Buffer* msg, void* user_state) {
+    if (!user_state) {
+        std::printf("Warning: user_state is null\n");
+        return nicc::NICC_ERROR;
+    }
+    
     MyAppState* state = static_cast<MyAppState*>(user_state);
+    
+    if (!state->is_initialized) {
+        std::printf("Warning: user_state not properly initialized\n");
+        return nicc::NICC_ERROR;
+    }
     
     // 增加消息计数
     state->message_counter++;
@@ -51,16 +79,15 @@ nicc::nicc_retval_t my_msg_handler(nicc::Buffer* msg, void* user_state) {
 
 // 用户定义的包处理器（如果需要）
 nicc::nicc_retval_t my_pkt_handler(nicc::Buffer* pkt, void* user_state) {
+    if (!user_state) return nicc::NICC_ERROR;
+    
     MyAppState* state = static_cast<MyAppState*>(user_state);
     std::printf("Processing packet, total messages so far: %d\n", state->message_counter);
     return nicc::NICC_SUCCESS;
 }
 
 // 示例主函数：如何注册用户处理器
-void example_register_user_handlers() {
-    // 创建用户状态实例
-    MyAppState my_state;
-    
+void example_register_user_handlers_v2() {
     // 创建 init handler
     nicc::AppHandler soc_init_handler;
     soc_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
@@ -71,30 +98,29 @@ void example_register_user_handlers() {
     soc_msg_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Msg_Handler;
     soc_msg_handler.binary.soc = (void*)my_msg_handler;
     
-    // 创建 packet handler（可选）
-    nicc::AppHandler soc_pkt_handler;
-    soc_pkt_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Pkt_Handler;
-    soc_pkt_handler.binary.soc = (void*)my_pkt_handler;
+    // 创建 cleanup handler
+    nicc::AppHandler soc_cleanup_handler;
+    soc_cleanup_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Cleanup;
+    soc_cleanup_handler.binary.soc = (void*)my_cleanup_handler;
     
     // 创建组件描述符
     nicc::ComponentDesp_SoC_t soc_block_desp = {
         .base_desp = { 
             .quota = 4,
-            .block_name = "my_soc_component"
+            .block_name = "my_soc_component_v2"
         },
         .device_name = "mlx5_2",
         .phy_port = 0
     };
 
-    // 创建 AppFunction，传递用户状态
+    // 创建 AppFunction - 不再需要传递user_state
     nicc::AppFunction soc_app_func = nicc::AppFunction(
-        /* handlers_ */ { &soc_init_handler, &soc_msg_handler, &soc_pkt_handler },
+        /* handlers_ */ { &soc_init_handler, &soc_msg_handler, &soc_cleanup_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
-        /* cid */ nicc::kComponent_SoC,
-        /* user_state */ &my_state,          // 传递用户状态
-        /* user_state_size */ sizeof(MyAppState)  // 传递状态大小
+        /* cid */ nicc::kComponent_SoC
+        // 不再需要 user_state 和 user_state_size 参数
     );
     
-    std::printf("User handlers and state registered successfully!\n");
-    std::printf("State size: %zu bytes\n", sizeof(MyAppState));
+    std::printf("User handlers registered successfully!\n");
+    std::printf("User state will be allocated dynamically by init_handler\n");
 } 

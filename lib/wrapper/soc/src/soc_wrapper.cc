@@ -29,17 +29,38 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     
     // call user defined init handler if available
     if (this->_context->init_handler) {
-        nicc_retval_t ret = this->_context->init_handler(this->_context->user_state);
-        if (ret != NICC_SUCCESS) {
-            NICC_ERROR_C("User init handler failed: ret=%d", ret);
-            return;
+        // user init_handler allocates and returns user_state with size info
+        soc_user_state_info state_info = this->_context->init_handler();
+        this->_context->user_state = state_info.state;
+        this->_context->user_state_size = state_info.size;
+        
+        if (this->_context->user_state) {
+            NICC_LOG("User init handler called successfully, user_state allocated: size=%zu", 
+                     this->_context->user_state_size);
+        } else {
+            NICC_WARN_C("User init handler returned null user_state");
+            this->_context->user_state_size = 0;
         }
-        NICC_LOG("User init handler called successfully");
+    } else {
+        NICC_LOG("No user init handler registered");
+        this->_context->user_state = nullptr;
+        this->_context->user_state_size = 0;
     }
     
     /// run the SoCWrapper
     this->__run(10.0);
     return;
+}
+
+SoCWrapper::~SoCWrapper() {
+    // call user defined cleanup handler if available
+    if (this->_context->cleanup_handler && this->_context->user_state) {
+        this->_context->cleanup_handler(this->_context->user_state);
+        NICC_LOG("User cleanup handler called, user_state freed");
+        this->_context->user_state = nullptr;
+    } else if (this->_context->user_state) {
+        NICC_WARN_C("user_state exists but no cleanup handler provided - potential memory leak");
+    }
 }
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {

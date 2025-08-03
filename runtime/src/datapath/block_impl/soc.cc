@@ -31,27 +31,15 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
         case handler_typeid_t::Msg_Handler:
             this->_msg_handler = app_handler;
             break;
+        case handler_typeid_t::Cleanup:
+            this->_cleanup_handler = app_handler;
+            break;
         default:
             NICC_ERROR_C_DETAIL("unregornized handler id for SoC, this is a bug: handler_id(%u)", app_handler->tid);
         }
     }
     // check handlers
     /* ...... */
-    
-    /* Step 1.5: Handle user state from AppFunction */
-    if (app_func->user_state && app_func->user_state_size > 0) {
-        // allocate memory for user state copy
-        this->_user_state = malloc(app_func->user_state_size);
-        if (this->_user_state == nullptr) {
-            NICC_ERROR_C("Failed to allocate memory for user state");
-            retval = NICC_ERROR_MEMORY_FAILURE;
-            goto exit;
-        }
-        // copy user state
-        memcpy(this->_user_state, app_func->user_state, app_func->user_state_size);
-        this->_user_state_size = app_func->user_state_size;
-        NICC_LOG("Successfully copied user state: size=%zu", this->_user_state_size);
-    }
     
     /* Step 2: Allocate and record funciton state */
     // allocate wrapper resources, including channel
@@ -73,14 +61,6 @@ nicc_retval_t ComponentBlock_SoC::unregister_app_function(){
     NICC_CHECK_POINTER( this->_function_state );
     // deallocate all resources for registered funcitons
     /* ...... */
-    
-    // free user state memory if allocated
-    if (this->_user_state) {
-        free(this->_user_state);
-        this->_user_state = nullptr;
-        this->_user_state_size = 0;
-        NICC_LOG("User state memory freed");
-    }
     
 exit:
     return retval;
@@ -197,9 +177,15 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
         func_state->context->msg_handler = nullptr;
     }
     
-    // pass user state to wrapper context
-    func_state->context->user_state = this->_user_state;
-    func_state->context->user_state_size = this->_user_state_size;
+    if (this->_cleanup_handler) {
+        func_state->context->cleanup_handler = (soc_cleanup_handler_t)this->_cleanup_handler->binary.soc;
+    } else {
+        func_state->context->cleanup_handler = nullptr;
+    }
+    
+    // user_state will be allocated by user's init_handler
+    func_state->context->user_state = nullptr;
+    func_state->context->user_state_size = 0;
 
     // create wrapper process for the function
     NICC_CHECK_POINTER(func_state->wrapper_thread = new std::thread(__soc_wrapper_thread_func, func_state));

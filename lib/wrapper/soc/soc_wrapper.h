@@ -6,10 +6,17 @@
 
 namespace nicc {
 
-// SoC user function type definition
-typedef nicc_retval_t (*soc_init_handler_t)(void* user_state);
+// SoC user state information structure
+struct soc_user_state_info {
+    void* state;        // pointer to allocated user state
+    size_t size;        // size of the allocated user state
+};
+
+// SoC user function type definitions
+typedef soc_user_state_info (*soc_init_handler_t)();       // init handler allocates and returns user_state with size
 typedef nicc_retval_t (*soc_pkt_handler_t)(Buffer* pkt, void* user_state);  
 typedef nicc_retval_t (*soc_msg_handler_t)(Buffer* msg, void* user_state);
+typedef void (*soc_cleanup_handler_t)(void* user_state);   // cleanup handler frees user_state
 
 /**
  * \brief Wrapper for executing SoC functions, created and initialized by ComponentBlock_SoC
@@ -60,8 +67,9 @@ class SoCWrapper {
         soc_init_handler_t init_handler;    /// user defined init handler
         soc_pkt_handler_t pkt_handler;      /// user defined packet handler  
         soc_msg_handler_t msg_handler;      /// user defined message handler
-        void* user_state;                   /// user defined state object
-        size_t user_state_size;             /// user state object size
+        soc_cleanup_handler_t cleanup_handler; /// user defined cleanup handler
+        void* user_state;                   /// user defined state object (allocated by user in init_handler)
+        size_t user_state_size;             /// size of user_state (for future reschedule support)
     };
 
 /**
@@ -75,7 +83,7 @@ class SoCWrapper {
      * \param context context of the SoCWrapper, registered by the ComponentBlock_SoC
      */
     SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context);
-    ~SoCWrapper(){}
+    ~SoCWrapper();  
 
 /**
  * ----------------------Internel Methonds----------------------

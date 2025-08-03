@@ -77,19 +77,12 @@ class ComponentBlock_SoC : public ComponentBlock {
         NICC_CHECK_POINTER(this->_base_state = &this->_state->base_state);
         NICC_CHECK_POINTER(this->_base_function_state = &this->_function_state->base_state);
     }
-    ~ComponentBlock_SoC(){
-        // free user state memory if allocated
-        if (_user_state) {
-            free(_user_state);
-            _user_state = nullptr;
-            _user_state_size = 0;
-        }
-    };
+    ~ComponentBlock_SoC(){};
 
     /**
      *  \brief  typeid of handlers register into SoC
      */
-    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Pkt_Handler, Msg_Handler };
+    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Pkt_Handler, Msg_Handler, Cleanup };
 
     /**
      *  \brief  register a new application function into this component
@@ -202,12 +195,7 @@ private:
     AppHandler *_init_handler = nullptr;
     AppHandler *_pkt_handler = nullptr;
     AppHandler *_msg_handler = nullptr;
-    
-    /**
-     * \brief  user defined state from AppFunction
-     */
-    void* _user_state = nullptr;        /// copy of user state object
-    size_t _user_state_size = 0;        /// size of user state object
+    AppHandler *_cleanup_handler = nullptr;
     
 };
 
