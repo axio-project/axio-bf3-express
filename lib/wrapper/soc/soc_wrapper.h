@@ -3,6 +3,7 @@
 #include "log.h"
 #include "common/soc_queue.h"
 #include "common/timer.h"
+#include "ctrlpath/route_impl/soc_routing.h"
 
 namespace nicc {
 
@@ -64,6 +65,9 @@ class SoCWrapper {
         soc_cleanup_handler_t cleanup_handler; /// user defined cleanup handler
         void* user_state;                   /// user defined state object (allocated by user in init_handler)
         size_t user_state_size;             /// size of user_state (for future reschedule support)
+        
+        /* ========== routing for packet forwarding ========== */
+        ComponentRouting_SoC* routing;      /// routing component for packet forwarding decisions
     };
 
 /**
@@ -185,6 +189,14 @@ class SoCWrapper {
      * \return the number of packets sent
      */
     size_t __direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
+
+    /**
+     * \brief Forward packet using routing decision based on kernel return value
+     * \param packet            packet buffer to forward
+     * \param kernel_retval     return value from user kernel
+     * \return NICC_SUCCESS for successful forwarding
+     */
+    nicc_retval_t __forward_packet_with_routing(Buffer* packet, nicc_core_retval_t kernel_retval);
 
 /**
  * ----------------------Internel parameters----------------------

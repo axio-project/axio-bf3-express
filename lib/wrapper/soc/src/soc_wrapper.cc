@@ -112,15 +112,26 @@ void SoCWrapper::__launch() {
             Buffer *m = (Buffer*)this->_tmp_worker_rx_queue->dequeue();
             
             // call user defined message handler if available
-            if (this->_context->msg_handler) {
+            if (likely(this->_context->msg_handler)) {
                 nicc_retval_t ret = this->_context->msg_handler(m, this->_context->user_state);
-                if (ret == NICC_SUCCESS) {
-                    // successful processing, forward to next component
-                    this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                
+                // Use routing to decide packet forwarding based on kernel return value
+                if (this->_context->routing) {
+                    nicc_retval_t routing_ret = this->__forward_packet_with_routing(m, ret);
+                    if (routing_ret != NICC_SUCCESS) {
+                        NICC_WARN_C("Routing-based forwarding failed for kernel_retval=%d, using default forwarding", ret);
+                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    }
                 } else {
-                    // processing failed, log warning but still forward (or could drop based on policy)
-                    NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
-                    this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    // No routing configured, use original logic
+                    if (likely(ret == NICC_SUCCESS)) {
+                        // successful processing, forward to next component
+                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    } else {
+                        // processing failed, log warning but still forward (or could drop based on policy)
+                        NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
+                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    }
                 }
             } else {
                 // no user handler registered, default behavior: forward message
@@ -270,6 +281,25 @@ size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
     rx_qp->_wait_for_disp -= remain_tx_queue_size;
 
     return remain_tx_queue_size;
+}
+
+nicc_retval_t SoCWrapper::__forward_packet_with_routing(Buffer* packet, nicc_core_retval_t kernel_retval) {
+    if (!packet) {
+        NICC_ERROR_C("Invalid packet buffer in __forward_packet_with_routing.");
+        return NICC_ERROR;
+    }
+    
+    if (!this->_context->routing) {
+        NICC_ERROR_C("Routing not configured in SoCWrapper context.");
+        return NICC_ERROR;
+    }
+    
+    // Use ComponentRouting_SoC's forward_packet_after_kernel method
+    return this->_context->routing->forward_packet_after_kernel(
+        packet, 
+        kernel_retval, 
+        reinterpret_cast<nicc::Channel*>(this->_qp_for_next)  // Use next QP as default channel
+    );
 }
 
 } // namespace nicc

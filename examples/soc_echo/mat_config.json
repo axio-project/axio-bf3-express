@@ -1,0 +1,93 @@
+{
+  "components": [
+    {
+      "type": "soc",
+      "id": "soc_0",
+      "channels": [
+        {
+          "id": 1,
+          "name": "drop",
+          "type": "drop",
+          "description": "Drop channel for discarding packets"
+        },
+        {
+          "id": 2,
+          "name": "local_host",
+          "type": "local_host",
+          "description": "Channel to local host for successful packets"
+        },
+        {
+          "id": 3,
+          "name": "to_dpa",
+          "type": "component",
+          "target_component": "dpa",
+          "description": "Channel to DPA component for further processing"
+        },
+        {
+          "id": 4,
+          "name": "remote_host",
+          "type": "remote_host",
+          "remote_address": "192.168.1.100",
+          "description": "Channel to remote host"
+        }
+      ],
+      "retval_mappings": [
+        {
+          "retval": 0,
+          "retval_name": "NICC_SUCCESS",
+          "channel_name": "local_host",
+          "channel_id": 2,
+          "description": "Forward successful packets to local host"
+        },
+        {
+          "retval": -1,
+          "retval_name": "NICC_ERROR",
+          "channel_name": "drop",
+          "channel_id": 1,
+          "description": "Drop error packets"
+        },
+        {
+          "retval": 1,
+          "retval_name": "NICC_FORWARD_TO_DPA",
+          "channel_name": "to_dpa",
+          "channel_id": 3,
+          "description": "Forward packets to DPA for processing"
+        }
+      ],
+      "default_channel": {
+        "name": "drop",
+        "id": 1,
+        "description": "Default action is to drop unmatched packets"
+      },
+      "flow_mappings": [
+        {
+          "priority": 100,
+          "match": {
+            "nw_proto": 6,
+            "tp_dst": 80,
+            "description": "HTTP traffic"
+          },
+          "channel_name": "remote_host",
+          "channel_id": 4,
+          "description": "Forward HTTP traffic to remote host"
+        },
+        {
+          "priority": 50,
+          "match": {
+            "nw_proto": 17,
+            "tp_dst": 53,
+            "description": "DNS traffic"
+          },
+          "channel_name": "local_host",
+          "channel_id": 2,
+          "description": "Forward DNS traffic to local host"
+        }
+      ]
+    }
+  ],
+  "global_config": {
+    "enable_stats": true,
+    "stats_interval_ms": 5000,
+    "enable_debug_logging": true
+  }
+}
