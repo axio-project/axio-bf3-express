@@ -30,7 +30,7 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     // call user defined init handler if available
     if (this->_context->init_handler) {
         // user init_handler allocates and returns user_state with size info
-        soc_user_state_info state_info = this->_context->init_handler();
+        user_state_info state_info = this->_context->init_handler();
         this->_context->user_state = state_info.state;
         this->_context->user_state_size = state_info.size;
         

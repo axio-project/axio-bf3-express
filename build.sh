@@ -75,16 +75,24 @@ build_nicc() {
     # If example is specified, build that specific example
     if [ -n "$example" ]; then
       if [ -d "$script_dir/examples/$example" ]; then
-        log ">>>> building specific example: $example..."
-        (cd $script_dir/examples/$example && bash build.sh)
-        if [ $? -ne 0 ]; then
-          error ">>>> building $example example failed"
-        fi
-        # Set flag to rebuild wrapper since example was built
-        log ">>>> building DPA wrapper with example: $example..."
-        (cd $script_dir/lib/wrapper/dpa && bash build.sh "$example")
-        if [ $? -ne 0 ]; then
-          error ">>>> building DPA wrapper failed"
+        # Check if this example has a DPA kernel that needs special compilation
+        if [ -f "$script_dir/examples/$example/build.sh" ]; then
+          log ">>>> building DPA kernel for example: $example..."
+          (cd $script_dir/examples/$example && bash build.sh)
+          if [ $? -ne 0 ]; then
+            error ">>>> building $example example failed"
+          fi
+          # Set flag to rebuild wrapper since example was built
+          log ">>>> building DPA wrapper with example: $example..."
+          (cd $script_dir/lib/wrapper/dpa && bash build.sh "$example")
+          if [ $? -ne 0 ]; then
+            error ">>>> building DPA wrapper failed"
+          fi
+        else
+          # Example without build.sh - will be included directly in lib compilation
+          log ">>>> example $example has no build.sh, will be included directly in lib compilation"
+          # Set NICC_EXAMPLE_NAME for meson.build to include the example source files
+          export NICC_EXAMPLE_NAME=$example
         fi
       else
         error ">>>> example $example not found in $script_dir/examples/"
@@ -98,6 +106,7 @@ build_nicc() {
   if [ ! -d "$2/build" ]; then
     log ">>>> generate building processing via meson..."
     export BUILD_TARGET=$2
+    
     meson $script_dir/$2/build
     retval=$?
     if [ $retval -ne 0 ]; then

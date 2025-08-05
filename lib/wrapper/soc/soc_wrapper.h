@@ -6,14 +6,8 @@
 
 namespace nicc {
 
-// SoC user state information structure
-struct soc_user_state_info {
-    void* state;        // pointer to allocated user state
-    size_t size;        // size of the allocated user state
-};
-
 // SoC user function type definitions
-typedef soc_user_state_info (*soc_init_handler_t)();       // init handler allocates and returns user_state with size
+typedef user_state_info (*soc_init_handler_t)();       // init handler allocates and returns user_state with size
 typedef nicc_retval_t (*soc_pkt_handler_t)(Buffer* pkt, void* user_state);  
 typedef nicc_retval_t (*soc_msg_handler_t)(Buffer* msg, void* user_state);
 typedef void (*soc_cleanup_handler_t)(void* user_state);   // cleanup handler frees user_state

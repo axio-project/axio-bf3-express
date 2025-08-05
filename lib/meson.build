@@ -19,6 +19,33 @@ subdir('log')
 subdir('common')
 subdir('wrapper/soc')
 
+# 检查是否有指定的example
+example_name = run_command('sh', '-c', 'echo $NICC_EXAMPLE_NAME').stdout().strip()
+if example_name != ''
+  message('>>> Including example ' + example_name + ' in libnicc')
+  
+  # 检查example的src目录
+  example_src_dir = '../examples/' + example_name + '/src'
+  if run_command('sh', '-c', 'test -d ' + example_src_dir + ' && echo true || echo false').stdout().strip() == 'true'
+    # 查找src目录下的所有.cc和.cpp文件
+    src_files = run_command('sh', '-c', 'find ' + example_src_dir + ' -name "*.cc" -o -name "*.cpp"').stdout().strip().split('\n')
+    if src_files[0] != ''
+      foreach src_file : src_files
+        message('>>> Adding source file: ' + src_file)
+        lib_sources += [src_file]
+      endforeach
+    endif
+    lib_inc_dirs += [example_src_dir]
+  endif
+  
+  # 检查example的include目录
+  example_inc_dir = '../examples/' + example_name + '/include'
+  if run_command('sh', '-c', 'test -d ' + example_inc_dir + ' && echo true || echo false').stdout().strip() == 'true'
+    message('>>> Adding include directory: ' + example_inc_dir)
+    lib_inc_dirs += [example_inc_dir]
+  endif
+endif
+
 # build nicc library
 message('source files: ' + ' '.join(lib_sources))
 message('include directories: ' + ' '.join(lib_inc_dirs))

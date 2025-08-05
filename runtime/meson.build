@@ -17,7 +17,7 @@ runtime_sources = glob.stdout().strip().split('\n')
 
 binary_name = project_name_abbreviation + '_' + module_name
 runtime_c_args = c_args
-runtime_ld_args = ld_args + ['-L'+root_dir+'/bin', '-ll2_swap_wrapper', '-lnicc']
+runtime_ld_args = ld_args + ['-L'+root_dir+'/bin', '-ldpa_wrapper', '-lnicc']
 
 log_conf = configuration_data()
 log_conf.set('nicc_print_error', enable_print_error)

@@ -67,6 +67,12 @@ typedef struct ComponentFuncBaseState {
     uint8_t mock_state;
 } ComponentFuncBaseState_t;
 
+// User state information structure
+struct user_state_info {
+  void* state;        // pointer to allocated user state
+  size_t size;        // size of the allocated user state
+};
+
 
 #define _unused(x) ((void)(x))  // Make production build happy
 #define likely(x) __builtin_expect(!!(x), 1)

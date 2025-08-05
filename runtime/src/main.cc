@@ -18,9 +18,15 @@
     extern "C" {
 #endif
 
-extern struct flexio_app *l2_swap_wrapper;  // nicc/bin/l2_swap_wrapper.a
-extern flexio_func_t dpa_event_handler;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
-extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern struct flexio_app *dpa_wrapper;      // nicc/bin/dpa_wrapper.a
+extern flexio_func_t dpa_event_handler;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_device_init;       // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+
+// SoC user kernel functions (defined in user's soc_kernel.cc)
+extern nicc::user_state_info soc_init_handler();
+extern nicc::nicc_retval_t soc_msg_handler(nicc::Buffer* msg, void* user_state);
+extern void soc_cleanup_handler(void* user_state);
+extern nicc::nicc_retval_t soc_pkt_handler(nicc::Buffer* pkt, void* user_state);
 
 #ifdef __cplusplus
     }
@@ -90,12 +96,12 @@ int main(){
     nicc::AppHandler dpa_app_init_handler;
     dpa_app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
     dpa_app_init_handler.binary.dpa.host_stub = &dpa_device_init;
-    dpa_app_init_handler.binary.dpa.kernel = l2_swap_wrapper;
+    dpa_app_init_handler.binary.dpa.kernel = dpa_wrapper;
 
     nicc::AppHandler dpa_app_event_handler;
     dpa_app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
     dpa_app_event_handler.binary.dpa.host_stub = &dpa_event_handler;
-    dpa_app_event_handler.binary.dpa.kernel = l2_swap_wrapper;
+    dpa_app_event_handler.binary.dpa.kernel = dpa_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
         .base_desp = { 
@@ -125,13 +131,19 @@ int main(){
     // flow_engine_desp->rx_match_mask->match_sz = 64;
 
     /// SoC app context
-    nicc::AppHandler soc_app_init_handler, soc_app_pkt_handler, soc_app_msg_handler;
+    nicc::AppHandler soc_app_init_handler, soc_app_pkt_handler, soc_app_msg_handler, soc_app_cleanup_handler;
+    
+    // Set handler types
     soc_app_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
     soc_app_pkt_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Pkt_Handler;
     soc_app_msg_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Msg_Handler;
-    // soc_app_init_handler.binary.soc = &soc_app_init_handler_binary;
-    // soc_app_pkt_handler.binary.soc = &soc_app_pkt_handler_binary;
-    // soc_app_msg_handler.binary.soc = &soc_app_msg_handler_binary;
+    soc_app_cleanup_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Cleanup;
+    
+    // Point to fixed function names
+    soc_app_init_handler.binary.soc = reinterpret_cast<void*>(&soc_init_handler);
+    soc_app_pkt_handler.binary.soc = reinterpret_cast<void*>(&soc_pkt_handler);
+    soc_app_msg_handler.binary.soc = reinterpret_cast<void*>(&soc_msg_handler);
+    soc_app_cleanup_handler.binary.soc = reinterpret_cast<void*>(&soc_cleanup_handler);
 
     nicc::ComponentDesp_SoC_t soc_block_desp = {
         .base_desp = { 
@@ -143,7 +155,7 @@ int main(){
     };
 
     nicc::AppFunction soc_app_func = nicc::AppFunction(
-        /* handlers_ */ { &soc_app_init_handler, &soc_app_pkt_handler, &soc_app_msg_handler },
+        /* handlers_ */ { &soc_app_init_handler, &soc_app_pkt_handler, &soc_app_msg_handler, &soc_app_cleanup_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
         /* cid */ nicc::kComponent_SoC
     );
