@@ -9,53 +9,32 @@ namespace nicc {
 
 /**
  *  \brief  SoC-specific routing implementation
- *          Inherits from ComponentRouting and provides SoC-specific logic
+ *          Manages local SoC channels and delegates inter-component routing to PipelineRouting
  */
 class ComponentRouting_SoC : public ComponentRouting {
 public:
-    ComponentRouting_SoC() : ComponentRouting(kComponent_SoC) {
-        NICC_LOG("ComponentRouting_SoC initialized for SoC component");
+    ComponentRouting_SoC(const std::string& component_id = "soc") 
+        : ComponentRouting(kComponent_SoC, component_id) {
+        NICC_LOG("ComponentRouting_SoC initialized for component '%s'", component_id.c_str());
     }
     
     virtual ~ComponentRouting_SoC() = default;
 
+    // Override base methods for SoC-specific behavior  
     /**
-     *  \brief  SoC-specific packet forwarding with routing decision
-     *          This method integrates with SoCWrapper's packet processing
-     *  \param  packet          packet buffer to forward
-     *  \param  kernel_retval   return value from user kernel
-     *  \param  default_tx_channel  fallback channel if routing fails
-     *  \return NICC_SUCCESS for successful forwarding
-     */
-    nicc_retval_t forward_packet_after_kernel(
-        Buffer* packet, 
-        nicc_core_retval_t kernel_retval, 
-        nicc::Channel* default_tx_channel
-    );
-
-protected:
-    /**
-     *  \brief  SoC-specific channel registration logic
-     *  \param  id          logical channel identifier
-     *  \param  channel     pointer to actual datapath channel
+     *  \brief  Register SoC-specific local channels (e.g., "to_next", "to_host", "rx_from_prior")
+     *  \param  channel_name    name of the channel within SoC component
+     *  \param  channel         pointer to actual datapath channel
      *  \return NICC_SUCCESS for successful registration
      */
-    nicc_retval_t __register_datapath_channel(const channel_id_t& id, nicc::Channel* channel) override;
+    nicc_retval_t register_local_channel(const std::string& channel_name, nicc::Channel* channel) override;
 
     /**
-     *  \brief  SoC-specific lookup logic with flow analysis
-     *  \param  flow            packet flow information
+     *  \brief  SoC-specific retval to local channel lookup
      *  \param  kernel_retval   return value from user kernel
-     *  \return pointer to target datapath channel, nullptr if not found
+     *  \return pointer to target local channel, nullptr if not found
      */
-    nicc::Channel* __lookup_channel(flow_t& flow, nicc_core_retval_t kernel_retval) override;
-
-    /**
-     *  \brief  SoC-specific configuration loading with JSON parsing
-     *  \param  config_path     path to configuration file
-     *  \return NICC_SUCCESS for successful loading
-     */
-    nicc_retval_t __load_config(const std::string& config_path) override;
+    nicc::Channel* lookup_channel(nicc_core_retval_t kernel_retval) override;
 };
 
 } // namespace nicc

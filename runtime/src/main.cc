@@ -66,7 +66,7 @@ int main(){
      * \note   options: kComponent_FlowEngine | kComponent_DPA
      *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::AppDAG app_dag("./examples/soc_echo/dp_spec.json");
+    nicc::AppDAG app_dag("./examples/soc_echo/kernel_config.json");
     app_dag.print();
     nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/

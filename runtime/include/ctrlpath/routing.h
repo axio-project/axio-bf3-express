@@ -1,12 +1,6 @@
 #pragma once
-#include <string>
-#include <map>
-#include <vector>
-#include <memory>
-
 #include "common.h"
 #include "log.h"
-#include "types.h"
 #include "datapath/channel.h" // Include datapath channel
 #include "ctrlpath/mat.h"     // Base FlowMAT
 
@@ -14,149 +8,174 @@ namespace nicc {
 
 // Forward declarations
 class ComponentRouting;
-class ComponentRouting_SoC;
+class PipelineRouting;
 
 /**
- * ----------------------General structure----------------------
+ * ----------------------Pipeline-Level Routing Structures----------------------
  */ 
 
 /**
- * \brief  routing state for control plane
+ * \brief  DAG edge rule: from source component with specific retval to target component
  */
-typedef struct RoutingState {
-    // Map channel_id to actual datapath::Channel pointers
-    std::map<channel_id_t, nicc::Channel*> datapath_channels;
-    
-    // Mapping from kernel return value to channel ID
-    std::map<nicc_core_retval_t, channel_id_t> retval_to_channel_id_map;
-    
-    // Default channel ID if no specific mapping is found
-    channel_id_t default_channel_id;
-} RoutingState_t;
+typedef struct DAGEdgeRule {
+    component_typeid_t source_component;      // Source component type (e.g., kComponent_SoC)
+    nicc_core_retval_t kernel_retval;        // Kernel return value trigger
+    std::string target_component_id;         // Target component identifier (e.g., "remote_host", "next_dpa")
+    std::string target_channel_name;         // Specific channel name in target component
+} DAGEdgeRule_t;
 
 /**
- * \brief  routing descriptor for resource allocation
+ * \brief  Pipeline routing state for managing global DAG
  */
-typedef struct RoutingDesp {
+typedef struct PipelineRoutingState {
+    // Global DAG edge rules: (source_comp, retval) -> (target_comp, channel)
+    std::vector<DAGEdgeRule_t> dag_edge_rules;
+    
+    // Component ID to ComponentRouting mapping
+    std::map<std::string, ComponentRouting*> component_routers;
+    
+    // Default routing policies
+    std::map<component_typeid_t, std::string> default_targets;
+} PipelineRoutingState_t;
+
+/**
+ * ----------------------Component-Level Routing Structures----------------------
+ */ 
+
+/**
+ * \brief  Component routing state for local retval-to-channel mapping
+ */
+typedef struct ComponentRoutingState {
+    // Mapping from kernel return value to local channel
+    std::map<nicc_core_retval_t, nicc::Channel*> retval_to_channel_map;
+    
+    // Local channels managed by this component (for registration only)
+    std::map<std::string, nicc::Channel*> local_channels;
+    
+    // Component metadata
     component_typeid_t component_type;
-    const char* config_path;  // Optional configuration file path
-} RoutingDesp_t;
+    std::string component_id;
+    
+    // Default channel for unmapped return values
+    nicc::Channel* default_channel;
+} ComponentRoutingState_t;
 
 /**
- * ----------------------Base Routing Class----------------------
+ * ----------------------Pipeline Routing (Global DAG Management)----------------------
  */ 
 
 /**
- *  \brief  Base routing class for packet forwarding decisions
- *          Follows datapath architecture pattern with virtual methods
+ *  \brief  Pipeline-level routing manager for global DAG edge rules
+ *          Manages routing between components, not within components
+ */
+class PipelineRouting {
+public:
+    PipelineRouting() {
+        NICC_CHECK_POINTER(this->_state = new PipelineRoutingState_t);
+    }
+    
+    virtual ~PipelineRouting() {
+        if (this->_state) delete this->_state;
+    }
+
+    /**
+     *  \brief  Register a component router for DAG routing
+     *  \param  component_id    unique identifier for the component
+     *  \param  router          pointer to component's routing interface
+     *  \return NICC_SUCCESS for successful registration
+     */
+    nicc_retval_t register_component_router(const std::string& component_id, ComponentRouting* router);
+
+    /**
+     *  \brief  Load routing configuration from kernel config file and build DAG
+     *  \param  config_path     path to kernel configuration file
+     *  \return NICC_SUCCESS for successful loading
+     */
+    nicc_retval_t load_from_kernel_config(const std::string& config_path);
+
+    /**
+     *  \brief  Build channel connections based on DAG edge rules
+     *          Called after all components have registered their local channels
+     *  \return NICC_SUCCESS for successful connection building
+     */
+    nicc_retval_t build_channel_connections();
+
+    /**
+     *  \brief  Add a DAG edge rule: source_component(retval) -> target_component(channel)
+     *  \param  rule            DAG edge rule to add
+     *  \return NICC_SUCCESS for successful addition
+     */
+    nicc_retval_t add_dag_edge_rule(const DAGEdgeRule_t& rule);
+
+protected:
+    PipelineRoutingState_t* _state;
+};
+
+/**
+ * ----------------------Component Routing (Local Channel Management)----------------------
+ */ 
+
+/**
+ *  \brief  Component-level routing for local channel management
+ *          Only manages channels within the component, routing decisions come from PipelineRouting
  */
 class ComponentRouting {
 public:
-    ComponentRouting(component_typeid_t comp_type) : component_type(comp_type) {
-        NICC_CHECK_POINTER(this->_state = new RoutingState_t);
-        NICC_CHECK_POINTER(this->_desp = new RoutingDesp_t);
-        this->_desp->component_type = comp_type;
-        this->_desp->config_path = nullptr;
-        
-        // Initialize default channel to a "drop" equivalent
-        this->_state->default_channel_id = "drop";
+    ComponentRouting(component_typeid_t comp_type, const std::string& comp_id) {
+        NICC_CHECK_POINTER(this->_state = new ComponentRoutingState_t);
+        this->_state->component_type = comp_type;
+        this->_state->component_id = comp_id;
+        this->_state->default_channel = nullptr;
     }
     
     virtual ~ComponentRouting() {
         if (this->_state) delete this->_state;
-        if (this->_desp) delete this->_desp;
     }
 
     /**
-     *  \brief  register an actual datapath channel with a logical ID
-     *  \param  id          logical channel identifier
-     *  \param  channel     pointer to actual datapath channel
+     *  \brief  Register a local datapath channel
+     *  \param  channel_name    name of the channel within this component
+     *  \param  channel         pointer to actual datapath channel
      *  \return NICC_SUCCESS for successful registration
      */
-    virtual nicc_retval_t register_datapath_channel(const channel_id_t& id, nicc::Channel* channel);
+    virtual nicc_retval_t register_local_channel(const std::string& channel_name, nicc::Channel* channel);
 
     /**
-     *  \brief  add a mapping from kernel return value to a logical channel ID
-     *  \param  retval              kernel return value
-     *  \param  target_channel_id   target logical channel ID
+     *  \brief  Get a local channel by name
+     *  \param  channel_name    name of the channel to retrieve
+     *  \return pointer to channel, nullptr if not found
+     */
+    virtual nicc::Channel* get_local_channel(const std::string& channel_name);
+
+    /**
+     *  \brief  Add mapping from kernel return value to local channel
+     *  \param  retval          kernel return value
+     *  \param  channel         target local channel
      *  \return NICC_SUCCESS for successful mapping
      */
-    virtual nicc_retval_t add_retval_mapping(nicc_core_retval_t retval, const channel_id_t& target_channel_id);
+    virtual nicc_retval_t add_retval_mapping(nicc_core_retval_t retval, nicc::Channel* channel);
 
     /**
-     *  \brief  set the default channel for unmapped return values
-     *  \param  default_id  default channel identifier
+     *  \brief  Set default channel for unmapped return values
+     *  \param  channel         default channel
      *  \return NICC_SUCCESS for successful setting
      */
-    virtual nicc_retval_t set_default_channel(const channel_id_t& default_id);
+    virtual nicc_retval_t set_default_channel(nicc::Channel* channel);
 
     /**
-     *  \brief  lookup the target datapath channel based on kernel return value and flow
-     *  \param  flow            packet flow information
+     *  \brief  Lookup local channel by kernel return value (main routing method)
      *  \param  kernel_retval   return value from user kernel
-     *  \return pointer to target datapath channel, nullptr if not found
+     *  \return pointer to target local channel, nullptr if not found
      */
-    virtual nicc::Channel* lookup_channel(flow_t& flow, nicc_core_retval_t kernel_retval);
-
-    /**
-     *  \brief  load routing configuration from file
-     *  \param  config_path     path to configuration file
-     *  \return NICC_SUCCESS for successful loading
-     */
-    virtual nicc_retval_t load_config(const std::string& config_path);
-
-    /**
-     *  \brief  unregister a datapath channel
-     *  \param  id  logical channel identifier to remove
-     *  \return NICC_SUCCESS for successful unregistration
-     */
-    virtual nicc_retval_t unregister_datapath_channel(const channel_id_t& id);
-
-    /**
-     *  \brief  remove a return value mapping
-     *  \param  retval  kernel return value to remove mapping for
-     *  \return NICC_SUCCESS for successful removal
-     */
-    virtual nicc_retval_t remove_retval_mapping(nicc_core_retval_t retval);
+    virtual nicc::Channel* lookup_channel(nicc_core_retval_t kernel_retval);
 
     // Getter methods
-    component_typeid_t get_component_type() const { return component_type; }
-    const RoutingState_t* get_state() const { return _state; }
-    const RoutingDesp_t* get_desp() const { return _desp; }
+    component_typeid_t get_component_type() const { return _state->component_type; }
+    const std::string& get_component_id() const { return _state->component_id; }
+    const ComponentRoutingState_t* get_state() const { return _state; }
 
 protected:
-    component_typeid_t component_type;
-    RoutingState_t* _state;
-    RoutingDesp_t* _desp;
-
-    /**
-     *  \brief  component-specific channel registration logic (override in subclasses)
-     *  \param  id          logical channel identifier
-     *  \param  channel     pointer to actual datapath channel
-     *  \return NICC_SUCCESS for successful registration
-     */
-    virtual nicc_retval_t __register_datapath_channel(const channel_id_t& id, nicc::Channel* channel) {
-        return NICC_SUCCESS; // Default implementation
-    }
-
-    /**
-     *  \brief  component-specific lookup logic (override in subclasses)
-     *  \param  flow            packet flow information
-     *  \param  kernel_retval   return value from user kernel
-     *  \return pointer to target datapath channel, nullptr if not found
-     */
-    virtual nicc::Channel* __lookup_channel(flow_t& flow, nicc_core_retval_t kernel_retval) {
-        return nullptr; // Default implementation returns nullptr
-    }
-
-    /**
-     *  \brief  component-specific configuration loading (override in subclasses)
-     *  \param  config_path     path to configuration file
-     *  \return NICC_SUCCESS for successful loading
-     */
-    virtual nicc_retval_t __load_config(const std::string& config_path) {
-        return NICC_SUCCESS; // Default implementation
-    }
+    ComponentRoutingState_t* _state;
 };
 
 // Forward declarations for component-specific routing implementations

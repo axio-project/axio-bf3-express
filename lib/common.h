@@ -7,6 +7,8 @@
 #include <string.h>
 #include <cerrno>
 #include <limits>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -124,6 +126,11 @@ static constexpr component_typeid_t kRemote_Host = 0x1000;
 static constexpr component_typeid_t kLocal_Host = 0x2000;
 static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
 static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
+
+/*!
+ *  \brief  channel identifier type for routing
+ */
+using channel_id_t = std::string;
 
 
 /**
