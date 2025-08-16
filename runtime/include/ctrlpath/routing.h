@@ -1,8 +1,10 @@
 #pragma once
 #include "common.h"
 #include "log.h"
+#include "types.h"
 #include "datapath/channel.h" // Include datapath channel
 #include "ctrlpath/mat.h"     // Base FlowMAT
+#include "utils/app_dag.h"
 
 namespace nicc {
 
@@ -15,13 +17,36 @@ class PipelineRouting;
  */ 
 
 /**
- * \brief  DAG edge rule: from source component with specific retval to target component
+ * \brief  Match condition for routing rules
+ */
+typedef struct MatchCondition {
+    std::string field;          // Field name (e.g., "retval", "udp.sport", "ipv4.sip")
+    std::string operator_type;  // Operator (e.g., "=", "!=", ">", "<", "in")
+    std::string value;          // Expected value (e.g., "1", "10086", "192.168.1.1")
+} MatchCondition_t;
+
+/**
+ * \brief  Action specification for routing rules
+ */
+typedef struct ActionSpec {
+    std::string action_type;    // Action type (e.g., "fwd", "drop", "mirror")
+    std::string target;         // Target for action (e.g., "host", "soc", "dpa")
+    std::string channel_name;   // Specific channel name (optional)
+} ActionSpec_t;
+
+/**
+ * \brief  Enhanced DAG edge rule with flexible match conditions
  */
 typedef struct DAGEdgeRule {
-    component_typeid_t source_component;      // Source component type (e.g., kComponent_SoC)
-    nicc_core_retval_t kernel_retval;        // Kernel return value trigger
-    std::string target_component_id;         // Target component identifier (e.g., "remote_host", "next_dpa")
-    std::string target_channel_name;         // Specific channel name in target component
+    std::string source_component_name;       // Source component name (e.g., "soc", "root")
+    std::vector<MatchCondition_t> conditions; // Match conditions (AND logic between them)
+    ActionSpec_t action;                     // Action to take when matched
+    
+    // Legacy fields for backward compatibility
+    component_typeid_t source_component;      // Source component type (derived from name)
+    nicc_core_retval_t kernel_retval;        // Kernel return value (derived from conditions)
+    std::string target_component_id;         // Target component identifier (derived from action)
+    std::string target_channel_name;         // Specific channel name (derived from action)
 } DAGEdgeRule_t;
 
 /**
@@ -87,11 +112,11 @@ public:
     nicc_retval_t register_component_router(const std::string& component_id, ComponentRouting* router);
 
     /**
-     *  \brief  Load routing configuration from kernel config file and build DAG
-     *  \param  config_path     path to kernel configuration file
+     *  \brief  Load routing configuration from parsed AppDAG
+     *  \param  app_dag         pointer to parsed AppDAG containing routing rules
      *  \return NICC_SUCCESS for successful loading
      */
-    nicc_retval_t load_from_kernel_config(const std::string& config_path);
+    nicc_retval_t load_from_app_dag(const AppDAG* app_dag);
 
     /**
      *  \brief  Build channel connections based on DAG edge rules
@@ -106,6 +131,37 @@ public:
      *  \return NICC_SUCCESS for successful addition
      */
     nicc_retval_t add_dag_edge_rule(const DAGEdgeRule_t& rule);
+
+private:
+    /**
+     *  \brief  Parse match condition string (e.g., "retval=1", "udp.sport=10086")
+     *  \param  match_str       match condition string to parse
+     *  \return parsed MatchCondition_t structure
+     */
+    MatchCondition_t __parse_match_condition(const std::string& match_str);
+
+    /**
+     *  \brief  Parse action string (e.g., "fwd(host)", "drop", "fwd(soc)")
+     *  \param  action_str      action string to parse
+     *  \return parsed ActionSpec_t structure
+     */
+    ActionSpec_t __parse_action_spec(const std::string& action_str);
+
+    /**
+     *  \brief  Convert component name to component type ID
+     *  \param  component_name  component name string
+     *  \return corresponding component_typeid_t
+     */
+    component_typeid_t __component_name_to_type(const std::string& component_name);
+
+    /**
+     *  \brief  Extract retval from match conditions for backward compatibility
+     *  \param  conditions      list of match conditions
+     *  \return extracted retval or default value
+     */
+    nicc_core_retval_t __extract_retval_from_conditions(const std::vector<MatchCondition_t>& conditions);
+
+public:
 
 protected:
     PipelineRoutingState_t* _state;

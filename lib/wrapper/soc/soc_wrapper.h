@@ -3,7 +3,6 @@
 #include "log.h"
 #include "common/soc_queue.h"
 #include "common/timer.h"
-#include "ctrlpath/route_impl/soc_routing.h"
 
 namespace nicc {
 
@@ -67,7 +66,7 @@ class SoCWrapper {
         size_t user_state_size;             /// size of user_state (for future reschedule support)
         
         /* ========== routing for packet forwarding ========== */
-        ComponentRouting_SoC* routing;      /// routing component for packet forwarding decisions
+        // ComponentRouting_SoC* routing;      /// routing component for packet forwarding decisions
     };
 
 /**

@@ -5,6 +5,7 @@
 #include "datapath_pipeline.h"
 #include "resources/resource_pool.h"
 #include "utils/app_dag.h"
+#include "ctrlpath/routing.h"
 
 // #include "app_context.h"
 // #include "datapath/flow_engine.h"
@@ -66,7 +67,7 @@ int main(){
      * \note   options: kComponent_FlowEngine | kComponent_DPA
      *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::AppDAG app_dag("./examples/soc_echo/kernel_config.json");
+    nicc::AppDAG app_dag("./examples/soc_echo/dp_spec.json");
     app_dag.print();
     nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/

@@ -14,6 +14,7 @@
 #include "datapath/block_impl/dpa.h"
 #include "datapath/block_impl/flow_engine.h"
 #include "datapath/block_impl/soc.h"
+#include "ctrlpath/routing.h"
 
 namespace nicc {
 
@@ -45,6 +46,9 @@ class DatapathPipeline {
 
     // global device state
     device_state_t *_device_state;
+    
+    // global pipeline routing manager
+    PipelineRouting *_pipeline_routing;
 
     /*!
      *  \brief  allocate component block from the resource pool

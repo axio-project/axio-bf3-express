@@ -20,6 +20,7 @@
 #include <doca_error.h>
 
 #include "debug.h"
+#include "types.h"
 
 namespace nicc {
     

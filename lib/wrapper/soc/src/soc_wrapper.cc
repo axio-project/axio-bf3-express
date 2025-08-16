@@ -116,13 +116,13 @@ void SoCWrapper::__launch() {
                 nicc_retval_t ret = this->_context->msg_handler(m, this->_context->user_state);
                 
                 // Use routing to decide packet forwarding based on kernel return value
-                if (this->_context->routing) {
-                    nicc_retval_t routing_ret = this->__forward_packet_with_routing(m, ret);
-                    if (routing_ret != NICC_SUCCESS) {
-                        NICC_WARN_C("Routing-based forwarding failed for kernel_retval=%d, using default forwarding", ret);
-                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
-                    }
-                } else {
+                // if (this->_context->routing) {
+                    // nicc_retval_t routing_ret = this->__forward_packet_with_routing(m, ret);
+                    // if (routing_ret != NICC_SUCCESS) {
+                    //     NICC_WARN_C("Routing-based forwarding failed for kernel_retval=%d, using default forwarding", ret);
+                    //     this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    // }
+                // } else {
                     // No routing configured, use original logic
                     if (likely(ret == NICC_SUCCESS)) {
                         // successful processing, forward to next component
@@ -132,7 +132,7 @@ void SoCWrapper::__launch() {
                         NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
                         this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
                     }
-                }
+                // }
             } else {
                 // no user handler registered, default behavior: forward message
                 this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
@@ -284,22 +284,22 @@ size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
 }
 
 nicc_retval_t SoCWrapper::__forward_packet_with_routing(Buffer* packet, nicc_core_retval_t kernel_retval) {
-    if (!packet) {
-        NICC_ERROR_C("Invalid packet buffer in __forward_packet_with_routing.");
-        return NICC_ERROR;
-    }
+    // if (!packet) {
+    //     NICC_ERROR_C("Invalid packet buffer in __forward_packet_with_routing.");
+    //     return NICC_ERROR;
+    // }
     
-    if (!this->_context->routing) {
-        NICC_ERROR_C("Routing not configured in SoCWrapper context.");
-        return NICC_ERROR;
-    }
+    // if (!this->_context->routing) {
+    //     NICC_ERROR_C("Routing not configured in SoCWrapper context.");
+    //     return NICC_ERROR;
+    // }
     
-    // Use ComponentRouting_SoC's forward_packet_after_kernel method
-    return this->_context->routing->forward_packet_after_kernel(
-        packet, 
-        kernel_retval, 
-        reinterpret_cast<nicc::Channel*>(this->_qp_for_next)  // Use next QP as default channel
-    );
+    // // Use ComponentRouting_SoC's forward_packet_after_kernel method
+    // return this->_context->routing->forward_packet_after_kernel(
+    //     packet, 
+    //     kernel_retval, 
+    //     reinterpret_cast<nicc::Channel*>(this->_qp_for_next)  // Use next QP as default channel
+    // );
 }
 
 } // namespace nicc
