@@ -5,6 +5,7 @@
 #include "datapath_pipeline.h"
 #include "resources/resource_pool.h"
 #include "utils/app_dag.h"
+#include "ctrlpath/routing.h"
 
 // #include "app_context.h"
 // #include "datapath/flow_engine.h"
@@ -18,14 +19,20 @@
     extern "C" {
 #endif
 
-extern struct flexio_app *l2_swap_wrapper;  // nicc/bin/l2_swap_wrapper.a
-extern flexio_func_t dpa_event_handler;          // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
-extern flexio_func_t dpa_device_init;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern struct flexio_app *dpa_wrapper;      // nicc/bin/dpa_wrapper.a
+extern flexio_func_t dpa_event_handler;     // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+extern flexio_func_t dpa_device_init;       // defined in nicc/lib/wrappers/dpa/src/dpa_wrapper.c
+
+// SoC user kernel functions (defined in user's soc_kernel.cc)
+extern nicc::user_state_info soc_init_handler();
+extern nicc::nicc_retval_t soc_msg_handler(nicc::Buffer* msg, void* user_state);
+extern void soc_cleanup_handler(void* user_state);
+extern nicc::nicc_retval_t soc_pkt_handler(nicc::Buffer* pkt, void* user_state);
 
 #ifdef __cplusplus
     }
 #endif
-const std::string device_name = "mlx5_0";
+const std::string device_name = "mlx5_2";
 const char *device_name_cstr = device_name.c_str();
 
 int main(){
@@ -60,7 +67,7 @@ int main(){
      * \note   options: kComponent_FlowEngine | kComponent_DPA
      *          | kComponent_SoC | kComponent_Decompress | kComponent_SHA
      */
-    nicc::AppDAG app_dag("./examples/rdma_simple/dp_spec.json");
+    nicc::AppDAG app_dag("./examples/soc_echo/dp_spec.json");
     app_dag.print();
     nicc::component_typeid_t enabled_components = app_dag.get_enabled_components();
     /*----------------------------------------------------------------*/
@@ -71,8 +78,8 @@ int main(){
     nicc::ResourcePool rpool(
         enabled_components,
         {
-            { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_init_desp) },
-            { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_init_desp) },
+            // { nicc::kComponent_DPA, reinterpret_cast<nicc::ComponentBaseDesp_t*>(dpa_init_desp) },
+            // { nicc::kComponent_FlowEngine, reinterpret_cast<nicc::ComponentBaseDesp_t*>(flow_engine_init_desp) },
             { nicc::kComponent_SoC, reinterpret_cast<nicc::ComponentBaseDesp_t*>(soc_init_desp) }
         }
     );
@@ -90,12 +97,12 @@ int main(){
     nicc::AppHandler dpa_app_init_handler;
     dpa_app_init_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Init;
     dpa_app_init_handler.binary.dpa.host_stub = &dpa_device_init;
-    dpa_app_init_handler.binary.dpa.kernel = l2_swap_wrapper;
+    dpa_app_init_handler.binary.dpa.kernel = dpa_wrapper;
 
     nicc::AppHandler dpa_app_event_handler;
     dpa_app_event_handler.tid = nicc::ComponentBlock_DPA::handler_typeid_t::Event;
     dpa_app_event_handler.binary.dpa.host_stub = &dpa_event_handler;
-    dpa_app_event_handler.binary.dpa.kernel = l2_swap_wrapper;
+    dpa_app_event_handler.binary.dpa.kernel = dpa_wrapper;
 
     nicc::ComponentDesp_DPA_t dpa_block_desp = {
         .base_desp = { 
@@ -110,7 +117,7 @@ int main(){
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&dpa_block_desp),
         /* cid */ nicc::kComponent_DPA
     );
-    app_cxt.functions.push_back(&dpa_app_func);
+    // app_cxt.functions.push_back(&dpa_app_func);
 
     /// Flow Engine app context
     // nicc::ComponentDesp_FlowEngine_t *flow_engine_block_desp = new nicc::ComponentDesp_FlowEngine_t;
@@ -125,12 +132,23 @@ int main(){
     // flow_engine_desp->rx_match_mask->match_sz = 64;
 
     /// SoC app context
-    nicc::AppHandler soc_app_init_handler;
+    nicc::AppHandler soc_app_init_handler, soc_app_pkt_handler, soc_app_msg_handler, soc_app_cleanup_handler;
+    
+    // Set handler types
     soc_app_init_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Init;
+    soc_app_pkt_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Pkt_Handler;
+    soc_app_msg_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Msg_Handler;
+    soc_app_cleanup_handler.tid = nicc::ComponentBlock_SoC::handler_typeid_t::Cleanup;
+    
+    // Point to fixed function names
+    soc_app_init_handler.binary.soc = reinterpret_cast<void*>(&soc_init_handler);
+    soc_app_pkt_handler.binary.soc = reinterpret_cast<void*>(&soc_pkt_handler);
+    soc_app_msg_handler.binary.soc = reinterpret_cast<void*>(&soc_msg_handler);
+    soc_app_cleanup_handler.binary.soc = reinterpret_cast<void*>(&soc_cleanup_handler);
 
     nicc::ComponentDesp_SoC_t soc_block_desp = {
         .base_desp = { 
-            .quota = 1,
+            .quota = 4,
             .block_name = "soc" /* \todo: use the component name from the config file */
         },
         .device_name = device_name_cstr,
@@ -138,11 +156,11 @@ int main(){
     };
 
     nicc::AppFunction soc_app_func = nicc::AppFunction(
-        /* handlers_ */ { &soc_app_init_handler },
+        /* handlers_ */ { &soc_app_init_handler, &soc_app_pkt_handler, &soc_app_msg_handler, &soc_app_cleanup_handler },
         /* cb_desp_ */ reinterpret_cast<nicc::ComponentBaseDesp_t*>(&soc_block_desp),
         /* cid */ nicc::kComponent_SoC
     );
-    // app_cxt.functions.push_back(&soc_app_func);
+    app_cxt.functions.push_back(&soc_app_func);
 
     /*----------------------------------------------------------------*/
     /*!

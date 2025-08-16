@@ -9,7 +9,7 @@ namespace nicc {
 nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint8_t i;
-    AppHandler *app_handler = nullptr, *init_handler = nullptr, *event_handler = nullptr;
+    AppHandler *app_handler = nullptr;
     ComponentFuncState_DPA_t *func_state; 
 
     NICC_CHECK_POINTER(app_func);
@@ -34,10 +34,10 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
         NICC_CHECK_POINTER(app_handler = app_func->handlers[i]);
         switch(app_handler->tid){
         case handler_typeid_t::Init:
-            init_handler = app_handler;
+            this->_init_handler = app_handler;
             break;
         case handler_typeid_t::Event:
-            event_handler = app_handler;
+            this->_event_handler = app_handler;
             break;
         default:
             NICC_ERROR_C_DETAIL("unregornized handler id for DPA, this is a bug: handler_id(%u)", app_handler->tid);
@@ -45,12 +45,12 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
     }
 
     // check handlers
-    if(unlikely(init_handler == nullptr)){
+    if(unlikely(this->_init_handler == nullptr)){
         NICC_WARN_C("no init handlers included in app_func context, abort registering");
         retval = NICC_ERROR_NOT_FOUND;
         goto exit;
     }
-    if(unlikely(event_handler == nullptr)){
+    if(unlikely(this->_event_handler == nullptr)){
         NICC_WARN_C("no event handlers included in app_func context, abort registering");
         retval = NICC_ERROR_NOT_FOUND;
         goto exit;
@@ -58,7 +58,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
 
     // register event handler
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__register_event_handler(app_func, event_handler, func_state))
+        (retval = this->__register_event_handler(this->_event_handler, func_state))
     )){
         NICC_WARN_C("failed to register handler on DPA block: handler_tid(%u), retval(%u)", Event, retval);
         goto exit;
@@ -66,7 +66,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
 
     // allocate resource for this event handler
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__allocate_wrapper_resources(app_func, func_state))
+        (retval = this->__allocate_wrapper_resources(func_state))
     )){
         NICC_WARN_C("failed to allocate reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
         goto exit;
@@ -74,7 +74,7 @@ nicc_retval_t ComponentBlock_DPA::register_app_function(AppFunction *app_func, d
 
     // init resources
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__init_wrapper_resources(app_func, init_handler, func_state))
+        (retval = this->__init_wrapper_resources(this->_init_handler, func_state))
     )){
         NICC_WARN_C("failed to init reosurce on DPA block: handler_tid(%u), retval(%u)", Event, retval);
         goto exit;
@@ -225,7 +225,7 @@ exit:
 
 
 nicc_retval_t ComponentBlock_DPA::__register_event_handler(
-    AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state
+    AppHandler *app_handler, ComponentFuncState_DPA_t *func_state
 ){
     nicc_retval_t retval = NICC_SUCCESS;
     flexio_status res;
@@ -237,7 +237,6 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
     memset(&stream_fattr, 0, sizeof(stream_fattr));
 
 
-    NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(app_handler);
     NICC_CHECK_POINTER(func_state);
     NICC_CHECK_POINTER(app_handler->binary.dpa.kernel);
@@ -319,10 +318,9 @@ nicc_retval_t ComponentBlock_DPA::__register_event_handler(
 }
 
 
-nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state){
+nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(ComponentFuncState_DPA_t *func_state){
     nicc_retval_t retval = NICC_SUCCESS;
 
-    NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(func_state);
 
     // this->_function_state->channel = new Channel_DPA(Channel::ETHERNET, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
@@ -354,12 +352,11 @@ nicc_retval_t ComponentBlock_DPA::__allocate_wrapper_resources(AppFunction *app_
 }
 
 
-nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state){
+nicc_retval_t ComponentBlock_DPA::__init_wrapper_resources(AppHandler *app_handler, ComponentFuncState_DPA_t *func_state){
     int ret = 0;
     uint64_t rpc_ret_val;
     nicc_retval_t retval = NICC_SUCCESS;
 
-    NICC_CHECK_POINTER(app_func);
     NICC_CHECK_POINTER(app_handler);
     NICC_CHECK_POINTER(app_handler->binary.dpa.host_stub);
     NICC_CHECK_POINTER(func_state);

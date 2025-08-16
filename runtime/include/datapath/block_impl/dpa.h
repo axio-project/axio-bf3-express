@@ -170,12 +170,11 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  register event handler on DPA block
      *  \note   this function is called within register_app_function
-     *  \param  app_func        application function which the event handler comes from
      *  \param  app_handler     the handler to be registered
      *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful registering
      */
-    nicc_retval_t __register_event_handler(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __register_event_handler(AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
     
     /*!
      *  \brief  unregister event handler on DPA block
@@ -188,11 +187,10 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  (de)allocate wrapper resource for handlers running on DPA
      *  \note   this function is called within register_app_function
-     *  \param  app_func        application function which the event handler comes from
      *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful (de)allocation
      */
-    nicc_retval_t __allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __allocate_wrapper_resources(ComponentFuncState_DPA_t *func_state);
     
     /*!
      *  \brief  deallocate wrapper resource for handlers running on DPA
@@ -205,12 +203,11 @@ class ComponentBlock_DPA : public ComponentBlock {
     /*!
      *  \brief  init wrapper resource for handlers running on DPA
      *  \note   this function is called within register_app_function
-     *  \param  app_func        application function which the event handler comes from
      *  \param  app_handler     the init handler to be registered
      *  \param  func_state      state of the function on this DPA block
      *  \return NICC_SUCCESS for successful initialization
      */
-    nicc_retval_t __init_wrapper_resources(AppFunction *app_func, AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
+    nicc_retval_t __init_wrapper_resources(AppHandler *app_handler, ComponentFuncState_DPA_t *func_state);
 
     /**
      * \brief temporary method to add control plane rule to redirect all traffic to the DPA block; \todo delete this
@@ -239,6 +236,12 @@ class ComponentBlock_DPA : public ComponentBlock {
      * block, using for running the function on this component block
      */
     ComponentFuncState_DPA_t *_function_state = nullptr;
+
+    /**
+     * \brief  the application handler to be registered into this component
+     */
+    AppHandler *_init_handler = nullptr;
+    AppHandler *_event_handler = nullptr;
 
 };
 

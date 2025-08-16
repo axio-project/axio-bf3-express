@@ -9,6 +9,18 @@ DatapathPipeline::DatapathPipeline(ResourcePool& rpool, AppContext* app_cxt, dev
     
     NICC_CHECK_POINTER(app_cxt);
     NICC_CHECK_POINTER(device_state.device_name);
+    NICC_CHECK_POINTER(app_dag);
+    
+    // Create and initialize PipelineRouting
+    this->_pipeline_routing = new PipelineRouting();
+    NICC_CHECK_POINTER(this->_pipeline_routing);
+    
+    // Load routing configuration from AppDAG
+    retval = this->_pipeline_routing->load_from_app_dag(this->_app_dag);
+    if (retval != NICC_SUCCESS) {
+        NICC_ERROR_C("Failed to load routing configuration from AppDAG: retval(%u)", retval);
+        goto exit;
+    }
 
     // allocate component block from resource pool
     if(unlikely(NICC_SUCCESS != (
@@ -64,6 +76,10 @@ exit:
 
 DatapathPipeline::~DatapathPipeline() {
   /* Free all resources */
+  if (this->_pipeline_routing) {
+    delete this->_pipeline_routing;
+    this->_pipeline_routing = nullptr;
+  }
 }
 
 

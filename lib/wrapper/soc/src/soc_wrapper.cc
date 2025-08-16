@@ -26,9 +26,41 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
             return;
         }
     }
+    
+    // call user defined init handler if available
+    if (this->_context->init_handler) {
+        // user init_handler allocates and returns user_state with size info
+        user_state_info state_info = this->_context->init_handler();
+        this->_context->user_state = state_info.state;
+        this->_context->user_state_size = state_info.size;
+        
+        if (this->_context->user_state) {
+            NICC_LOG("User init handler called successfully, user_state allocated: size=%zu", 
+                     this->_context->user_state_size);
+        } else {
+            NICC_WARN_C("User init handler returned null user_state");
+            this->_context->user_state_size = 0;
+        }
+    } else {
+        NICC_LOG("No user init handler registered");
+        this->_context->user_state = nullptr;
+        this->_context->user_state_size = 0;
+    }
+    
     /// run the SoCWrapper
     this->__run(10.0);
     return;
+}
+
+SoCWrapper::~SoCWrapper() {
+    // call user defined cleanup handler if available
+    if (this->_context->cleanup_handler && this->_context->user_state) {
+        this->_context->cleanup_handler(this->_context->user_state);
+        NICC_LOG("User cleanup handler called, user_state freed");
+        this->_context->user_state = nullptr;
+    } else if (this->_context->user_state) {
+        NICC_WARN_C("user_state exists but no cleanup handler provided - potential memory leak");
+    }
 }
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {
@@ -75,12 +107,36 @@ void SoCWrapper::__launch() {
     /// \todo get packets per message within header; now assume 1 packet per message
     size_t msg_num = worker_queue_size / 1;
     if (msg_num > kAppRxMsgBatchSize) {
-        /// handle received messages, \todo add user's msg handler
-
-        /// dequeue from worker queue, and enqueue into next worker for pipelined processing
+        /// handle received messages with user defined msg handler
         for (size_t i = 0; i < msg_num * 1; i++) {
             Buffer *m = (Buffer*)this->_tmp_worker_rx_queue->dequeue();
-            this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+            
+            // call user defined message handler if available
+            if (likely(this->_context->msg_handler)) {
+                nicc_retval_t ret = this->_context->msg_handler(m, this->_context->user_state);
+                
+                // Use routing to decide packet forwarding based on kernel return value
+                // if (this->_context->routing) {
+                    // nicc_retval_t routing_ret = this->__forward_packet_with_routing(m, ret);
+                    // if (routing_ret != NICC_SUCCESS) {
+                    //     NICC_WARN_C("Routing-based forwarding failed for kernel_retval=%d, using default forwarding", ret);
+                    //     this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    // }
+                // } else {
+                    // No routing configured, use original logic
+                    if (likely(ret == NICC_SUCCESS)) {
+                        // successful processing, forward to next component
+                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    } else {
+                        // processing failed, log warning but still forward (or could drop based on policy)
+                        NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
+                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+                    }
+                // }
+            } else {
+                // no user handler registered, default behavior: forward message
+                this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
+            }
         }
     }
 
@@ -225,6 +281,25 @@ size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
     rx_qp->_wait_for_disp -= remain_tx_queue_size;
 
     return remain_tx_queue_size;
+}
+
+nicc_retval_t SoCWrapper::__forward_packet_with_routing(Buffer* packet, nicc_core_retval_t kernel_retval) {
+    // if (!packet) {
+    //     NICC_ERROR_C("Invalid packet buffer in __forward_packet_with_routing.");
+    //     return NICC_ERROR;
+    // }
+    
+    // if (!this->_context->routing) {
+    //     NICC_ERROR_C("Routing not configured in SoCWrapper context.");
+    //     return NICC_ERROR;
+    // }
+    
+    // // Use ComponentRouting_SoC's forward_packet_after_kernel method
+    // return this->_context->routing->forward_packet_after_kernel(
+    //     packet, 
+    //     kernel_retval, 
+    //     reinterpret_cast<nicc::Channel*>(this->_qp_for_next)  // Use next QP as default channel
+    // );
 }
 
 } // namespace nicc

@@ -6,7 +6,7 @@ static void __soc_wrapper_thread_func(ComponentFuncState_SoC_t *func_state);
 nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, device_state_t &device_state){
     nicc_retval_t retval = NICC_SUCCESS;
     uint64_t i;
-    AppHandler *app_handler = nullptr, *init_handler = nullptr, *event_handler = nullptr;
+    AppHandler *app_handler = nullptr;
     ComponentFuncState_SoC_t *func_state;
 
     NICC_CHECK_POINTER(app_func);
@@ -23,10 +23,16 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
         NICC_CHECK_POINTER(app_handler = app_func->handlers[i]);
         switch(app_handler->tid){
         case handler_typeid_t::Init:
-            init_handler = app_handler;
+            this->_init_handler = app_handler;
             break;
         case handler_typeid_t::Pkt_Handler:
-            event_handler = app_handler;
+            this->_pkt_handler = app_handler;
+            break;
+        case handler_typeid_t::Msg_Handler:
+            this->_msg_handler = app_handler;
+            break;
+        case handler_typeid_t::Cleanup:
+            this->_cleanup_handler = app_handler;
             break;
         default:
             NICC_ERROR_C_DETAIL("unregornized handler id for SoC, this is a bug: handler_id(%u)", app_handler->tid);
@@ -55,6 +61,7 @@ nicc_retval_t ComponentBlock_SoC::unregister_app_function(){
     NICC_CHECK_POINTER( this->_function_state );
     // deallocate all resources for registered funcitons
     /* ...... */
+    
 exit:
     return retval;
 }
@@ -150,6 +157,35 @@ nicc_retval_t ComponentBlock_SoC::__create_wrapper_process(ComponentFuncState_So
     // NICC_CHECK_POINTER(context->match_action_table = func_state->match_action_table);
     NICC_CHECK_POINTER(func_state->context->qp_for_prior = func_state->channel->qp_for_prior);
     NICC_CHECK_POINTER(func_state->context->qp_for_next = func_state->channel->qp_for_next);
+
+    // pass user defined handlers to wrapper context
+    if (this->_init_handler) {
+        func_state->context->init_handler = (soc_init_handler_t)this->_init_handler->binary.soc;
+    } else {
+        func_state->context->init_handler = nullptr;
+    }
+    
+    if (this->_pkt_handler) {
+        func_state->context->pkt_handler = (soc_pkt_handler_t)this->_pkt_handler->binary.soc;
+    } else {
+        func_state->context->pkt_handler = nullptr;
+    }
+    
+    if (this->_msg_handler) {
+        func_state->context->msg_handler = (soc_msg_handler_t)this->_msg_handler->binary.soc;
+    } else {
+        func_state->context->msg_handler = nullptr;
+    }
+    
+    if (this->_cleanup_handler) {
+        func_state->context->cleanup_handler = (soc_cleanup_handler_t)this->_cleanup_handler->binary.soc;
+    } else {
+        func_state->context->cleanup_handler = nullptr;
+    }
+    
+    // user_state will be allocated by user's init_handler
+    func_state->context->user_state = nullptr;
+    func_state->context->user_state_size = 0;
 
     // create wrapper process for the function
     NICC_CHECK_POINTER(func_state->wrapper_thread = new std::thread(__soc_wrapper_thread_func, func_state));

@@ -7,6 +7,8 @@
 #include <string.h>
 #include <cerrno>
 #include <limits>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -18,6 +20,7 @@
 #include <doca_error.h>
 
 #include "debug.h"
+#include "types.h"
 
 namespace nicc {
     
@@ -66,6 +69,12 @@ typedef struct ComponentFuncBaseState {
     // basic state
     uint8_t mock_state;
 } ComponentFuncBaseState_t;
+
+// User state information structure
+struct user_state_info {
+  void* state;        // pointer to allocated user state
+  size_t size;        // size of the allocated user state
+};
 
 
 #define _unused(x) ((void)(x))  // Make production build happy
@@ -118,6 +127,11 @@ static constexpr component_typeid_t kRemote_Host = 0x1000;
 static constexpr component_typeid_t kLocal_Host = 0x2000;
 static constexpr component_typeid_t NICC_ENABLE_EMPTY_MASK = static_cast<component_typeid_t>(0x0000);
 static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<component_typeid_t>(0xFFFF);
+
+/*!
+ *  \brief  channel identifier type for routing
+ */
+using channel_id_t = std::string;
 
 
 /**

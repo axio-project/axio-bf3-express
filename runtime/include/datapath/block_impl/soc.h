@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <thread>
+#include <cstdlib>  // for malloc, free
 
 #include "common.h"
 #include "log.h"
@@ -58,6 +59,7 @@ typedef struct ComponentFuncState_SoC {
     // Communication Channel
     Channel_SoC                 *channel;           // Communication channel for SoC
     /* ========== Specific fields ========== */
+
 } ComponentFuncState_SoC_t;
 
 
@@ -80,7 +82,7 @@ class ComponentBlock_SoC : public ComponentBlock {
     /**
      *  \brief  typeid of handlers register into SoC
      */
-    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Pkt_Handler, Msg_Handler };
+    enum handler_typeid_t : appfunc_handler_typeid_t { Init = 0, Pkt_Handler, Msg_Handler, Cleanup };
 
     /**
      *  \brief  register a new application function into this component
@@ -186,6 +188,14 @@ private:
      * block, using for running the function on this component block
      */
     ComponentFuncState_SoC_t *_function_state = nullptr;
+
+    /**
+     * \brief  the application handler to be registered into this component
+     */
+    AppHandler *_init_handler = nullptr;
+    AppHandler *_pkt_handler = nullptr;
+    AppHandler *_msg_handler = nullptr;
+    AppHandler *_cleanup_handler = nullptr;
     
 };
 

@@ -39,8 +39,8 @@ if [ ! -f "$KERNEL_DIR/dpa_kernel.dpa.o" ]; then
 fi
 
 # Input parameters
-APP_NAME=l2_swap_wrapper
-OUTPUT_NAME=libl2_swap_wrapper
+APP_NAME=dpa_wrapper
+OUTPUT_NAME=libdpa_wrapper
 SOURCE_FILE="$CUR_DIR/src/dpa_wrapper.c $KERNEL_DIR/dpa_kernel.dpa.o"
 BUILD_DIR="$CUR_DIR/../../../bin"
 

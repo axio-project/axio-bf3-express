@@ -57,7 +57,9 @@ class AppFunction {
      *  \brief  constructor
      *  \param  handlers   list of pointers to the actual function to be executed
      */
-    AppFunction(std::vector<AppHandler*>&& handlers_, ComponentBaseDesp_t* cb_desp_, component_typeid_t cid)
+    AppFunction(std::vector<AppHandler*>&& handlers_, 
+                ComponentBaseDesp_t* cb_desp_, 
+                component_typeid_t cid)
         : handlers(handlers_), cb_desp(cb_desp_), component_id(cid)
     {
         if(unlikely(handlers.size() == 0)){
