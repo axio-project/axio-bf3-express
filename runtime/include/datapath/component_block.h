@@ -4,6 +4,7 @@
 #include "utils/ibv_device.h"
 #include "utils/qpinfo.hh"
 #include "ctrlpath/mat.h"
+#include "ctrlpath/routing.h"
 
 namespace nicc {
 
@@ -101,6 +102,14 @@ class ComponentBlock {
      *  \return the qp info of the current component
      */
     virtual QPInfo *get_qp_info(bool is_prior){
+        return nullptr;
+    }
+
+    /**
+     *  \brief  get the routing component of this block
+     *  \return pointer to the routing component, or nullptr if not available
+     */
+    virtual ComponentRouting* get_component_routing(){
         return nullptr;
     }
 

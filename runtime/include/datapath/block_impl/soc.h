@@ -138,6 +138,18 @@ class ComponentBlock_SoC : public ComponentBlock {
      */
     QPInfo *get_qp_info(bool is_prior) override;
 
+    /**
+     *  \brief  get the routing component of this SoC block
+     *  \return pointer to the SoC routing component
+     */
+    ComponentRouting* get_component_routing() override;
+
+    /**
+     *  \brief  register local channels to the routing component
+     *  \return NICC_SUCCESS for successful registration
+     */
+    nicc_retval_t register_local_channels();
+
 /**
  * ----------------------Internel Methonds----------------------
  */ 
@@ -146,10 +158,9 @@ private:
      *  \brief  (de)allocate wrapper resource for handlers running on SoC
      *  \note   this function is called within register_app_function
      *  \param  app_func        application function which the event handler comes from
-     *  \param  func_state      state of the function on this SoC block
      *  \return NICC_SUCCESS for successful (de)allocation
      */
-    nicc_retval_t __allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state);
+    nicc_retval_t __allocate_wrapper_resources(AppFunction *app_func);
     
     /*!
      *  \brief  deallocate wrapper resource for handlers running on SoC
@@ -166,6 +177,11 @@ private:
      */
     nicc_retval_t __create_wrapper_process(ComponentFuncState_SoC_t *func_state);
 
+/**
+ * ----------------------Public parameters----------------------
+ */
+ public:
+    ComponentRouting_SoC       *routing;
 /**
  * ----------------------Internel Parameters----------------------
  */ 

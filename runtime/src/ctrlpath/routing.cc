@@ -1,4 +1,5 @@
 #include "ctrlpath/routing.h"
+#include "datapath/channel.h"
 
 namespace nicc {
 

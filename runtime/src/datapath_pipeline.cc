@@ -256,87 +256,205 @@ exit:
 
 nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_state) {
     nicc_retval_t retval = NICC_SUCCESS;
-    std::vector<std::string> remote_connect_to = this->_app_dag->get_host_config("remote")->connect_to;
-    std::vector<std::string> local_connect_to = this->_app_dag->get_host_config("local")->connect_to;
-
-    // Obtain the remote host and local host's QPInfo
-    QPInfo remote_host_qp_info, local_host_qp_info;
-    bool is_connected_to_remote = false, is_connected_to_local = false;
-    TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
-    TCPClient mgnt_client;
-    memset(&remote_host_qp_info, 0, sizeof(QPInfo));
-    memset(&local_host_qp_info, 0, sizeof(QPInfo));
-    mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), this->_app_dag->get_host_config("local")->mgnt_port);
-    local_host_qp_info.deserialize(mgnt_client.receiveMsg());
-
-    mgnt_server.acceptConnection();
-    remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
-
-    /* iteratively component blocks in the app DAG */
-    typename std::vector<ComponentBlock*>::iterator cb_iter;
-    ComponentBlock *prior_component_block = nullptr, *cur_component_block = nullptr;
-    for(cb_iter = this->_component_blocks.begin(); cb_iter != this->_component_blocks.end(); cb_iter++){
-        NICC_CHECK_POINTER(cur_component_block = *cb_iter);
-        std::string component_name = cur_component_block->get_block_name();
-
-        /* connect channels based on the app DAG */
-        if (std::find(remote_connect_to.begin(), remote_connect_to.end(), component_name) != remote_connect_to.end()) {
-            is_connected_to_remote = true;
-        }
+    
+    // Step 1: Register component routers to PipelineRouting and register local channels
+    for (auto* component_block : this->_component_blocks) {
+        NICC_CHECK_POINTER(component_block);
         
-        if (std::find(local_connect_to.begin(), local_connect_to.end(), component_name) != local_connect_to.end()) {
-            is_connected_to_local = true;
-        }
-        
-        if(unlikely(NICC_SUCCESS != (retval = cur_component_block->connect_to_neighbour(
-                                    /* prior block */ prior_component_block,
-                                    /* next block*/ nullptr,
-                                    is_connected_to_remote,
-                                    /* remote qp info */ &remote_host_qp_info,
-                                    is_connected_to_local,
-                                    /* local qp info */ &local_host_qp_info)))){
-            NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
-            return retval;
-        }
-        // check if the block is connected to both remote and local
-        if(is_connected_to_remote){
-            // complete the connection to remote host
-            mgnt_server.sendMsg(cur_component_block->get_qp_info(true)->serialize());
+        ComponentRouting* component_routing = component_block->get_component_routing();
+        if (component_routing != nullptr) {
+            std::string component_name = component_block->get_block_name();
             
-        }
-        if(is_connected_to_local){
-            // complete the connection to local host
-            mgnt_client.sendMsg(cur_component_block->get_qp_info(false)->serialize());
-        }
-
-        if (prior_component_block != nullptr){
-            if(unlikely(NICC_SUCCESS != (retval = prior_component_block->connect_to_neighbour(
-                                        /* prior block */ nullptr,
-                                        /* next block*/ cur_component_block,
-                                        false,
-                                        /* remote qp info */ nullptr,
-                                        false,
-                                        /* local qp info */ nullptr)))){
-                NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
-                return retval;
+            // Register component router to pipeline routing
+            retval = this->_pipeline_routing->register_component_router(component_name, component_routing);
+            if (retval != NICC_SUCCESS) {
+                NICC_ERROR_C("Failed to register component router for %s: retval(%u)", 
+                           component_name.c_str(), retval);
+                goto exit;
             }
-        }
-        prior_component_block = cur_component_block;
+            
+            NICC_LOG("Registered component router for %s", component_name.c_str());
+            
+            // Register local channels for SoC components
+            if (component_block->get_component_id() == kComponent_SoC) {
+                ComponentBlock_SoC* soc_block = static_cast<ComponentBlock_SoC*>(component_block);
+                retval = soc_block->register_local_channels();
+                if (retval != NICC_SUCCESS) {
+                    NICC_ERROR_C("Failed to register local channels for SoC component %s: retval(%u)", 
+                               component_name.c_str(), retval);
+                    goto exit;
+                }
+                NICC_LOG("Registered local channels for SoC component %s", component_name.c_str());
+            }
 
-        /* \todo add control plane rule to redirect all traffic to the component block */
-        /// Currently, only DPA component block has control plane rule
-        if (cur_component_block->get_component_id() == kComponent_DPA) {
-            ComponentBlock_DPA *dpa_block = reinterpret_cast<ComponentBlock_DPA*>(cur_component_block);
-            dpa_block->add_control_plane_rule(device_state.rx_domain);
+            // Register retval-to-channel mapping based on component's ctrl_path configuration
+            retval = this->__init_retval_mappings(component_block, component_routing);
+            if (retval != NICC_SUCCESS) {
+                NICC_ERROR_C("Failed to initialize retval mappings for component %s: retval(%u)", 
+                           component_name.c_str(), retval);
+                goto exit;
+            }
+            
+        } else {
+            NICC_WARN("Component %s has no routing instance", component_block->get_block_name().c_str());
         }
     }
-    // Check if remote host and local host are connected
-    if (!(is_connected_to_remote && is_connected_to_local)){
-        NICC_ERROR_C("failed to init control plane: failed to connect to both remote and local host");
-        return NICC_ERROR;
+    
+    // Step 2: Build channel connections based on DAG edge rules
+    retval = this->_pipeline_routing->build_channel_connections();
+    if (retval != NICC_SUCCESS) {
+        NICC_ERROR_C("Failed to build channel connections: retval(%u)", retval);
+        goto exit;
     }
+    
+    NICC_LOG("Control plane initialization completed successfully");
+    
+exit:
     return retval;
 }
+
+nicc_retval_t DatapathPipeline::__init_retval_mappings(ComponentBlock* component_block, ComponentRouting* component_routing) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    std::string component_name = component_block->get_block_name();
+    
+    // Get component configuration from AppDAG
+    const DAGComponent* dag_component = this->_app_dag->get_component_config(component_name);
+    if (!dag_component) {
+        NICC_WARN("No DAG configuration found for component '%s'", component_name.c_str());
+        return NICC_SUCCESS; // Not an error, component might not have ctrl_path
+    }
+    
+    // Process ctrl_entries to build retval-to-channel mappings
+    for (const auto& entry : dag_component->ctrl_entries) {
+        auto match_it = entry.find("match");
+        auto action_it = entry.find("action");
+        
+        if (match_it == entry.end() || action_it == entry.end()) {
+            NICC_WARN("Invalid ctrl_entry format in component '%s'", component_name.c_str());
+            continue;
+        }
+        
+        std::string match_str = match_it->second;
+        std::string action_str = action_it->second;
+        
+        // Parse retval from match string (e.g., "retval=1")
+        if (match_str.find("retval=") == 0) {
+            std::string retval_str = match_str.substr(7); // Skip "retval="
+            try {
+                nicc_core_retval_t kernel_retval = std::stoi(retval_str);
+                
+                // Parse action to determine target channel
+                // For now, use default channel for all actions
+                // TODO: Parse action properly and get target channel
+                nicc::Channel* target_channel = component_routing->get_local_channel("default");
+                if (target_channel) {
+                    retval = component_routing->add_retval_mapping(kernel_retval, target_channel);
+                    if (retval != NICC_SUCCESS) {
+                        NICC_ERROR_C("Failed to add retval mapping for component %s: retval=%u -> channel: retval(%u)", 
+                                   component_name.c_str(), kernel_retval, retval);
+                        return retval;
+                    }
+                    
+                    NICC_LOG("Added retval mapping for component '%s': retval=%u -> default channel", 
+                           component_name.c_str(), kernel_retval);
+                } else {
+                    NICC_ERROR("Default channel not found for component '%s'", component_name.c_str());
+                    return NICC_ERROR;
+                }
+                
+            } catch (const std::exception& e) {
+                NICC_WARN("Failed to parse retval from match string '%s': %s", match_str.c_str(), e.what());
+            }
+        }
+    }
+    
+    return retval;
+}
+
+// nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_state) {
+//     nicc_retval_t retval = NICC_SUCCESS;
+//     std::vector<std::string> remote_connect_to = this->_app_dag->get_host_config("remote")->connect_to;
+//     std::vector<std::string> local_connect_to = this->_app_dag->get_host_config("local")->connect_to;
+
+//     // Obtain the remote host and local host's QPInfo
+//     QPInfo remote_host_qp_info, local_host_qp_info;
+//     bool is_connected_to_remote = false, is_connected_to_local = false;
+//     TCPServer mgnt_server(this->_app_dag->get_host_config("remote")->mgnt_port);
+//     TCPClient mgnt_client;
+//     memset(&remote_host_qp_info, 0, sizeof(QPInfo));
+//     memset(&local_host_qp_info, 0, sizeof(QPInfo));
+//     mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), this->_app_dag->get_host_config("local")->mgnt_port);
+//     local_host_qp_info.deserialize(mgnt_client.receiveMsg());
+
+//     mgnt_server.acceptConnection();
+//     remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
+
+//     /* iteratively component blocks in the app DAG */
+//     typename std::vector<ComponentBlock*>::iterator cb_iter;
+//     ComponentBlock *prior_component_block = nullptr, *cur_component_block = nullptr;
+//     for(cb_iter = this->_component_blocks.begin(); cb_iter != this->_component_blocks.end(); cb_iter++){
+//         NICC_CHECK_POINTER(cur_component_block = *cb_iter);
+//         std::string component_name = cur_component_block->get_block_name();
+
+//         /* connect channels based on the app DAG */
+//         if (std::find(remote_connect_to.begin(), remote_connect_to.end(), component_name) != remote_connect_to.end()) {
+//             is_connected_to_remote = true;
+//         }
+        
+//         if (std::find(local_connect_to.begin(), local_connect_to.end(), component_name) != local_connect_to.end()) {
+//             is_connected_to_local = true;
+//         }
+        
+//         if(unlikely(NICC_SUCCESS != (retval = cur_component_block->connect_to_neighbour(
+//                                     /* prior block */ prior_component_block,
+//                                     /* next block*/ nullptr,
+//                                     is_connected_to_remote,
+//                                     /* remote qp info */ &remote_host_qp_info,
+//                                     is_connected_to_local,
+//                                     /* local qp info */ &local_host_qp_info)))){
+//             NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
+//             return retval;
+//         }
+//         // check if the block is connected to both remote and local
+//         if(is_connected_to_remote){
+//             // complete the connection to remote host
+//             mgnt_server.sendMsg(cur_component_block->get_qp_info(true)->serialize());
+            
+//         }
+//         if(is_connected_to_local){
+//             // complete the connection to local host
+//             mgnt_client.sendMsg(cur_component_block->get_qp_info(false)->serialize());
+//         }
+
+//         if (prior_component_block != nullptr){
+//             if(unlikely(NICC_SUCCESS != (retval = prior_component_block->connect_to_neighbour(
+//                                         /* prior block */ nullptr,
+//                                         /* next block*/ cur_component_block,
+//                                         false,
+//                                         /* remote qp info */ nullptr,
+//                                         false,
+//                                         /* local qp info */ nullptr)))){
+//                 NICC_WARN_C("failed to connect to neighbour component: retval(%u)", retval);
+//                 return retval;
+//             }
+//         }
+//         prior_component_block = cur_component_block;
+
+//         /* \todo add control plane rule to redirect all traffic to the component block */
+//         /// Currently, only DPA component block has control plane rule
+//         if (cur_component_block->get_component_id() == kComponent_DPA) {
+//             ComponentBlock_DPA *dpa_block = reinterpret_cast<ComponentBlock_DPA*>(cur_component_block);
+//             dpa_block->add_control_plane_rule(device_state.rx_domain);
+//         }
+//     }
+//     // Check if remote host and local host are connected
+//     if (!(is_connected_to_remote && is_connected_to_local)){
+//         NICC_ERROR_C("failed to init control plane: failed to connect to both remote and local host");
+//         return NICC_ERROR;
+//     }
+//     return retval;
+// }
 
 nicc_retval_t DatapathPipeline::__run_pipeline() {
     nicc_retval_t retval = NICC_SUCCESS;

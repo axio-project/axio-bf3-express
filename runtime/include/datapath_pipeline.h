@@ -80,6 +80,14 @@ class DatapathPipeline {
     nicc_retval_t __init_control_plane(device_state_t &device_state);
 
     /*!
+     *  \brief  initialize retval-to-channel mappings for a component based on its ctrl_path config
+     *  \param  component_block     the component block to initialize mappings for
+     *  \param  component_routing   the component's routing instance
+     *  \return NICC_SUCCESS for successful initialization
+     */
+    nicc_retval_t __init_retval_mappings(ComponentBlock* component_block, ComponentRouting* component_routing);
+
+    /*!
      *  \brief  start to run the datapath pipeline
      *  \return NICC_SUCCESS for successfully deregistration
      *  \todo

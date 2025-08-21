@@ -2,13 +2,13 @@
 #include "common.h"
 #include "log.h"
 #include "types.h"
-#include "datapath/channel.h" // Include datapath channel
 #include "ctrlpath/mat.h"     // Base FlowMAT
 #include "utils/app_dag.h"
 
 namespace nicc {
 
 // Forward declarations
+class Channel;
 class ComponentRouting;
 class PipelineRouting;
 
