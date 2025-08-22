@@ -80,6 +80,22 @@ class DatapathPipeline {
     nicc_retval_t __init_control_plane(device_state_t &device_state);
 
     /*!
+     *  \brief  initialize retval-to-channel mappings for a component based on its ctrl_path config
+     *  \param  component_block     the component block to initialize mappings for
+     *  \param  component_routing   the component's routing instance
+     *  \return NICC_SUCCESS for successful initialization
+     */
+    nicc_retval_t __init_retval_mappings(ComponentBlock* component_block, ComponentRouting* component_routing);
+    
+    /*!
+     *  \brief  build channel connections between components and with remote/local hosts
+     *          Based on AppDAG configuration and DAG edge rules from PipelineRouting
+     *  \param  device_state        device state containing connection information
+     *  \return NICC_SUCCESS for successful connection building
+     */
+    nicc_retval_t __build_channel_connections(device_state_t& device_state);
+
+    /*!
      *  \brief  start to run the datapath pipeline
      *  \return NICC_SUCCESS for successfully deregistration
      *  \todo

@@ -8,7 +8,6 @@ namespace nicc {
 
 
 nicc_retval_t ComponentRouting_SoC::register_local_channel(const std::string& channel_name, nicc::Channel* channel) {
-    NICC_LOG("SoC: Registering local channel '%s'.", channel_name.c_str());
     
     // Call base class implementation
     nicc_retval_t ret = ComponentRouting::register_local_channel(channel_name, channel);

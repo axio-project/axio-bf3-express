@@ -2,13 +2,13 @@
 #include "common.h"
 #include "log.h"
 #include "types.h"
-#include "datapath/channel.h" // Include datapath channel
 #include "ctrlpath/mat.h"     // Base FlowMAT
 #include "utils/app_dag.h"
 
 namespace nicc {
 
 // Forward declarations
+class Channel;
 class ComponentRouting;
 class PipelineRouting;
 
@@ -117,13 +117,6 @@ public:
      *  \return NICC_SUCCESS for successful loading
      */
     nicc_retval_t load_from_app_dag(const AppDAG* app_dag);
-
-    /**
-     *  \brief  Build channel connections based on DAG edge rules
-     *          Called after all components have registered their local channels
-     *  \return NICC_SUCCESS for successful connection building
-     */
-    nicc_retval_t build_channel_connections();
 
     /**
      *  \brief  Add a DAG edge rule: source_component(retval) -> target_component(channel)

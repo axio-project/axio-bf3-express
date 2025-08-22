@@ -15,7 +15,7 @@ class ComponentRouting_SoC : public ComponentRouting {
 public:
     ComponentRouting_SoC(const std::string& component_id = "soc") 
         : ComponentRouting(kComponent_SoC, component_id) {
-        NICC_LOG("ComponentRouting_SoC initialized for component '%s'", component_id.c_str());
+        NICC_DEBUG_C("ComponentRouting_SoC initialized for component '%s'", component_id.c_str());
     }
     
     virtual ~ComponentRouting_SoC() = default;

@@ -1,4 +1,5 @@
 #include "datapath/block_impl/soc.h"
+#include "ctrlpath/route_impl/soc_routing.h"
 
 namespace nicc {
 static void __soc_wrapper_thread_func(ComponentFuncState_SoC_t *func_state);
@@ -44,7 +45,7 @@ nicc_retval_t ComponentBlock_SoC::register_app_function(AppFunction *app_func, d
     /* Step 2: Allocate and record funciton state */
     // allocate wrapper resources, including channel
     if(unlikely(NICC_SUCCESS !=
-        (retval = this->__allocate_wrapper_resources(app_func, func_state))
+        (retval = this->__allocate_wrapper_resources(app_func))
     )){
         NICC_WARN_C("failed to allocate reosurce on SoC block: retval(%u)", retval);
         goto exit;
@@ -130,7 +131,43 @@ QPInfo *ComponentBlock_SoC::get_qp_info(bool is_prior){
     return is_prior ? this->_function_state->channel->qp_for_prior_info : this->_function_state->channel->qp_for_next_info;
 }
 
-nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func, ComponentFuncState_SoC_t *func_state) {
+ComponentRouting* ComponentBlock_SoC::get_component_routing(){
+    return this->routing;
+}
+
+nicc_retval_t ComponentBlock_SoC::register_local_channels(){
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    if (!this->routing) {
+        NICC_ERROR("Routing component not initialized");
+        return NICC_ERROR;
+    }
+    
+    if (!this->_function_state || !this->_function_state->channel) {
+        NICC_ERROR("SoC channels not allocated yet");
+        return NICC_ERROR;
+    }
+    
+    Channel_SoC* soc_channel = this->_function_state->channel;
+    
+    retval = this->routing->register_local_channel("default", static_cast<nicc::Channel*>(soc_channel));
+    if (retval != NICC_SUCCESS) {
+        NICC_ERROR_C("Failed to register default channel: retval(%u)", retval);
+        return retval;
+    }
+    
+    // Set default channel for unmapped return values
+    retval = this->routing->set_default_channel(static_cast<nicc::Channel*>(soc_channel));
+    if (retval != NICC_SUCCESS) {
+        NICC_ERROR_C("Failed to set default channel: retval(%u)", retval);
+        return retval;
+    }
+    
+    
+    return retval;
+}
+
+nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_func) {
     nicc_retval_t retval = NICC_SUCCESS;
 
     this->_function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
@@ -141,6 +178,8 @@ nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_
         NICC_WARN_C("failed to allocate and init SoC channel: nicc_retval(%u)", retval);
         goto exit;
     }   
+    // allocate routing
+    NICC_CHECK_POINTER(this->routing = new ComponentRouting_SoC());
 
 exit:
 
