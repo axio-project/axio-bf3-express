@@ -163,7 +163,6 @@ nicc_retval_t ComponentBlock_SoC::register_local_channels(){
         return retval;
     }
     
-    NICC_LOG("Successfully registered local channels for SoC component '%s'", this->get_block_name().c_str());
     
     return retval;
 }

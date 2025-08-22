@@ -93,49 +93,6 @@ nicc_retval_t PipelineRouting::load_from_app_dag(const AppDAG* app_dag) {
     }
 }
 
-nicc_retval_t PipelineRouting::build_channel_connections() {
-
-    // For each DAG edge rule, find source and target components
-    // Then establish the connection between channels
-    for (const auto& rule : this->_state->dag_edge_rules) {
-        // Find source component router by type
-        ComponentRouting* source_router = nullptr;
-        for (const auto& pair : this->_state->component_routers) {
-            if (pair.second->get_component_type() == rule.source_component) {
-                source_router = pair.second;
-                break;
-            }
-        }
-        
-        if (!source_router) {
-            NICC_WARN_C("Source component type %d not found for DAG rule.", rule.source_component);
-            continue;
-        }
-        
-        // Find target component router  
-        auto target_it = this->_state->component_routers.find(rule.target_component_id);
-        if (target_it == this->_state->component_routers.end()) {
-            NICC_WARN_C("Target component '%s' not found for DAG rule.", rule.target_component_id.c_str());
-            continue;
-        }
-        
-        // Get target channel
-        nicc::Channel* target_channel = target_it->second->get_local_channel(rule.target_channel_name);
-        if (!target_channel) {
-            NICC_WARN_C("Target channel '%s' not found in component '%s'.", 
-                       rule.target_channel_name.c_str(), rule.target_component_id.c_str());
-            continue;
-        }
-        
-        // Add mapping in source component: retval -> target_channel
-        source_router->add_retval_mapping(rule.kernel_retval, target_channel);
-        NICC_DEBUG_C("Connected: component_type=%d retval=%d -> %s::%s", 
-                rule.source_component, rule.kernel_retval, rule.target_component_id.c_str(), rule.target_channel_name.c_str());
-    }
-    
-    return NICC_SUCCESS;
-}
-
 nicc_retval_t PipelineRouting::add_dag_edge_rule(const DAGEdgeRule_t& rule) {
     this->_state->dag_edge_rules.push_back(rule);
     NICC_DEBUG_C("Added DAG edge rule: %d -> %s::%s", 

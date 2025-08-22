@@ -119,13 +119,6 @@ public:
     nicc_retval_t load_from_app_dag(const AppDAG* app_dag);
 
     /**
-     *  \brief  Build channel connections based on DAG edge rules
-     *          Called after all components have registered their local channels
-     *  \return NICC_SUCCESS for successful connection building
-     */
-    nicc_retval_t build_channel_connections();
-
-    /**
      *  \brief  Add a DAG edge rule: source_component(retval) -> target_component(channel)
      *  \param  rule            DAG edge rule to add
      *  \return NICC_SUCCESS for successful addition
