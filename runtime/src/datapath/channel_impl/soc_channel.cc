@@ -11,22 +11,32 @@ static constexpr size_t kDefaultGIDIndex = 1;
 
 nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
+
+    // \todo: the channel structure is ugly, need to be refactored
+    /// =================RDMA QP Allocation=================
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA || this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
+        common_resolve_phy_port(dev_name, phy_port, nicc::kMTU, this->_roce_resolve);
+        if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
+            NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
+        if(unlikely(NICC_SUCCESS != (retval = __init_verbs_structs()))){
+            NICC_WARN_C("failed to init verbs structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
     
-    this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
-    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, this->_resolve);
-
-    if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
-        NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
-        goto exit;
+        if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
+            NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
     }
-
-    if(unlikely(NICC_SUCCESS != (retval = __init_verbs_structs()))){
-        NICC_WARN_C("failed to init verbs structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
-        goto exit;
+    /// =================DPDK QP Allocation=================
+    else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET && this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        
     }
-
-    if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
-        NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+    else {
+        NICC_ERROR_C("Unsupported channel type");
         goto exit;
     }
 
@@ -76,20 +86,20 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     nicc_retval_t retval = NICC_SUCCESS;
     struct ibv_port_attr port_attr;
 
-    NICC_CHECK_POINTER(this->_resolve.ib_ctx);
+    NICC_CHECK_POINTER(this->_roce_resolve.ib_ctx);
 
     // query port
-    if (ibv_query_port(this->_resolve.ib_ctx, this->_resolve.dev_port_id, &port_attr)) {
-        NICC_WARN_C("failed to query port: dev_port_id(%u), retval(%u)", this->_resolve.dev_port_id, retval);
+    if (ibv_query_port(this->_roce_resolve.ib_ctx, this->_roce_resolve.dev_port_id, &port_attr)) {
+        NICC_WARN_C("failed to query port: dev_port_id(%u), retval(%u)", this->_roce_resolve.dev_port_id, retval);
         return NICC_ERROR_HARDWARE_FAILURE;
     }
-    this->_resolve.port_lid = port_attr.lid;
+    this->_roce_resolve.port_lid = port_attr.lid;
 
     // Query GID information using ibv_query_gid_ex
     struct ibv_gid_entry gid_entry;
-    if (ibv_query_gid_ex(this->_resolve.ib_ctx, this->_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
+    if (ibv_query_gid_ex(this->_roce_resolve.ib_ctx, this->_roce_resolve.dev_port_id, kDefaultGIDIndex, &gid_entry, 0)) {
         NICC_WARN_C("failed to query gid: dev_port_id(%u), gid_index(%lu), retval(%u)", 
-                   this->_resolve.dev_port_id, kDefaultGIDIndex, retval);
+                   this->_roce_resolve.dev_port_id, kDefaultGIDIndex, retval);
         return NICC_ERROR_HARDWARE_FAILURE;
     }
 
@@ -100,8 +110,8 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     }
 
     // Copy GID information
-    memcpy(&this->_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
-    this->_resolve.gid_index = gid_entry.gid_index;
+    memcpy(&this->_roce_resolve.gid, &gid_entry.gid, sizeof(union ibv_gid));
+    this->_roce_resolve.gid_index = gid_entry.gid_index;
 
     // Get interface name from index
     char ifname[IF_NAMESIZE];
@@ -120,12 +130,12 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     }
 
     auto ret = fscanf(maddr_file, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx%*c",
-                     &this->_resolve.mac_addr[0],
-                     &this->_resolve.mac_addr[1],
-                     &this->_resolve.mac_addr[2],
-                     &this->_resolve.mac_addr[3],
-                     &this->_resolve.mac_addr[4],
-                     &this->_resolve.mac_addr[5]);
+                     &this->_roce_resolve.mac_addr[0],
+                     &this->_roce_resolve.mac_addr[1],
+                     &this->_roce_resolve.mac_addr[2],
+                     &this->_roce_resolve.mac_addr[3],
+                     &this->_roce_resolve.mac_addr[4],
+                     &this->_roce_resolve.mac_addr[5]);
     fclose(maddr_file);
 
     if (ret != 6) {
@@ -152,25 +162,25 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
     }
 
     struct sockaddr_in *addr = (struct sockaddr_in *)&ifr.ifr_addr;
-    this->_resolve.ipv4_addr.ip = ntohl(addr->sin_addr.s_addr);
+    this->_roce_resolve.ipv4_addr.ip = ntohl(addr->sin_addr.s_addr);
 
     close(sockfd);
 
     // Log the resolved information
     // NICC_DEBUG("MAC address: %02x:%02x:%02x:%02x:%02x:%02x", 
-    //           this->_resolve.mac_addr[0], this->_resolve.mac_addr[1], this->_resolve.mac_addr[2], 
-    //           this->_resolve.mac_addr[3], this->_resolve.mac_addr[4], this->_resolve.mac_addr[5]);
-    // NICC_DEBUG("GID index: %u", this->_resolve.gid_index);
+    //           this->_roce_resolve.mac_addr[0], this->_roce_resolve.mac_addr[1], this->_roce_resolve.mac_addr[2], 
+    //           this->_roce_resolve.mac_addr[3], this->_roce_resolve.mac_addr[4], this->_roce_resolve.mac_addr[5]);
+    // NICC_DEBUG("GID index: %u", this->_roce_resolve.gid_index);
     // NICC_DEBUG("GID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", 
-    //           this->_resolve.gid.raw[0], this->_resolve.gid.raw[1], this->_resolve.gid.raw[2], this->_resolve.gid.raw[3], 
-    //           this->_resolve.gid.raw[4], this->_resolve.gid.raw[5], this->_resolve.gid.raw[6], this->_resolve.gid.raw[7], 
-    //           this->_resolve.gid.raw[8], this->_resolve.gid.raw[9], this->_resolve.gid.raw[10], this->_resolve.gid.raw[11], 
-    //           this->_resolve.gid.raw[12], this->_resolve.gid.raw[13], this->_resolve.gid.raw[14], this->_resolve.gid.raw[15]);
+    //           this->_roce_resolve.gid.raw[0], this->_roce_resolve.gid.raw[1], this->_roce_resolve.gid.raw[2], this->_roce_resolve.gid.raw[3], 
+    //           this->_roce_resolve.gid.raw[4], this->_roce_resolve.gid.raw[5], this->_roce_resolve.gid.raw[6], this->_roce_resolve.gid.raw[7], 
+    //           this->_roce_resolve.gid.raw[8], this->_roce_resolve.gid.raw[9], this->_roce_resolve.gid.raw[10], this->_roce_resolve.gid.raw[11], 
+    //           this->_roce_resolve.gid.raw[12], this->_roce_resolve.gid.raw[13], this->_roce_resolve.gid.raw[14], this->_roce_resolve.gid.raw[15]);
     // NICC_DEBUG("IPv4 address: %u.%u.%u.%u", 
-    //           (this->_resolve.ipv4_addr.ip >> 24) & 0xFF,
-    //           (this->_resolve.ipv4_addr.ip >> 16) & 0xFF,
-    //           (this->_resolve.ipv4_addr.ip >> 8) & 0xFF,
-    //           this->_resolve.ipv4_addr.ip & 0xFF);
+    //           (this->_roce_resolve.ipv4_addr.ip >> 24) & 0xFF,
+    //           (this->_roce_resolve.ipv4_addr.ip >> 16) & 0xFF,
+    //           (this->_roce_resolve.ipv4_addr.ip >> 8) & 0xFF,
+    //           this->_roce_resolve.ipv4_addr.ip & 0xFF);
 
     return retval;
 }
@@ -178,25 +188,33 @@ nicc_retval_t Channel_SoC::__roce_resolve_phy_port() {
 nicc_retval_t Channel_SoC::__init_verbs_structs() {
     nicc_retval_t retval = NICC_SUCCESS;
     
-    NICC_CHECK_POINTER(this->_resolve.ib_ctx);
-    NICC_CHECK_POINTER(this->qp_for_prior=new RDMA_SoC_QP());
-    NICC_CHECK_POINTER(this->qp_for_next=new RDMA_SoC_QP());
+    NICC_CHECK_POINTER(this->_roce_resolve.ib_ctx);
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        NICC_CHECK_POINTER(this->qp_for_prior=new RDMA_SoC_QP());
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        NICC_CHECK_POINTER(this->qp_for_next=new RDMA_SoC_QP());
+    }
 
     // Create protection domain, send CQ, and recv CQ
-    this->_pd = ibv_alloc_pd(this->_resolve.ib_ctx);
+    this->_pd = ibv_alloc_pd(this->_roce_resolve.ib_ctx);
     NICC_CHECK_POINTER(this->_pd);
 
     // Create prior QP and next QP
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_prior)))){
-        NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
-        return retval;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_prior)))){
+            NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
+            return retval;
+        }
+        this->__set_local_qp_info(this->qp_for_prior_info, this->qp_for_prior);
     }
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_next)))){
-        NICC_WARN_C("failed to create next QP: retval(%u)", retval);
-        return retval;
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_next)))){
+            NICC_WARN_C("failed to create next QP: retval(%u)", retval);
+            return retval;
+        }
+        this->__set_local_qp_info(this->qp_for_next_info, this->qp_for_next);
     }
-    this->__set_local_qp_info(this->qp_for_prior_info, this->qp_for_prior);
-    this->__set_local_qp_info(this->qp_for_next_info, this->qp_for_next);
 
     return retval;
 }
@@ -207,11 +225,11 @@ nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
     NICC_CHECK_POINTER(this->_pd);
 
     /// Create send CQ
-    qp->_send_cq = ibv_create_cq(this->_resolve.ib_ctx, kSQDepth, nullptr, nullptr, 0);
+    qp->_send_cq = ibv_create_cq(this->_roce_resolve.ib_ctx, kSQDepth, nullptr, nullptr, 0);
     NICC_CHECK_POINTER(qp->_send_cq);
 
     /// Create recv CQ
-    qp->_recv_cq = ibv_create_cq(this->_resolve.ib_ctx, kRQDepth, nullptr, nullptr, 0);
+    qp->_recv_cq = ibv_create_cq(this->_roce_resolve.ib_ctx, kRQDepth, nullptr, nullptr, 0);
     NICC_CHECK_POINTER(qp->_recv_cq);
 
     // Initialize QP creation attributes
@@ -241,14 +259,14 @@ void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
     NICC_CHECK_POINTER(qp_info);
     NICC_CHECK_POINTER(qp);
     qp_info->qp_num = qp->_qp_id;
-    qp_info->lid = this->_resolve.port_lid;
+    qp_info->lid = this->_roce_resolve.port_lid;
     for (size_t i = 0; i < 16; i++) {
-        qp_info->gid[i] = this->_resolve.gid.raw[i];
+        qp_info->gid[i] = this->_roce_resolve.gid.raw[i];
     }
-    qp_info->gid_table_index = this->_resolve.gid_index;
-    qp_info->mtu = RDMA_SoC_QP::kMTU;
-    memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
-    memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
+    qp_info->gid_table_index = this->_roce_resolve.gid_index;
+    qp_info->mtu = nicc::kMTU;
+    memcpy(qp_info->nic_name, this->_roce_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
+    memcpy(qp_info->mac_addr, this->_roce_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
 }
 
@@ -268,7 +286,7 @@ nicc_retval_t Channel_SoC::__create_ah(const QPInfo *local_qp_info, const QPInfo
                 ah_attr.dlid = 0;  // RoCE v2 doesn't use LID
                 ah_attr.sl = 0;    // Service level
                 ah_attr.src_path_bits = 0;
-                ah_attr.port_num = _resolve.dev_port_id;  // Use the actual port number
+                ah_attr.port_num = _roce_resolve.dev_port_id;  // Use the actual port number
                 
                 // Set GID fields
                 ah_attr.grh.dgid = gid;  // Use the entire GID structure
@@ -320,23 +338,26 @@ nicc_retval_t Channel_SoC::__init_rings() {
     this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
 
     /// Step 2: Initialize the ring buffer
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_prior)))){
-        NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
-        return retval;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_prior)))){
+            NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
+            return retval;
+        }
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_prior)))){
+            NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
+            return retval;
+        }
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_prior)))){
-        NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
-        return retval;
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_next)))){
+            NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
+            return retval;
+        }
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_next)))){
+            NICC_WARN_C("failed to initialize the send ring buffer for next component block");
+            return retval;
+        }
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_next)))){
-        NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
-        return retval;
-    }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_next)))){
-        NICC_WARN_C("failed to initialize the send ring buffer for next component block");
-        return retval;
-    }
-
     return retval;
 }
 
@@ -405,7 +426,7 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
     memset(static_cast<void *>(&init_attr), 0, sizeof(struct ibv_qp_attr));
     init_attr.qp_state = IBV_QPS_INIT;
     init_attr.pkey_index = 0;
-    init_attr.port_num = static_cast<uint8_t>(this->_resolve.dev_port_id);
+    init_attr.port_num = static_cast<uint8_t>(this->_roce_resolve.dev_port_id);
     init_attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
                                 IBV_ACCESS_REMOTE_WRITE | 
                                 IBV_ACCESS_REMOTE_READ | 
@@ -423,7 +444,7 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
     struct ibv_qp_attr rtr_attr;
     memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
     rtr_attr.qp_state = IBV_QPS_RTR;
-    switch(RDMA_SoC_QP::kMTU){
+    switch(nicc::kMTU){
         case 1024:
             rtr_attr.path_mtu = IBV_MTU_1024;
             break;
@@ -434,7 +455,7 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
             rtr_attr.path_mtu = IBV_MTU_4096;
             break;
         default:
-            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", RDMA_SoC_QP::kMTU);
+            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", nicc::kMTU);
             return NICC_ERROR_HARDWARE_FAILURE;
     }
     rtr_attr.dest_qp_num = remote_qp_info->qp_num;

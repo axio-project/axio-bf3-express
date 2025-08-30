@@ -121,7 +121,7 @@ class SoCWrapper {
         int ret;
         size_t first_wr_i = qp->_recv_head;
         size_t last_wr_i = first_wr_i + (num_recvs - 1);
-        if (last_wr_i >= RDMA_SoC_QP::kNumRxRingEntries) last_wr_i -= RDMA_SoC_QP::kNumRxRingEntries;
+        if (last_wr_i >= nicc::kNumRxRingEntries) last_wr_i -= nicc::kNumRxRingEntries;
 
         first_wr = &qp->_recv_wr[first_wr_i];
         last_wr = &qp->_recv_wr[last_wr_i];
@@ -138,7 +138,7 @@ class SoCWrapper {
 
         // Update RECV head: go to the last wr posted and take 1 more step
         qp->_recv_head = last_wr_i;
-        qp->_recv_head = (qp->_recv_head + 1) % RDMA_SoC_QP::kNumRxRingEntries;
+        qp->_recv_head = (qp->_recv_head + 1) % nicc::kNumRxRingEntries;
     }
 
     /**

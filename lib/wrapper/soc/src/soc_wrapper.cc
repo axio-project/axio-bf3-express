@@ -171,7 +171,7 @@ size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
     int ret = ibv_poll_cq(qp->_recv_cq, kRxBatchSize, qp->_recv_wc);
     /// set buffer's length
     for (int i = 0; i < ret; i++) {
-        qp->_rx_ring[(qp->_ring_head + qp->_wait_for_disp + i) % RDMA_SoC_QP::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
+        qp->_rx_ring[(qp->_ring_head + qp->_wait_for_disp + i) % nicc::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
     }
     qp->_wait_for_disp += ret;
 
@@ -192,13 +192,13 @@ size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
         ring_entry = ring_entry->next_;
         dispatch_total++;
     }
-    qp->_ring_head = (qp->_ring_head + qp->_wait_for_disp) % RDMA_SoC_QP::kNumRxRingEntries;
+    qp->_ring_head = (qp->_ring_head + qp->_wait_for_disp) % nicc::kNumRxRingEntries;
     qp->_wait_for_disp = 0;
     return dispatch_total;
 }
 
 size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
-    size_t remain_ring_size = RDMA_SoC_QP::kNumTxRingEntries - qp->_tx_queue_idx;
+    size_t remain_ring_size = nicc::kNumTxRingEntries - qp->_tx_queue_idx;
     uint8_t nb_collect_queue = 0;
     size_t nb_collect_num = 0;
     struct soc_shm_lock_free_queue *worker_queue = qp->_collect_worker_queue;
@@ -216,14 +216,14 @@ size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
 
 size_t SoCWrapper::__tx_burst(RDMA_SoC_QP *qp, Buffer **tx, size_t tx_size) {
     // Mount buffers to send wr, generate corresponding sge
-    size_t nb_tx_res = 0;   // total number of mounted wr for this burst tx
+    size_t nb_tx_res = 0;   // total number of mounted wr for this burst tx`
     /// post send cq first
-    int ret = ibv_poll_cq(qp->_send_cq, RDMA_SoC_QP::kNumTxRingEntries, qp->_send_wc);
+    int ret = ibv_poll_cq(qp->_send_cq, nicc::kNumTxRingEntries, qp->_send_wc);
     assert(ret >= 0);
     qp->_free_send_wr_num += ret;
     for (int i = 0; i < ret; i++) {
         qp->_sw_ring[qp->_send_head]->state_ = Buffer::kFREE_BUF;
-        qp->_send_head = (qp->_send_head + 1) % RDMA_SoC_QP::kNumTxRingEntries;
+        qp->_send_head = (qp->_send_head + 1) % nicc::kNumTxRingEntries;
     }
     /// post send wr
     struct ibv_send_wr* first_wr = &qp->_send_wr[qp->_send_tail];
@@ -239,7 +239,7 @@ size_t SoCWrapper::__tx_burst(RDMA_SoC_QP *qp, Buffer **tx, size_t tx_size) {
         /// \todo UD mode
         /// mount buffer to sw_ring
         qp->_sw_ring[qp->_send_tail] = m;
-        qp->_send_tail = (qp->_send_tail + 1) % RDMA_SoC_QP::kNumTxRingEntries;
+        qp->_send_tail = (qp->_send_tail + 1) % nicc::kNumTxRingEntries;
         qp->_free_send_wr_num--;
         nb_tx_res++;
     }
@@ -269,21 +269,25 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
 }
 
 size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
-    size_t remain_tx_queue_size = (RDMA_SoC_QP::kNumTxRingEntries - tx_qp->_tx_queue_idx > rx_qp->_wait_for_disp) 
-                                    ? rx_qp->_wait_for_disp : RDMA_SoC_QP::kNumTxRingEntries - tx_qp->_tx_queue_idx;
+    size_t remain_tx_queue_size = (nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx > rx_qp->_wait_for_disp) 
+                                    ? rx_qp->_wait_for_disp : nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx;
     
     for (size_t i = 0; i < remain_tx_queue_size; i++) {
-        Buffer *m = rx_qp->_rx_ring[(rx_qp->_ring_head + i) % RDMA_SoC_QP::kNumRxRingEntries];
+        Buffer *m = rx_qp->_rx_ring[(rx_qp->_ring_head + i) % nicc::kNumRxRingEntries];
         tx_qp->_tx_queue[tx_qp->_tx_queue_idx] = m;
         tx_qp->_tx_queue_idx++;
     }
-    rx_qp->_ring_head = (rx_qp->_ring_head + remain_tx_queue_size) % RDMA_SoC_QP::kNumRxRingEntries;
+    rx_qp->_ring_head = (rx_qp->_ring_head + remain_tx_queue_size) % nicc::kNumRxRingEntries;
     rx_qp->_wait_for_disp -= remain_tx_queue_size;
 
     return remain_tx_queue_size;
 }
 
 nicc_retval_t SoCWrapper::__forward_packet_with_routing(Buffer* packet, nicc_core_retval_t kernel_retval) {
+    // TODO: Implement routing-based packet forwarding
+    // For now, return success to maintain compatibility
+    return NICC_SUCCESS;
+    
     // if (!packet) {
     //     NICC_ERROR_C("Invalid packet buffer in __forward_packet_with_routing.");
     //     return NICC_ERROR;
