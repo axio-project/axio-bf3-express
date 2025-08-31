@@ -57,7 +57,7 @@ class Channel_SoC : public Channel {
     }
     ~Channel_SoC() {
         NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->qp_for_prior->_qp_id, this->qp_for_next->_qp_id);
-        if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA && this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA || this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
             this->__delete_rdma_channel();
         } else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET && this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
             this->__delete_dpdk_channel();
@@ -100,10 +100,10 @@ class Channel_SoC : public Channel {
  */
  public:
     /// Parameters for qp init
-    class RDMA_SoC_QP *qp_for_prior;        /// QP for prior component block
-    class RDMA_SoC_QP *qp_for_next;         /// QP for next component block
-    QPInfo *qp_for_prior_info;
-    QPInfo *qp_for_next_info;
+    class SoC_QP *qp_for_prior;        /// QP for prior component block (RDMA or DPDK)
+    class SoC_QP *qp_for_next;         /// QP for next component block (RDMA or DPDK)
+    class QPInfo *qp_for_prior_info;
+    class QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel methods----------------------
  */ 
@@ -128,7 +128,7 @@ class Channel_SoC : public Channel {
      * @param qp RDMA_SoC_QP
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __create_qp(RDMA_SoC_QP *qp);
+    nicc_retval_t __create_rdma_qp(RDMA_SoC_QP *qp);
 
     /**
      * @brief Set local QP info
@@ -168,25 +168,25 @@ class Channel_SoC : public Channel {
 
     /**
      * @brief connect a qp to a component block
-     * @param qp [in] RDMA_SoC_QP
+     * @param qp [in] SoC_QP
      * @param neighbour_component_block [in] the neighbour component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __connect_qp_to_component_block(RDMA_SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info);
+    nicc_retval_t __connect_qp_to_component_block(SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info);
 
     /**
      * @brief connect a qp to a remote/local host
-     * @param qp [in] RDMA_SoC_QP
+     * @param qp [in] SoC_QP
      * @param remote_qp_info [in] QP info of the target component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info);
+    nicc_retval_t __connect_qp_to_host(SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info);
     /**
      * @brief Fill the RECV queue
-     * @param qp [in] RDMA_SoC_QP for prior or next component block
+     * @param qp [in] SoC_QP for prior or next component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __fill_recv_queue(RDMA_SoC_QP *qp);
+    nicc_retval_t __fill_recv_queue(SoC_QP *qp);
     
     /**
      * @brief delete the RDMA Channel
@@ -198,26 +198,33 @@ class Channel_SoC : public Channel {
             NICC_WARN_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
         }
         NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
-        // delete Buffer in _rx_ring
-        for (size_t i = 0; i < kRQDepth; i++) {
-            delete this->qp_for_prior->_rx_ring[i];
-            delete this->qp_for_next->_rx_ring[i];
+        RDMA_SoC_QP *qp_for_prior = this->_typeid_of_prior == Channel::channel_typeid_t::RDMA 
+                                            ? static_cast<RDMA_SoC_QP*>(this->qp_for_prior) : nullptr;
+        RDMA_SoC_QP *qp_for_next = this->_typeid_of_next == Channel::channel_typeid_t::RDMA 
+                                            ? static_cast<RDMA_SoC_QP*>(this->qp_for_next) : nullptr;
+        if (qp_for_prior != nullptr) {
+            this->__delete_rdma_qp(qp_for_prior);
+        }
+        if (qp_for_next != nullptr) {
+            this->__delete_rdma_qp(qp_for_next);
         }
         // delete SHM
         delete this->_huge_alloc;
 
-        // Destroy QPs and CQs. QPs must be destroyed before CQs.
-        exit_assert(ibv_destroy_qp(this->qp_for_prior->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->qp_for_prior->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->qp_for_prior->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_qp(this->qp_for_next->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->qp_for_next->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->qp_for_next->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
-        exit_assert(ibv_destroy_ah(this->qp_for_prior->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_destroy_ah(this->qp_for_next->_remote_ah) == 0, "Failed to destroy remote AH");
         exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
-        exit_assert(ibv_close_device(this->_roce_resolve.ib_ctx) == 0, "Failed to close device");
+        exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
+    }
+
+    void __delete_rdma_qp(RDMA_SoC_QP *qp){
+        // delete Buffer in _rx_ring
+        for (size_t i = 0; i < kRQDepth; i++) {
+            delete qp->_rx_ring[i];
+        }
+        // Destroy QPs and CQs. QPs must be destroyed before CQs.
+        exit_assert(ibv_destroy_qp(qp->_qp) == 0, "Failed to destroy QP");
+        exit_assert(ibv_destroy_cq(qp->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_ah(qp->_remote_ah) == 0, "Failed to destroy remote AH");
     }
 
     /**
@@ -242,7 +249,7 @@ class Channel_SoC : public Channel {
       union ibv_gid gid;            ///< GID, used only for RoCE
       uint8_t gid_index = 0;        ///< GID index, used only for RoCE
       uint8_t mac_addr[6] = {0};    ///< MAC address of the device port
-    } _roce_resolve;
+    } _resolve;
 
     /// Protection domain
     struct ibv_pd *_pd = nullptr;

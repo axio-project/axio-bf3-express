@@ -9,8 +9,16 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     }
     this->_type = type;
     NICC_CHECK_POINTER(this->_context = context);
-    NICC_CHECK_POINTER(this->_qp_for_prior = context->qp_for_prior);
-    NICC_CHECK_POINTER(this->_qp_for_next = context->qp_for_next);
+    #if SoC_QP_PRIOR_TYPE == ROCE_MODE
+    NICC_CHECK_POINTER(this->_qp_for_prior = static_cast<RDMA_SoC_QP*>(context->qp_for_prior));
+    #elif SoC_QP_PRIOR_TYPE == DPDK_MODE
+    NICC_CHECK_POINTER(this->_qp_for_prior = static_cast<DPDK_SoC_QP*>(context->qp_for_prior));
+    #endif
+    #if SoC_QP_NEXT_TYPE == ROCE_MODE
+    NICC_CHECK_POINTER(this->_qp_for_next = static_cast<RDMA_SoC_QP*>(context->qp_for_next));
+    #elif SoC_QP_NEXT_TYPE == DPDK_MODE
+    NICC_CHECK_POINTER(this->_qp_for_next = static_cast<DPDK_SoC_QP*>(context->qp_for_next));
+    #endif
     NICC_CHECK_POINTER(this->_tmp_worker_rx_queue = new soc_shm_lock_free_queue());
     NICC_CHECK_POINTER(this->_tmp_worker_tx_queue = new soc_shm_lock_free_queue());
     if (type & kSoC_Dispatcher) {

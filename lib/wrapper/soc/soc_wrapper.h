@@ -48,8 +48,8 @@ class SoCWrapper {
      */
     struct SoCWrapperContext{
         /* ========== metadata for dispatcher ========== */
-        RDMA_SoC_QP *qp_for_prior;    /// QP for communicating with the prior component block
-        RDMA_SoC_QP *qp_for_next;     /// QP for communicating with the next component block
+        SoC_QP *qp_for_prior;    /// QP for communicating with the prior component block
+        SoC_QP *qp_for_next;     /// QP for communicating with the next component block
         /// e.g. pkt handler ptr
         /// e.g. match-action table ptr
         /* ========== metadata for worker ========== */
@@ -203,9 +203,17 @@ class SoCWrapper {
  private:
     soc_wrapper_type_t _type = kSoC_Invalid;
     SoCWrapperContext *_context = nullptr;
-    /// QPs
+    /// QPs; below is ugly but it's the only way to support both ROCE and DPDK; we cannot use "if" due to performance reasons
+  #if SoC_QP_PRIOR_TYPE == ROCE_MODE
     RDMA_SoC_QP *_qp_for_prior = nullptr;
+  #elif SoC_QP_PRIOR_TYPE == DPDK_MODE
+    DPDK_SoC_QP *_qp_for_prior = nullptr;
+  #endif
+  #if SoC_QP_NEXT_TYPE == ROCE_MODE
     RDMA_SoC_QP *_qp_for_next = nullptr;
+  #elif SoC_QP_NEXT_TYPE == DPDK_MODE
+    DPDK_SoC_QP *_qp_for_next = nullptr;
+  #endif
 
     /// tmp shm queue for testing
     soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;

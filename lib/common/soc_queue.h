@@ -83,13 +83,39 @@ struct soc_shm_lock_free_queue {
 };
 
 /**
+ * \brief A SoC queue pair for transferring buffers between different component blocks. Base class for RDMA_SoC_QP and DPDK_SoC_QP.
+ */
+class SoC_QP {
+ public:
+  enum class QP_Type {
+    RDMA,
+    DPDK
+  };
+
+  size_t _qp_id = SIZE_MAX;
+  size_t _remote_qp_id = SIZE_MAX;
+  QP_Type _qp_type;
+
+  // Constructor to set QP type
+  explicit SoC_QP(QP_Type type) : _qp_type(type) {}
+  
+  // Virtual destructor for proper cleanup
+  virtual ~SoC_QP() = default;
+  
+  // Helper method to get QP type
+  QP_Type get_qp_type() const { return _qp_type; }
+};
+
+/**
  * \brief A RDMA-based SoC queue pair for transferring buffers between different component blocks.
  */
-class RDMA_SoC_QP {
+class RDMA_SoC_QP : public SoC_QP {
   /**
    * ----------------------Util methods----------------------
    */ 
  public:
+    // Constructor
+    RDMA_SoC_QP() : SoC_QP(QP_Type::RDMA) {}
     size_t get_tx_queue_size() {
       return this->_tx_queue_idx;
     }
@@ -112,8 +138,6 @@ class RDMA_SoC_QP {
     struct ibv_cq *_send_cq = nullptr;
     struct ibv_cq *_recv_cq = nullptr;
     struct ibv_qp *_qp = nullptr;
-    size_t _qp_id = SIZE_MAX;
-    size_t _remote_qp_id = SIZE_MAX;
     /// An address handle for this endpoint's port. 
     struct ibv_ah *_remote_ah = nullptr;  ///< An address handle for the remote endpoint's port.
 
@@ -146,7 +170,10 @@ class RDMA_SoC_QP {
 /**
  * \brief A DPDK-based SoC queue pair for transferring buffers between different component blocks.
  */
-class DPDK_SoC_QP {
+class DPDK_SoC_QP : public SoC_QP {
+ public:
+  // Constructor
+  DPDK_SoC_QP() : SoC_QP(QP_Type::DPDK) {}
 
   static constexpr size_t kMaxPayloadSize = kMTU - sizeof(iphdr) - sizeof(udphdr);
   static constexpr size_t kMaxPhyPorts = 2;
@@ -300,15 +327,7 @@ class DPDK_SoC_QP {
    */ 
 
  public:
-    size_t _qp_id = SIZE_MAX;
     rte_mempool *_mempool = nullptr;
-    /// Info resolved from \p phy_port, must be filled by constructor.
-    struct {
-      ipaddr_t _ipv4_addr;   // The port's IPv4 address in host-byte order
-      eth_addr _mac_addr;    // The port's MAC address
-      size_t _bandwidth;     // Link bandwidth in bytes per second
-      size_t _reta_size;     // Number of entries in NIC RX indirection table
-    } resolve_;
 
     /// tx / rx queue
     struct rte_mbuf *_tx_queue[nicc::kNumTxRingEntries];
