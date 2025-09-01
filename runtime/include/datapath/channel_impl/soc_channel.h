@@ -230,6 +230,27 @@ class Channel_SoC : public Channel {
     /**
      * =================DPDK=================
      */
+
+         /**
+      * @brief Initialize structures: memopool and queue pair.
+      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+      */
+      nicc_retval_t __init_dpdk_structs();
+      
+      /**
+       * @brief Create DPDK memory pool for a DPDK QP
+       * @param mp_id [in] memory pool id
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __create_dpdk_mempool(uint8_t mp_id);
+      
+      /**
+       * @brief Reserve a QP ID from the DPDK ownership manager
+       * @param qp [in] DPDK_SoC_QP instance
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __reserve_dpdk_qp_id(DPDK_SoC_QP* qp);
+     
     void __delete_dpdk_channel(){
         NICC_ERROR_C("DPDK channel deletion is not implemented");
         return;
@@ -241,6 +262,9 @@ class Channel_SoC : public Channel {
  private:
     /// The hugepage allocator for this channel
     HugeAlloc *_huge_alloc = nullptr;
+    /// DPDK memory pool for this channel
+    struct rte_mempool *_mempool = nullptr;
+
     /// Info resolved from \p phy_port, must be filled by constructor.
     class IBResolve : public VerbsResolve {
     public:

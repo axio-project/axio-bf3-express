@@ -198,7 +198,7 @@ class DPDK_SoC_QP : public SoC_QP {
       } owner_[kMaxPhyPorts][kMaxQueuesPerPort];
 
     public:
-      struct rte_eth_link link_[kMaxPhyPorts];  /// Resolved link status
+      // struct rte_eth_link link_[kMaxPhyPorts];  /// Resolved link status
 
       void init() {
         new (&mutex_) std::mutex();  // Fancy in-place construction

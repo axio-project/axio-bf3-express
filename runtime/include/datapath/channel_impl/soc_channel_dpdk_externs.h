@@ -17,7 +17,9 @@
   */
  extern std::mutex g_dpdk_lock;
  extern bool g_dpdk_initialized;
- extern bool g_port_initialized[RTE_MAX_ETHPORTS];
+ // Use a fixed size instead of RTE_MAX_ETHPORTS to avoid DPDK header dependency
+static constexpr size_t kMaxEthPorts = 32;  // Should be sufficient for most systems
+extern bool g_port_initialized[kMaxEthPorts];
  extern DPDK_SoC_QP::ownership_memzone_t *g_memzone;
  }  // namespace nicc
  

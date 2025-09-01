@@ -3,8 +3,8 @@
 namespace nicc {
 
 std::mutex g_dpdk_lock;
-bool g_dpdk_initialized;
-bool g_port_initialized[RTE_MAX_ETHPORTS];
-DPDK_SoC_QP::ownership_memzone_t *g_memzone;
+bool g_dpdk_initialized = false;
+bool g_port_initialized[kMaxEthPorts] = {false};
+DPDK_SoC_QP::ownership_memzone_t *g_memzone = nullptr;
 
 }  // namespace nicc

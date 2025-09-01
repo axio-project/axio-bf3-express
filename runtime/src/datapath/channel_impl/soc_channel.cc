@@ -1,7 +1,12 @@
 #include "datapath/channel_impl/soc_channel.h"
 #include "datapath/channel_impl/soc_channel_dpdk_externs.h"
-
 namespace nicc {
+
+// Test if we reach this point without DPDK static init conflicts
+// __attribute__((constructor))
+// static void test_static_init() {
+//     printf("Static initialization successful - no DPDK conflicts!\n");
+// }
 
 // GIDs are currently used only for RoCE. This default value works for most
 // clusters, but we need a more robust GID selection method. Some observations:
@@ -24,7 +29,7 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
         if(unlikely(NICC_SUCCESS != (retval = __init_verbs_structs()))){
             NICC_WARN_C("failed to init verbs structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
             goto exit;
-        }
+        }        
     
         if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
             NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
@@ -33,23 +38,39 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
     }
     /// =================DPDK QP Allocation=================
     else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET || this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
-        // clang-format off
-        const char *rte_argv[] = {
-            "-c",            "0x0",
-            "-n",            "8",  // Memory channels
-            "-m",            "1024", // Max memory in megabytes
-            "-a",            "0000:03:00.0",
-            "--proc-type",   "auto",
-            nullptr};
-        // clang-format on
-        const int rte_argc =
-            static_cast<int>(sizeof(rte_argv) / sizeof(rte_argv[0])) - 1;
-        int ret = rte_eal_init(rte_argc, const_cast<char **>(rte_argv));
-        rt_assert(ret >= 0, "Failed to initialize DPDK");
-        // Create a fake memzone
-        g_memzone = new DPDK_SoC_QP::ownership_memzone_t();
-        g_memzone->init();
+        g_dpdk_lock.lock();
+        if (!g_dpdk_initialized) {
+            printf("Start to init DPDK EAL\\n");
+            // clang-format off
+            const char *rte_argv[] = {
+                "-c",            "0x0",
+                "-n",            "8",  // Memory channels
+                "-m",            "1024", // Max memory in megabytes
+                "-a",            "0000:03:00.0",
+                "--proc-type",   "auto",
+                nullptr};
+            // clang-format on
+            const int rte_argc =
+                static_cast<int>(sizeof(rte_argv) / sizeof(rte_argv[0])) - 1;
+            int ret = rte_eal_init(rte_argc, const_cast<char **>(rte_argv));
+            if (ret < 0) {
+                NICC_ERROR("Failed to initialize DPDK: %s", rte_strerror(rte_errno));
+                g_dpdk_lock.unlock();
+                return NICC_ERROR_HARDWARE_FAILURE;
+            }
+            printf("DPDK initialized successfully, returned %d\\n", ret);
+            NICC_DEBUG_C("DPDK initialized successfully, returned %d", ret);
+            // Create a fake memzone
+            g_memzone = new DPDK_SoC_QP::ownership_memzone_t();
+            g_memzone->init();
+            g_dpdk_initialized = true;
+        }
         
+        if(unlikely(NICC_SUCCESS != (retval = __init_dpdk_structs()))){
+            NICC_WARN_C("failed to init DPDK structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
+        g_dpdk_lock.unlock();
     }
     else {
         NICC_ERROR_C("Unsupported channel type");
@@ -233,6 +254,38 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
             return retval;
         }
         this->__set_local_qp_info(this->qp_for_next_info, qp);
+    }
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__init_dpdk_structs() {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Create DPDK QP instances for ETHERNET type channels
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        NICC_CHECK_POINTER(this->qp_for_prior = new DPDK_SoC_QP());
+        DPDK_SoC_QP* dpdk_qp_prior = static_cast<DPDK_SoC_QP*>(this->qp_for_prior);
+        // Set QP ID from ownership manager
+        if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_prior)))) {
+            NICC_WARN_C("failed to reserve DPDK QP ID for prior component block");
+            return retval;
+        }
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        NICC_CHECK_POINTER(this->qp_for_next = new DPDK_SoC_QP());
+        DPDK_SoC_QP* dpdk_qp_next = static_cast<DPDK_SoC_QP*>(this->qp_for_next);
+        // Set QP ID from ownership manager
+        if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_next)))) {
+            NICC_WARN_C("failed to reserve DPDK QP ID for next component block");
+            return retval;
+        }
+    }
+    
+    // Create DPDK memory pools for this channel
+    if (unlikely(NICC_SUCCESS != (retval = this->__create_dpdk_mempool(0)))) {
+        NICC_WARN_C("failed to create DPDK mempool for prior component block");
+        return retval;
     }
 
     return retval;
@@ -550,6 +603,74 @@ nicc_retval_t Channel_SoC::__fill_recv_queue(SoC_QP *qp_) {
 nicc_retval_t Channel_SoC::deallocate_channel() {
     nicc_retval_t retval = NICC_SUCCESS;
     /* ...... */
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__create_dpdk_mempool(uint8_t mp_id) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Generate unique mempool name using mp_id and process ID
+    char mempool_name[64];      
+    snprintf(mempool_name, sizeof(mempool_name), "mp_%d_%d", mp_id, getpid());
+    
+    // Calculate mempool size based on ring entries
+    // Using power-of-two minus one as recommended by DPDK docs
+    const size_t kDpdkMempoolSize = (kRQDepth + kSQDepth) * 2 - 1 ;  // good for most use cases
+    
+    // Calculate mbuf size: mbuf header + headroom + MTU
+    const size_t kMbufSize = sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM + nicc::kMTU;
+    
+    // Get NUMA node (default to socket 0)
+    int numa_node = 0;  // In a real implementation, you might want to detect this
+    
+    // Create memory pool
+    this->_mempool = rte_pktmbuf_pool_create(
+        mempool_name,               // pool name
+        kDpdkMempoolSize,           // number of elements
+        RTE_MEMPOOL_CACHE_MAX_SIZE, // cache size (RTE_MEMPOOL_CACHE_MAX_SIZE for performance)
+        0,                          // private data size
+        kMbufSize,                  // data room size  
+        numa_node                   // socket ID
+    );
+    
+    if (this->_mempool == nullptr) {
+        NICC_ERROR_C("Failed to create DPDK mempool '%s': %s", mempool_name, rte_strerror(rte_errno));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    NICC_DEBUG_C("Created DPDK mempool '%s' with %zu elements, mbuf size %zu bytes", 
+             mempool_name, kDpdkMempoolSize, kMbufSize);
+    
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__reserve_dpdk_qp_id(DPDK_SoC_QP* qp) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(qp);
+    
+    // Use global memzone for QP ownership management
+    extern DPDK_SoC_QP::ownership_memzone_t* g_memzone;
+    if (g_memzone == nullptr) {
+        NICC_ERROR("DPDK ownership memzone not initialized");
+        return NICC_ERROR_MEMORY_FAILURE;
+    }
+    
+    // Default physical port (you might want to make this configurable)
+    const size_t phy_port = 0;
+    
+    // Try to reserve a QP from the ownership manager
+    size_t qp_id = DPDK_SoC_QP::kInvalidQpId;
+    int result = g_memzone->get_qp(phy_port, 33);
+    
+    if (result == DPDK_SoC_QP::kInvalidQpId) {
+        NICC_ERROR("Failed to reserve DPDK QP on port %zu: %s", phy_port, strerror(result));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    // Set the QP ID
+    qp->_qp_id = result;
+    qp->_remote_qp_id = SIZE_MAX;  // Will be set during connection
+    
     return retval;
 }
 
