@@ -29,6 +29,8 @@ extern nicc::nicc_retval_t soc_msg_handler(nicc::Buffer* msg, void* user_state);
 extern void soc_cleanup_handler(void* user_state);
 extern nicc::nicc_retval_t soc_pkt_handler(nicc::Buffer* pkt, void* user_state);
 
+#define NICC_VERSION "0.1.0"
+
 #ifdef __cplusplus
     }
 #endif
@@ -36,6 +38,10 @@ const std::string device_name = "mlx5_2";
 const char *device_name_cstr = device_name.c_str();
 
 int main(){
+    // print nicc version
+    printf("=========================================\n");
+    printf("NICC Version: %s\n", NICC_VERSION);
+    printf("=========================================\n");
     /**
      * \brief  STEP 0: initialize the device
      * \todo;  these descriptors should be parsed by the resource pool, which

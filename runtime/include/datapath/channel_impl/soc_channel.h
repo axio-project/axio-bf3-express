@@ -2,6 +2,17 @@
 
 #include <unordered_map>
 
+#include <rte_common.h>
+#include <rte_config.h>
+#include <rte_errno.h>
+#include <rte_ethdev.h>
+#include <rte_ip.h>
+#include <rte_mbuf.h>
+#include <rte_thash.h>
+#include <rte_flow.h>
+#include <rte_ethdev.h>
+#include <rte_hash.h>
+
 #include "common.h"
 #include "log.h"
 #include "datapath/channel.h"

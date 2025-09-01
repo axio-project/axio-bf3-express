@@ -5,17 +5,7 @@
 #include <vector>
 #include <unistd.h>
 #include <signal.h>
-
-#include <rte_common.h>
-#include <rte_config.h>
-#include <rte_errno.h>
-#include <rte_ethdev.h>
-#include <rte_ip.h>
 #include <rte_mbuf.h>
-#include <rte_thash.h>
-#include <rte_flow.h>
-#include <rte_ethdev.h>
-#include <rte_hash.h>
 
 #include "common/math_utils.h"
 #include "common/buffer.h"
@@ -327,7 +317,7 @@ class DPDK_SoC_QP : public SoC_QP {
    */ 
 
  public:
-    rte_mempool *_mempool = nullptr;
+    // rte_mempool *_mempool = nullptr;
 
     /// tx / rx queue
     struct rte_mbuf *_tx_queue[nicc::kNumTxRingEntries];

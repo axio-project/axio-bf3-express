@@ -171,6 +171,7 @@ nicc_retval_t ComponentBlock_SoC::__allocate_wrapper_resources(AppFunction *app_
     nicc_retval_t retval = NICC_SUCCESS;
 
     this->_function_state->channel = new Channel_SoC(Channel::ETHERNET, Channel::PAKT_UNORDERED, Channel::ETHERNET, Channel::PAKT_UNORDERED);
+    // this->_function_state->channel = new Channel_SoC(Channel::RDMA, Channel::PAKT_UNORDERED, Channel::RDMA, Channel::PAKT_UNORDERED);
     // allocate channel
     if(unlikely(NICC_SUCCESS != (
         retval = this->_function_state->channel->allocate_channel(this->_desp->device_name, this->_desp->phy_port)

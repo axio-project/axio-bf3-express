@@ -1,12 +1,8 @@
 #include "datapath/channel_impl/soc_channel.h"
 #include "datapath/channel_impl/soc_channel_dpdk_externs.h"
+
 namespace nicc {
 
-// Test if we reach this point without DPDK static init conflicts
-// __attribute__((constructor))
-// static void test_static_init() {
-//     printf("Static initialization successful - no DPDK conflicts!\n");
-// }
 
 // GIDs are currently used only for RoCE. This default value works for most
 // clusters, but we need a more robust GID selection method. Some observations:
@@ -40,7 +36,6 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
     else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET || this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
         g_dpdk_lock.lock();
         if (!g_dpdk_initialized) {
-            printf("Start to init DPDK EAL\\n");
             // clang-format off
             const char *rte_argv[] = {
                 "-c",            "0x0",
@@ -58,8 +53,6 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
                 g_dpdk_lock.unlock();
                 return NICC_ERROR_HARDWARE_FAILURE;
             }
-            printf("DPDK initialized successfully, returned %d\\n", ret);
-            NICC_DEBUG_C("DPDK initialized successfully, returned %d", ret);
             // Create a fake memzone
             g_memzone = new DPDK_SoC_QP::ownership_memzone_t();
             g_memzone->init();
@@ -625,9 +618,9 @@ nicc_retval_t Channel_SoC::__create_dpdk_mempool(uint8_t mp_id) {
     
     // Create memory pool
     this->_mempool = rte_pktmbuf_pool_create(
-        mempool_name,               // pool name
+        "mempool_name",               // pool name
         kDpdkMempoolSize,           // number of elements
-        RTE_MEMPOOL_CACHE_MAX_SIZE, // cache size (RTE_MEMPOOL_CACHE_MAX_SIZE for performance)
+        128, // cache size (RTE_MEMPOOL_CACHE_MAX_SIZE for performance)
         0,                          // private data size
         kMbufSize,                  // data room size  
         numa_node                   // socket ID
@@ -648,8 +641,6 @@ nicc_retval_t Channel_SoC::__reserve_dpdk_qp_id(DPDK_SoC_QP* qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(qp);
     
-    // Use global memzone for QP ownership management
-    extern DPDK_SoC_QP::ownership_memzone_t* g_memzone;
     if (g_memzone == nullptr) {
         NICC_ERROR("DPDK ownership memzone not initialized");
         return NICC_ERROR_MEMORY_FAILURE;
