@@ -225,7 +225,7 @@ nicc_retval_t DatapathPipeline::__register_functions(device_state_t &device_stat
         }
         else{
             NICC_DEBUG_C(
-                "successfully register app function onto the component block: component_id(%u)",
+                "Successfully register app function onto the component block: component_id(%u)",
                 app_func->component_id
             );
         }
@@ -291,6 +291,7 @@ nicc_retval_t DatapathPipeline::__init_control_plane(device_state_t &device_stat
                            component_name.c_str(), retval);
                 goto exit;
             }
+            NICC_DEBUG_C("Successfully initialized control plane (router and retval-to-channel mapping) for component %s", component_name.c_str());
             
         } else {
             NICC_WARN("Component %s has no routing instance", component_block->get_block_name().c_str());

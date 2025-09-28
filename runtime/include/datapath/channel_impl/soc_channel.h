@@ -242,10 +242,10 @@ class Channel_SoC : public Channel {
      * =================DPDK=================
      */
 
-         /**
-      * @brief Initialize structures: memopool and queue pair.
-      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
-      */
+      /**
+       * @brief Initialize structures: memopool and queue pair.
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
       nicc_retval_t __init_dpdk_structs();
       
       /**
@@ -261,11 +261,33 @@ class Channel_SoC : public Channel {
        * @return NICC_SUCCESS on success and NICC_ERROR otherwise
        */
       nicc_retval_t __reserve_dpdk_qp_id(DPDK_SoC_QP* qp);
-     
-    void __delete_dpdk_channel(){
-        NICC_ERROR_C("DPDK channel deletion is not implemented");
-        return;
-    }
+
+      /**
+       * @brief Resolve DPDK phy port
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __resolve_phy_port(uint8_t phy_port);
+
+      /**
+       * @brief Get IP address for a physical port
+       * @param phy_port [in] Physical port ID
+       * @param ipv4_addr [out] IPv4 address structure to fill
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __get_port_ip_address(uint8_t phy_port, ipaddr_t* ipv4_addr);
+
+      /**
+       * @brief Find system interface by MAC address and get its IP
+       * @param target_mac [in] Target MAC address to match
+       * @param ipv4_addr [out] IPv4 address structure to fill
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __find_interface_by_mac(const struct rte_ether_addr* target_mac, ipaddr_t* ipv4_addr);
+
+      void __delete_dpdk_channel(){
+          NICC_ERROR_C("DPDK channel deletion is not implemented");
+          return;
+      }
 
 /**
  * ----------------------Internel parameters----------------------

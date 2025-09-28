@@ -64,6 +64,11 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
             goto exit;
         }
         g_dpdk_lock.unlock();
+
+        if(unlikely(NICC_SUCCESS != (retval = this->__resolve_phy_port(phy_port)))){
+            NICC_WARN_C("failed to resolve DPDK phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
     }
     else {
         NICC_ERROR_C("Unsupported channel type");
@@ -608,7 +613,7 @@ nicc_retval_t Channel_SoC::__create_dpdk_mempool(uint8_t mp_id) {
     
     // Calculate mempool size based on ring entries
     // Using power-of-two minus one as recommended by DPDK docs
-    const size_t kDpdkMempoolSize = (kRQDepth + kSQDepth) * 2 - 1 ;  // good for most use cases
+    const size_t kDpdkMempoolSize = (kRQDepth + kSQDepth) * 4 - 1 ;  // good for most use cases, a component block has two qps, each qp has two rings
     
     // Calculate mbuf size: mbuf header + headroom + MTU
     const size_t kMbufSize = sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM + nicc::kMTU;
@@ -618,7 +623,7 @@ nicc_retval_t Channel_SoC::__create_dpdk_mempool(uint8_t mp_id) {
     
     // Create memory pool
     this->_mempool = rte_pktmbuf_pool_create(
-        "mempool_name",               // pool name
+        mempool_name,               // pool name
         kDpdkMempoolSize,           // number of elements
         128, // cache size (RTE_MEMPOOL_CACHE_MAX_SIZE for performance)
         0,                          // private data size
@@ -652,7 +657,7 @@ nicc_retval_t Channel_SoC::__reserve_dpdk_qp_id(DPDK_SoC_QP* qp) {
     // Try to reserve a QP from the ownership manager
     size_t qp_id = DPDK_SoC_QP::kInvalidQpId;
     int result = g_memzone->get_qp(phy_port, 33);
-    
+     
     if (result == DPDK_SoC_QP::kInvalidQpId) {
         NICC_ERROR("Failed to reserve DPDK QP on port %zu: %s", phy_port, strerror(result));
         return NICC_ERROR_HARDWARE_FAILURE;
@@ -664,5 +669,88 @@ nicc_retval_t Channel_SoC::__reserve_dpdk_qp_id(DPDK_SoC_QP* qp) {
     
     return retval;
 }
+
+nicc_retval_t Channel_SoC::__resolve_phy_port(uint8_t phy_port) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Get MAC address
+    struct rte_ether_addr mac;
+    rte_eth_macaddr_get(phy_port, &mac);
+    memcpy(&this->_resolve.mac_addr, &mac.addr_bytes, sizeof(this->_resolve.mac_addr));
+
+    // Get IP address - Method 1: From configuration or environment
+    retval = __get_port_ip_address(phy_port, &this->_resolve.ipv4_addr);
+    if (retval != NICC_SUCCESS) {
+        NICC_WARN_C("Failed to get IP address for phy_port %u, using default", phy_port);
+        // Set a default IP address (e.g., 192.168.1.100 + phy_port)
+        this->_resolve.ipv4_addr.ip = htonl(0xC0A80164 + phy_port); // 192.168.1.100 + port
+        if (retval == NICC_ERROR_NOT_FOUND) {
+            // This is because maybe the port is not configured with an IP address
+            return NICC_SUCCESS;
+        }
+    }
+
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__get_port_ip_address(uint8_t phy_port, ipaddr_t* ipv4_addr) {
+    // Find system interface by MAC address matching
+    struct rte_ether_addr dpdk_mac;
+    if (rte_eth_macaddr_get(phy_port, &dpdk_mac) == 0) {
+        return __find_interface_by_mac(&dpdk_mac, ipv4_addr);
+    }
+    
+    return NICC_ERROR_HARDWARE_FAILURE;
+}
+
+nicc_retval_t Channel_SoC::__find_interface_by_mac(const struct rte_ether_addr* target_mac, ipaddr_t* ipv4_addr) {
+    struct ifaddrs *ifaddrs_ptr, *ifa;
+    nicc_retval_t retval = NICC_ERROR_NOT_FOUND;
+    
+    if (getifaddrs(&ifaddrs_ptr) == -1) {
+        NICC_WARN_C("Failed to get interface addresses: %s", strerror(errno));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    for (ifa = ifaddrs_ptr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) continue;
+        
+        // Skip non-IPv4 addresses
+        if (ifa->ifa_addr->sa_family != AF_INET) continue;
+        
+        // Get MAC address for this interface
+        int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) continue;
+        
+        struct ifreq ifr;
+        strncpy(ifr.ifr_name, ifa->ifa_name, IFNAMSIZ - 1);
+        ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+        
+        if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) == 0) {
+            // Compare MAC addresses
+            if (memcmp(target_mac->addr_bytes, ifr.ifr_hwaddr.sa_data, 6) == 0) {
+                // Found matching MAC! Get IP address
+                struct sockaddr_in* addr_in = (struct sockaddr_in*)ifa->ifa_addr;
+                ipv4_addr->ip = addr_in->sin_addr.s_addr;
+                
+                NICC_DEBUG_C("Found matching interface %s by MAC address: %02x:%02x:%02x:%02x:%02x:%02x, IP: %s",
+                            ifa->ifa_name,
+                            target_mac->addr_bytes[0], target_mac->addr_bytes[1],
+                            target_mac->addr_bytes[2], target_mac->addr_bytes[3],
+                            target_mac->addr_bytes[4], target_mac->addr_bytes[5],
+                            inet_ntoa(addr_in->sin_addr));
+                retval = NICC_SUCCESS;
+                close(sockfd);
+                break;
+            }
+        }
+        close(sockfd);
+    }
+    
+    freeifaddrs(ifaddrs_ptr);
+    return retval;
+}
+
 
 } // namespace nicc
