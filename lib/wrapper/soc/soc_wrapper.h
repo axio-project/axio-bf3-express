@@ -4,6 +4,10 @@
 #include "common/soc_queue.h"
 #include "common/timer.h"
 
+#include <rte_common.h>
+#include <rte_ethdev.h> 
+
+
 namespace nicc {
 
 // SoC user function type definitions
@@ -143,26 +147,29 @@ class SoCWrapper {
 
     /**
      * \brief Receive packets from the NIC and put them into the dispatcher rx queue.
-     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for receiving packets
      * \return the number of packets received
      */
     size_t __rx_burst(RDMA_SoC_QP *qp);
+    size_t __rx_burst(DPDK_SoC_QP *qp);
 
     /**
      * \brief Dispatch packets from the dispatcher rx queue to the worker rx queue 
      * based on packet UDP field. Workspace will be blocked until all packets are
      * dispatched.
-     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for receiving packets
      * \return the number of packets dispatched
      */
     size_t __dispatch_rx_pkts(RDMA_SoC_QP *qp);
+    size_t __dispatch_rx_pkts(DPDK_SoC_QP *qp);
 
     /**
      * \brief Iterate all worker queues assigned to this dispatcher, and collect packets from them.
-     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for sending packets
      * \return the number of packets collected
      */
     size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+    size_t __collect_tx_pkts(DPDK_SoC_QP *qp);
 
     /**
      * \brief Post send wrs to the NIC, and update the send head
@@ -176,19 +183,20 @@ class SoCWrapper {
     /**
      * \brief Flush the dispatcher tx queue to the NIC. Dispatcher will be blocked
      * until all packets are sent
-     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for sending packets
      * \return the number of packets sent
      */
     size_t __tx_flush(RDMA_SoC_QP *qp);
+    size_t __tx_flush(DPDK_SoC_QP *qp);
 
     /**
      * \brief Directly send packets from the one qp's rx queue to the another qp's tx queue.
-     * \param RDMA_SoC_QP *rx_qp, the QP for receiving packets
-     * \param RDMA_SoC_QP *tx_qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *rx_qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *tx_qp, the QP for sending packets
      * \return the number of packets sent
      */
     size_t __direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
-
+    size_t __direct_tx_burst(DPDK_SoC_QP *rx_qp, DPDK_SoC_QP *tx_qp);
     /**
      * \brief Forward packet using routing decision based on kernel return value
      * \param packet            packet buffer to forward

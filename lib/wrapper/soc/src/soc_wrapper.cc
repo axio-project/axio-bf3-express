@@ -56,7 +56,7 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     }
     
     /// run the SoCWrapper
-    this->__run(10.0);
+    this->__run(30.0);
     return;
 }
 
@@ -75,6 +75,10 @@ nicc_retval_t SoCWrapper::__init_dispatcher() {
     /// Allocate the SHM queue for transferring buffers between dispatcher and worker
     this->_qp_for_prior->_disp_worker_queue = this->_tmp_worker_rx_queue;
     this->_qp_for_next->_collect_worker_queue = this->_tmp_worker_tx_queue;
+    if (this->_qp_for_prior->get_qp_type() == SoC_QP::QP_Type::DPDK || 
+        this->_qp_for_next->get_qp_type() == SoC_QP::QP_Type::DPDK) {
+        rte_thread_register();
+    }
     return NICC_SUCCESS;
 }
 
@@ -186,6 +190,17 @@ size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
     return static_cast<size_t>(ret);
 }
 
+size_t SoCWrapper::__rx_burst(DPDK_SoC_QP *qp) {
+    size_t nb_rx = 0;
+    rte_mbuf **rx = &qp->_rx_queue[qp->_rx_queue_idx];
+    nb_rx = rte_eth_rx_burst(qp->_phy_port, qp->_qp_id, rx, nicc::kNumRxRingEntries - qp->_rx_queue_idx);
+    if (nb_rx > 0) {
+        NICC_LOG("Received %lu packets", nb_rx);
+    }
+    qp->_rx_queue_idx += nb_rx;
+    return nb_rx;
+}
+
 size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
     size_t dispatch_total = 0;
     Buffer *ring_entry = qp->_rx_ring[qp->_ring_head];
@@ -205,9 +220,26 @@ size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
     return dispatch_total;
 }
 
+size_t SoCWrapper::__dispatch_rx_pkts(DPDK_SoC_QP *qp) {
+    size_t dispatch_total = 0;
+    rte_mbuf **rx = &qp->_rx_queue[0];
+    struct soc_shm_lock_free_queue *worker_queue = qp->_disp_worker_queue;
+    for (size_t i = 0; i < qp->_rx_queue_idx; i++) {
+        if (unlikely(!worker_queue->enqueue((uint8_t*)rx[i]))) {
+            /// drop the packet if the ws queue is full
+            break;
+        }
+        dispatch_total++;
+    }
+    for (size_t i = dispatch_total; i < qp->_rx_queue_idx; i++) {
+        rte_pktmbuf_free(rx[i]);
+    }
+    qp->_rx_queue_idx = 0;
+    return dispatch_total;
+}
+
 size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
     size_t remain_ring_size = nicc::kNumTxRingEntries - qp->_tx_queue_idx;
-    uint8_t nb_collect_queue = 0;
     size_t nb_collect_num = 0;
     struct soc_shm_lock_free_queue *worker_queue = qp->_collect_worker_queue;
     size_t tx_size = (worker_queue->get_size() > remain_ring_size) 
@@ -216,9 +248,20 @@ size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
         qp->_tx_queue[qp->_tx_queue_idx] = (Buffer*)worker_queue->dequeue();
         qp->_tx_queue_idx++;
     }
-    nb_collect_queue++;
     remain_ring_size -= tx_size;
     nb_collect_num += tx_size;
+    return tx_size;
+}
+
+size_t SoCWrapper::__collect_tx_pkts(DPDK_SoC_QP *qp) {
+    size_t remain_ring_size = nicc::kNumTxRingEntries - qp->_tx_queue_idx;
+    struct soc_shm_lock_free_queue *worker_queue = qp->_collect_worker_queue;
+    size_t tx_size = (worker_queue->get_size() > remain_ring_size) 
+                          ? remain_ring_size : worker_queue->get_size();
+    for (size_t i = 0; i < tx_size; i++) {
+        qp->_tx_queue[qp->_tx_queue_idx] = (rte_mbuf*)worker_queue->dequeue();
+        qp->_tx_queue_idx++;
+    }
     return tx_size;
 }
 
@@ -276,6 +319,18 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
     return tx_total;
 }
 
+size_t SoCWrapper::__tx_flush(DPDK_SoC_QP *qp) {
+    size_t nb_tx = 0, tx_total = 0;
+    rte_mbuf **tx = &qp->_tx_queue[0];
+    while(tx_total < qp->_tx_queue_idx) {
+        nb_tx = rte_eth_tx_burst(qp->_phy_port, qp->_qp_id, tx, qp->_tx_queue_idx - tx_total);
+        tx += nb_tx;
+        tx_total += nb_tx;
+    }
+    qp->_tx_queue_idx = 0;
+    return tx_total;
+}
+
 size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
     size_t remain_tx_queue_size = (nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx > rx_qp->_wait_for_disp) 
                                     ? rx_qp->_wait_for_disp : nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx;
@@ -288,6 +343,17 @@ size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
     rx_qp->_ring_head = (rx_qp->_ring_head + remain_tx_queue_size) % nicc::kNumRxRingEntries;
     rx_qp->_wait_for_disp -= remain_tx_queue_size;
 
+    return remain_tx_queue_size;
+}
+
+size_t SoCWrapper::__direct_tx_burst(DPDK_SoC_QP *rx_qp, DPDK_SoC_QP *tx_qp) {
+    size_t remain_tx_queue_size = (nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx > rx_qp->_rx_queue_idx) 
+                                    ? rx_qp->_rx_queue_idx : nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx;
+    for (size_t i = 0; i < remain_tx_queue_size; i++) {
+        tx_qp->_tx_queue[tx_qp->_tx_queue_idx] = rx_qp->_rx_queue[rx_qp->_rx_queue_idx];
+        tx_qp->_tx_queue_idx++;
+    }
+    rx_qp->_rx_queue_idx -= remain_tx_queue_size;
     return remain_tx_queue_size;
 }
 

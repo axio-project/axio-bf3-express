@@ -59,7 +59,7 @@ nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_po
             g_dpdk_initialized = true;
         }
         
-        if(unlikely(NICC_SUCCESS != (retval = __init_dpdk_structs()))){
+        if(unlikely(NICC_SUCCESS != (retval = __init_dpdk_structs(phy_port)))){
             NICC_WARN_C("failed to init DPDK structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
             goto exit;
         }
@@ -85,7 +85,6 @@ nicc_retval_t Channel_SoC::connect_qp(bool is_prior, const ComponentBlock *neigh
     class SoC_QP *qp = is_prior ? this->qp_for_prior : this->qp_for_next;
     class QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
     NICC_CHECK_POINTER(qp);
-    NICC_CHECK_POINTER(this->_mr);
     NICC_CHECK_POINTER(local_qp_info);
     if (is_prior && (this->_state & kChannel_State_Prior_Connected)) {
         NICC_WARN_C("prior QP is already connected");
@@ -257,27 +256,31 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__init_dpdk_structs() {
+nicc_retval_t Channel_SoC::__init_dpdk_structs(uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
     
     // Create DPDK QP instances for ETHERNET type channels
     if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
         NICC_CHECK_POINTER(this->qp_for_prior = new DPDK_SoC_QP());
         DPDK_SoC_QP* dpdk_qp_prior = static_cast<DPDK_SoC_QP*>(this->qp_for_prior);
+        dpdk_qp_prior->_phy_port = phy_port;
         // Set QP ID from ownership manager
         if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_prior)))) {
             NICC_WARN_C("failed to reserve DPDK QP ID for prior component block");
             return retval;
         }
+        this->qp_for_prior_info->qp_num = dpdk_qp_prior->_qp_id;
     }
     if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
         NICC_CHECK_POINTER(this->qp_for_next = new DPDK_SoC_QP());
         DPDK_SoC_QP* dpdk_qp_next = static_cast<DPDK_SoC_QP*>(this->qp_for_next);
+        dpdk_qp_next->_phy_port = phy_port;
         // Set QP ID from ownership manager
         if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_next)))) {
             NICC_WARN_C("failed to reserve DPDK QP ID for next component block");
             return retval;
         }
+        this->qp_for_next_info->qp_num = dpdk_qp_next->_qp_id;
     }
     
     // Create DPDK memory pools for this channel
@@ -285,6 +288,71 @@ nicc_retval_t Channel_SoC::__init_dpdk_structs() {
         NICC_WARN_C("failed to create DPDK mempool for prior component block");
         return retval;
     }
+
+    // Setup DPDK ports
+    uint16_t num_ports = rte_eth_dev_count_avail();
+    if (phy_port >= num_ports) {
+        NICC_ERROR_C("phy_port %u is out of range", phy_port);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rte_eth_dev_info dev_info;
+    rte_eth_dev_info_get(phy_port, &dev_info);
+    if (dev_info.rx_desc_lim.nb_max < kRQDepth) {
+        NICC_ERROR_C("max_rx depth %u is less than kRQDepth %u", dev_info.rx_desc_lim.nb_max, kRQDepth);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    if (dev_info.tx_desc_lim.nb_max < kSQDepth) {
+        NICC_ERROR_C("max_tx depth %u is less than kSQDepth %u", dev_info.tx_desc_lim.nb_max, kSQDepth);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rte_eth_conf eth_conf;
+    memset(&eth_conf, 0, sizeof(rte_eth_conf));
+    eth_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_NONE;
+    eth_conf.txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
+    eth_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+    uint8_t enabled_qp_num = 0;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        enabled_qp_num++;
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        enabled_qp_num++;
+    }
+    int ret = rte_eth_dev_configure(phy_port, enabled_qp_num, enabled_qp_num, &eth_conf);
+    if (ret != 0) {
+        NICC_ERROR_C("failed to configure DPDK port: retval(%u)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        rte_eth_rxconf eth_rx_conf;
+        memset(&eth_rx_conf, 0, sizeof(rte_eth_rxconf));
+        eth_rx_conf.rx_thresh.pthresh = 16;
+        ret = rte_eth_rx_queue_setup(phy_port, this->qp_for_prior_info->qp_num, kRQDepth, 0 /* BF3 has only one NUMA node */, &eth_rx_conf, this->_mempool);
+        rt_assert(ret == 0, "Failed to setup RX queue: " + std::to_string(this->qp_for_prior_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+        rte_eth_txconf eth_tx_conf;
+        memset(&eth_tx_conf, 0, sizeof(rte_eth_txconf));
+        eth_tx_conf.tx_thresh.pthresh = 16;
+        eth_tx_conf.offloads = eth_conf.txmode.offloads;
+        ret = rte_eth_tx_queue_setup(phy_port, this->qp_for_prior_info->qp_num, kSQDepth, 0 /* BF3 has only one NUMA node */, &eth_tx_conf);
+        rt_assert(ret == 0, "Failed to setup TX queue: " + std::to_string(this->qp_for_prior_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        rte_eth_rxconf eth_rx_conf;
+        memset(&eth_rx_conf, 0, sizeof(rte_eth_rxconf));
+        eth_rx_conf.rx_thresh.pthresh = 16;
+        ret = rte_eth_rx_queue_setup(phy_port, this->qp_for_next_info->qp_num, kRQDepth, 0 /* BF3 has only one NUMA node */, &eth_rx_conf, this->_mempool);
+        rt_assert(ret == 0, "Failed to setup RX queue: " + std::to_string(this->qp_for_next_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+        rte_eth_txconf eth_tx_conf;
+        memset(&eth_tx_conf, 0, sizeof(rte_eth_txconf));
+        eth_tx_conf.tx_thresh.pthresh = 16;
+        eth_tx_conf.offloads = eth_conf.txmode.offloads;
+        ret = rte_eth_tx_queue_setup(phy_port, this->qp_for_next_info->qp_num, kSQDepth, 0 /* BF3 has only one NUMA node */, &eth_tx_conf);
+        rt_assert(ret == 0, "Failed to setup TX queue: " + std::to_string(this->qp_for_next_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+    }
+    rte_eth_dev_start(phy_port);
 
     return retval;
 }
@@ -494,7 +562,11 @@ nicc_retval_t Channel_SoC::__connect_qp_to_component_block(SoC_QP *qp, const Com
 nicc_retval_t Channel_SoC::__connect_qp_to_host(SoC_QP *qp_, const QPInfo *remote_qp_info, const QPInfo *local_qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
 
-    // \todo: add DPDK implementation
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        /// Ethernet does not need to connect to host
+        return NICC_SUCCESS;
+    }
+
     RDMA_SoC_QP *qp = static_cast<RDMA_SoC_QP*>(qp_);
     
     /// Transition QP to INIT state
@@ -582,7 +654,11 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(SoC_QP *qp_, const QPInfo *remot
 
 nicc_retval_t Channel_SoC::__fill_recv_queue(SoC_QP *qp_) {
     nicc_retval_t retval = NICC_SUCCESS;
-    // \todo: add DPDK implementation
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        /// Ethernet does not need to fill the RECV queue
+        return NICC_SUCCESS;
+    }
+
     RDMA_SoC_QP *qp = static_cast<RDMA_SoC_QP*>(qp_);
     // Fill the RECV queue. post_recvs() can use fast RECV and therefore not
     // actually fill the RQ, so post_recvs() isn't usable here.
@@ -677,6 +753,15 @@ nicc_retval_t Channel_SoC::__resolve_phy_port(uint8_t phy_port) {
     struct rte_ether_addr mac;
     rte_eth_macaddr_get(phy_port, &mac);
     memcpy(&this->_resolve.mac_addr, &mac.addr_bytes, sizeof(this->_resolve.mac_addr));
+
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        memcpy(this->qp_for_prior_info->mac_addr, this->_resolve.mac_addr, sizeof(this->qp_for_prior_info->mac_addr));
+        this->qp_for_prior_info->is_initialized = true;
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        memcpy(this->qp_for_next_info->mac_addr, this->_resolve.mac_addr, sizeof(this->qp_for_next_info->mac_addr));
+        this->qp_for_next_info->is_initialized = true;
+    }
 
     // Get IP address - Method 1: From configuration or environment
     retval = __get_port_ip_address(phy_port, &this->_resolve.ipv4_addr);

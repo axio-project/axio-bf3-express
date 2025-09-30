@@ -244,9 +244,10 @@ class Channel_SoC : public Channel {
 
       /**
        * @brief Initialize structures: memopool and queue pair.
+       * @param phy_port [in] physical port
        * @return NICC_SUCCESS on success and NICC_ERROR otherwise
        */
-      nicc_retval_t __init_dpdk_structs();
+      nicc_retval_t __init_dpdk_structs(uint8_t phy_port);
       
       /**
        * @brief Create DPDK memory pool for a DPDK QP

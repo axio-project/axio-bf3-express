@@ -406,13 +406,13 @@ nicc_retval_t DatapathPipeline::__build_channel_connections(device_state_t& devi
     memset(&local_host_qp_info, 0, sizeof(QPInfo));
     
     // Connect to local host management server
-    mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), 
-                               this->_app_dag->get_host_config("local")->mgnt_port);
-    local_host_qp_info.deserialize(mgnt_client.receiveMsg());
+    // mgnt_client.connectToServer(this->_app_dag->get_host_config("local")->ipv4.c_str(), 
+    //                            this->_app_dag->get_host_config("local")->mgnt_port);
+    // local_host_qp_info.deserialize(mgnt_client.receiveMsg());
     
-    // Accept connection from remote host management client
-    mgnt_server.acceptConnection();
-    remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
+    // // Accept connection from remote host management client
+    // mgnt_server.acceptConnection();
+    // remote_host_qp_info.deserialize(mgnt_server.receiveMsg());
     
     // Iterate through component blocks to establish connections
     ComponentBlock *prior_component_block = nullptr, *cur_component_block = nullptr;
@@ -444,12 +444,12 @@ nicc_retval_t DatapathPipeline::__build_channel_connections(device_state_t& devi
         
         // Complete the connection handshake with remote host if needed
         if (is_connected_to_remote) {
-            mgnt_server.sendMsg(cur_component_block->get_qp_info(true)->serialize());
+            // mgnt_server.sendMsg(cur_component_block->get_qp_info(true)->serialize());
         }
         
         // Complete the connection handshake with local host if needed
         if (is_connected_to_local) {
-            mgnt_client.sendMsg(cur_component_block->get_qp_info(false)->serialize());
+            // mgnt_client.sendMsg(cur_component_block->get_qp_info(false)->serialize());
         }
         
         // Connect prior component to current component (bidirectional linking)
@@ -482,7 +482,7 @@ nicc_retval_t DatapathPipeline::__build_channel_connections(device_state_t& devi
         return NICC_ERROR;
     }
     
-    NICC_LOG("Channel connections built successfully");
+    NICC_DEBUG_C("Channel connections built successfully");
     return NICC_SUCCESS;
 }
 

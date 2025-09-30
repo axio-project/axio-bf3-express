@@ -135,8 +135,8 @@ using channel_id_t = std::string;
 
 #define DPDK_MODE 0
 #define ROCE_MODE 1
-#define SoC_QP_PRIOR_TYPE ROCE_MODE 
-#define SoC_QP_NEXT_TYPE ROCE_MODE 
+#define SoC_QP_PRIOR_TYPE DPDK_MODE 
+#define SoC_QP_NEXT_TYPE DPDK_MODE 
 
 /**
  * ----------------------Scope Exit----------------------

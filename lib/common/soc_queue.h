@@ -94,6 +94,16 @@ class SoC_QP {
   
   // Helper method to get QP type
   QP_Type get_qp_type() const { return _qp_type; }
+
+  size_t get_rx_worker_queue_size() {
+    return this->_disp_worker_queue->get_size();
+  }
+  size_t get_tx_worker_queue_size() {
+    return this->_collect_worker_queue->get_size();
+  }
+  // idx for ownership transfer between dispatcher and worker
+  soc_shm_lock_free_queue* _collect_worker_queue = nullptr;
+  soc_shm_lock_free_queue* _disp_worker_queue = nullptr;
 };
 
 /**
@@ -114,12 +124,6 @@ class RDMA_SoC_QP : public SoC_QP {
       return this->_wait_for_disp;
     }
 
-    size_t get_rx_worker_queue_size() {
-      return this->_disp_worker_queue->get_size();
-    }
-    size_t get_tx_worker_queue_size() {
-      return this->_collect_worker_queue->get_size();
-    }
 
  public:
 
@@ -149,9 +153,6 @@ class RDMA_SoC_QP : public SoC_QP {
     Buffer *_rx_ring[kNumRxRingEntries];
     size_t _ring_head = 0;
 
-    // idx for ownership transfer between dispatcher and worker
-    soc_shm_lock_free_queue* _collect_worker_queue = nullptr;
-    soc_shm_lock_free_queue* _disp_worker_queue = nullptr;
     size_t _free_send_wr_num = nicc::kNumTxRingEntries;
     size_t _wait_for_disp = 0;
 };
@@ -315,9 +316,16 @@ class DPDK_SoC_QP : public SoC_QP {
   /**
    * ----------------------Util methods----------------------
    */ 
+    size_t get_tx_queue_size() {
+      return this->_tx_queue_idx;
+    }
 
+    size_t get_rx_queue_size() {
+      return this->_rx_queue_idx;
+    }
  public:
     // rte_mempool *_mempool = nullptr;
+    uint8_t _phy_port = 0;
 
     /// tx / rx queue
     struct rte_mbuf *_tx_queue[nicc::kNumTxRingEntries];

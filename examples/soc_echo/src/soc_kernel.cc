@@ -26,7 +26,7 @@ nicc::user_state_info soc_init_handler() {
     state->processing_time_sum = 0.0;
     state->is_initialized = true;
     
-    NICC_LOG("SoC kernel initialized: state allocated, size=%u", (unsigned int)sizeof(MyAppState));
+    // NICC_LOG("SoC kernel initialized: state allocated, size=%u", (unsigned int)sizeof(MyAppState));
     
     // Return state pointer and size information
     nicc::user_state_info result;
@@ -39,8 +39,8 @@ nicc::user_state_info soc_init_handler() {
 void soc_cleanup_handler(void* user_state) {
     if (user_state) {
         MyAppState* state = static_cast<MyAppState*>(user_state);
-        NICC_LOG("Cleaning up MyAppState: processed %d messages, total time=%.3f", 
-                 state->message_counter, state->processing_time_sum);
+        // NICC_LOG("Cleaning up MyAppState: processed %d messages, total time=%.3f", 
+        //          state->message_counter, state->processing_time_sum);
         delete state;
     }
 }
