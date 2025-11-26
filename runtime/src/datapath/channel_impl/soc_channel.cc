@@ -1,6 +1,8 @@
 #include "datapath/channel_impl/soc_channel.h"
+#include "datapath/channel_impl/soc_channel_dpdk_externs.h"
 
 namespace nicc {
+
 
 // GIDs are currently used only for RoCE. This default value works for most
 // clusters, but we need a more robust GID selection method. Some observations:
@@ -11,22 +13,65 @@ static constexpr size_t kDefaultGIDIndex = 1;
 
 nicc_retval_t Channel_SoC::allocate_channel(const char *dev_name, uint8_t phy_port) {
     nicc_retval_t retval = NICC_SUCCESS;
+
+    /// =================RDMA QP Allocation=================
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA || this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
+        common_resolve_phy_port(dev_name, phy_port, nicc::kMTU, this->_resolve);
+        if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
+            NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
+        if(unlikely(NICC_SUCCESS != (retval = __init_verbs_structs()))){
+            NICC_WARN_C("failed to init verbs structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }        
     
-    this->_huge_alloc = new HugeAlloc(kMemRegionSize, /* numa_node */0);    // SoC only has one NUMA node
-    common_resolve_phy_port(dev_name, phy_port, RDMA_SoC_QP::kMTU, this->_resolve);
-
-    if(unlikely(NICC_SUCCESS != (retval = __roce_resolve_phy_port()))){
-        NICC_WARN_C("failed to resolve phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
-        goto exit;
+        if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
+            NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
     }
+    /// =================DPDK QP Allocation=================
+    else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET || this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        g_dpdk_lock.lock();
+        if (!g_dpdk_initialized) {
+            // clang-format off
+            const char *rte_argv[] = {
+                "-c",            "0x0",
+                "-n",            "8",  // Memory channels
+                "-m",            "1024", // Max memory in megabytes
+                "-a",            "0000:03:00.0",
+                "--proc-type",   "auto",
+                nullptr};
+            // clang-format on
+            const int rte_argc =
+                static_cast<int>(sizeof(rte_argv) / sizeof(rte_argv[0])) - 1;
+            int ret = rte_eal_init(rte_argc, const_cast<char **>(rte_argv));
+            if (ret < 0) {
+                NICC_ERROR("Failed to initialize DPDK: %s", rte_strerror(rte_errno));
+                g_dpdk_lock.unlock();
+                return NICC_ERROR_HARDWARE_FAILURE;
+            }
+            // Create a fake memzone
+            g_memzone = new DPDK_SoC_QP::ownership_memzone_t();
+            g_memzone->init();
+            g_dpdk_initialized = true;
+        }
+        
+        if(unlikely(NICC_SUCCESS != (retval = __init_dpdk_structs(phy_port)))){
+            NICC_WARN_C("failed to init DPDK structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
+        g_dpdk_lock.unlock();
 
-    if(unlikely(NICC_SUCCESS != (retval = __init_verbs_structs()))){
-        NICC_WARN_C("failed to init verbs structs: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
-        goto exit;
+        if(unlikely(NICC_SUCCESS != (retval = this->__resolve_phy_port(phy_port)))){
+            NICC_WARN_C("failed to resolve DPDK phy port: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+            goto exit;
+        }
     }
-
-    if(unlikely(NICC_SUCCESS != (retval = __init_rings()))){
-        NICC_WARN_C("failed to init rings: dev_name(%s), phy_port(%u), retval(%u)", dev_name, phy_port, retval);
+    else {
+        NICC_ERROR_C("Unsupported channel type");
         goto exit;
     }
 
@@ -37,10 +82,9 @@ exit:
 
 nicc_retval_t Channel_SoC::connect_qp(bool is_prior, const ComponentBlock *neighbour_component_block, const QPInfo *qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
-    RDMA_SoC_QP *qp = is_prior ? this->qp_for_prior : this->qp_for_next;
-    QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
+    class SoC_QP *qp = is_prior ? this->qp_for_prior : this->qp_for_next;
+    class QPInfo *local_qp_info = is_prior ? this->qp_for_prior_info : this->qp_for_next_info;
     NICC_CHECK_POINTER(qp);
-    NICC_CHECK_POINTER(this->_mr);
     NICC_CHECK_POINTER(local_qp_info);
     if (is_prior && (this->_state & kChannel_State_Prior_Connected)) {
         NICC_WARN_C("prior QP is already connected");
@@ -179,29 +223,141 @@ nicc_retval_t Channel_SoC::__init_verbs_structs() {
     nicc_retval_t retval = NICC_SUCCESS;
     
     NICC_CHECK_POINTER(this->_resolve.ib_ctx);
-    NICC_CHECK_POINTER(this->qp_for_prior=new RDMA_SoC_QP());
-    NICC_CHECK_POINTER(this->qp_for_next=new RDMA_SoC_QP());
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        NICC_CHECK_POINTER(this->qp_for_prior=new RDMA_SoC_QP());
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        NICC_CHECK_POINTER(this->qp_for_next=new RDMA_SoC_QP());
+    }
 
     // Create protection domain, send CQ, and recv CQ
     this->_pd = ibv_alloc_pd(this->_resolve.ib_ctx);
     NICC_CHECK_POINTER(this->_pd);
 
     // Create prior QP and next QP
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_prior)))){
-        NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
-        return retval;
+    RDMA_SoC_QP *qp = nullptr;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        qp = static_cast<RDMA_SoC_QP*>(this->qp_for_prior);
+        if(unlikely(NICC_SUCCESS != (retval = this->__create_rdma_qp(qp)))){
+            NICC_WARN_C("failed to create prior QP: retval(%u)", retval);
+            return retval;
+        }
+        this->__set_local_qp_info(this->qp_for_prior_info, qp);
     }
-    if(unlikely(NICC_SUCCESS != (retval = this->__create_qp(this->qp_for_next)))){
-        NICC_WARN_C("failed to create next QP: retval(%u)", retval);
-        return retval;
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        qp = static_cast<RDMA_SoC_QP*>(this->qp_for_next);
+        if(unlikely(NICC_SUCCESS != (retval = this->__create_rdma_qp(qp)))){
+            NICC_WARN_C("failed to create next QP: retval(%u)", retval);
+            return retval;
+        }
+        this->__set_local_qp_info(this->qp_for_next_info, qp);
     }
-    this->__set_local_qp_info(this->qp_for_prior_info, this->qp_for_prior);
-    this->__set_local_qp_info(this->qp_for_next_info, this->qp_for_next);
 
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__create_qp(RDMA_SoC_QP *qp) {
+nicc_retval_t Channel_SoC::__init_dpdk_structs(uint8_t phy_port) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Create DPDK QP instances for ETHERNET type channels
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        NICC_CHECK_POINTER(this->qp_for_prior = new DPDK_SoC_QP());
+        DPDK_SoC_QP* dpdk_qp_prior = static_cast<DPDK_SoC_QP*>(this->qp_for_prior);
+        dpdk_qp_prior->_phy_port = phy_port;
+        // Set QP ID from ownership manager
+        if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_prior)))) {
+            NICC_WARN_C("failed to reserve DPDK QP ID for prior component block");
+            return retval;
+        }
+        this->qp_for_prior_info->qp_num = dpdk_qp_prior->_qp_id;
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        NICC_CHECK_POINTER(this->qp_for_next = new DPDK_SoC_QP());
+        DPDK_SoC_QP* dpdk_qp_next = static_cast<DPDK_SoC_QP*>(this->qp_for_next);
+        dpdk_qp_next->_phy_port = phy_port;
+        // Set QP ID from ownership manager
+        if (unlikely(NICC_SUCCESS != (retval = this->__reserve_dpdk_qp_id(dpdk_qp_next)))) {
+            NICC_WARN_C("failed to reserve DPDK QP ID for next component block");
+            return retval;
+        }
+        this->qp_for_next_info->qp_num = dpdk_qp_next->_qp_id;
+    }
+    
+    // Create DPDK memory pools for this channel
+    if (unlikely(NICC_SUCCESS != (retval = this->__create_dpdk_mempool(0)))) {
+        NICC_WARN_C("failed to create DPDK mempool for prior component block");
+        return retval;
+    }
+
+    // Setup DPDK ports
+    uint16_t num_ports = rte_eth_dev_count_avail();
+    if (phy_port >= num_ports) {
+        NICC_ERROR_C("phy_port %u is out of range", phy_port);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rte_eth_dev_info dev_info;
+    rte_eth_dev_info_get(phy_port, &dev_info);
+    if (dev_info.rx_desc_lim.nb_max < kRQDepth) {
+        NICC_ERROR_C("max_rx depth %u is less than kRQDepth %u", dev_info.rx_desc_lim.nb_max, kRQDepth);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    if (dev_info.tx_desc_lim.nb_max < kSQDepth) {
+        NICC_ERROR_C("max_tx depth %u is less than kSQDepth %u", dev_info.tx_desc_lim.nb_max, kSQDepth);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    rte_eth_conf eth_conf;
+    memset(&eth_conf, 0, sizeof(rte_eth_conf));
+    eth_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_NONE;
+    eth_conf.txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
+    eth_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+    uint8_t enabled_qp_num = 0;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        enabled_qp_num++;
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        enabled_qp_num++;
+    }
+    int ret = rte_eth_dev_configure(phy_port, enabled_qp_num, enabled_qp_num, &eth_conf);
+    if (ret != 0) {
+        NICC_ERROR_C("failed to configure DPDK port: retval(%u)", ret);
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        rte_eth_rxconf eth_rx_conf;
+        memset(&eth_rx_conf, 0, sizeof(rte_eth_rxconf));
+        eth_rx_conf.rx_thresh.pthresh = 16;
+        ret = rte_eth_rx_queue_setup(phy_port, this->qp_for_prior_info->qp_num, kRQDepth, 0 /* BF3 has only one NUMA node */, &eth_rx_conf, this->_mempool);
+        rt_assert(ret == 0, "Failed to setup RX queue: " + std::to_string(this->qp_for_prior_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+        rte_eth_txconf eth_tx_conf;
+        memset(&eth_tx_conf, 0, sizeof(rte_eth_txconf));
+        eth_tx_conf.tx_thresh.pthresh = 16;
+        eth_tx_conf.offloads = eth_conf.txmode.offloads;
+        ret = rte_eth_tx_queue_setup(phy_port, this->qp_for_prior_info->qp_num, kSQDepth, 0 /* BF3 has only one NUMA node */, &eth_tx_conf);
+        rt_assert(ret == 0, "Failed to setup TX queue: " + std::to_string(this->qp_for_prior_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        rte_eth_rxconf eth_rx_conf;
+        memset(&eth_rx_conf, 0, sizeof(rte_eth_rxconf));
+        eth_rx_conf.rx_thresh.pthresh = 16;
+        ret = rte_eth_rx_queue_setup(phy_port, this->qp_for_next_info->qp_num, kRQDepth, 0 /* BF3 has only one NUMA node */, &eth_rx_conf, this->_mempool);
+        rt_assert(ret == 0, "Failed to setup RX queue: " + std::to_string(this->qp_for_next_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+        rte_eth_txconf eth_tx_conf;
+        memset(&eth_tx_conf, 0, sizeof(rte_eth_txconf));
+        eth_tx_conf.tx_thresh.pthresh = 16;
+        eth_tx_conf.offloads = eth_conf.txmode.offloads;
+        ret = rte_eth_tx_queue_setup(phy_port, this->qp_for_next_info->qp_num, kSQDepth, 0 /* BF3 has only one NUMA node */, &eth_tx_conf);
+        rt_assert(ret == 0, "Failed to setup TX queue: " + std::to_string(this->qp_for_next_info->qp_num) +
+                            ". Error " + strerror(-1 * ret));
+    }
+    rte_eth_dev_start(phy_port);
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__create_rdma_qp(RDMA_SoC_QP *qp) {
     nicc_retval_t retval = NICC_SUCCESS;
     NICC_CHECK_POINTER(qp);
     NICC_CHECK_POINTER(this->_pd);
@@ -246,7 +402,7 @@ void Channel_SoC::__set_local_qp_info(QPInfo *qp_info, RDMA_SoC_QP *qp) {
         qp_info->gid[i] = this->_resolve.gid.raw[i];
     }
     qp_info->gid_table_index = this->_resolve.gid_index;
-    qp_info->mtu = RDMA_SoC_QP::kMTU;
+    qp_info->mtu = nicc::kMTU;
     memcpy(qp_info->nic_name, this->_resolve.ib_ctx->device->name, MAX_NIC_NAME_LEN);
     memcpy(qp_info->mac_addr, this->_resolve.mac_addr, 6);
     qp_info->is_initialized = true;
@@ -320,23 +476,29 @@ nicc_retval_t Channel_SoC::__init_rings() {
     this->_huge_alloc->add_raw_buffer(raw_mr, kMemRegionSize);
 
     /// Step 2: Initialize the ring buffer
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_prior)))){
-        NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
-        return retval;
+    RDMA_SoC_QP *qp = nullptr;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA) {
+        qp = static_cast<RDMA_SoC_QP*>(this->qp_for_prior);
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(qp)))){
+            NICC_WARN_C("failed to initialize the recv ring buffer for prior component block");
+            return retval;
+        }
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(qp)))){
+            NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
+            return retval;
+        }
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_prior)))){
-        NICC_WARN_C("failed to initialize the send ring buffer for prior component block");
-        return retval;
+    if (this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+        qp = static_cast<RDMA_SoC_QP*>(this->qp_for_next);
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(qp)))){
+            NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
+            return retval;
+        }
+        if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(qp)))){
+            NICC_WARN_C("failed to initialize the send ring buffer for next component block");
+            return retval;
+        }
     }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_recvs(this->qp_for_next)))){
-        NICC_WARN_C("failed to initialize the recv ring buffer for next component block");
-        return retval;
-    }
-    if (unlikely(NICC_SUCCESS != (retval = this->__init_sends(this->qp_for_next)))){
-        NICC_WARN_C("failed to initialize the send ring buffer for next component block");
-        return retval;
-    }
-
     return retval;
 }
 
@@ -391,14 +553,21 @@ nicc_retval_t Channel_SoC::__init_sends(RDMA_SoC_QP *qp) {
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__connect_qp_to_component_block(RDMA_SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info) {
+nicc_retval_t Channel_SoC::__connect_qp_to_component_block(SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info) {
     // nicc_retval_t retval = NICC_SUCCESS;
     /* ...... */
     return NICC_ERROR_NOT_IMPLEMENTED;
 }
 
-nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info) {
+nicc_retval_t Channel_SoC::__connect_qp_to_host(SoC_QP *qp_, const QPInfo *remote_qp_info, const QPInfo *local_qp_info) {
     nicc_retval_t retval = NICC_SUCCESS;
+
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        /// Ethernet does not need to connect to host
+        return NICC_SUCCESS;
+    }
+
+    RDMA_SoC_QP *qp = static_cast<RDMA_SoC_QP*>(qp_);
     
     /// Transition QP to INIT state
     struct ibv_qp_attr init_attr;
@@ -423,7 +592,7 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
     struct ibv_qp_attr rtr_attr;
     memset(static_cast<void *>(&rtr_attr), 0, sizeof(struct ibv_qp_attr));
     rtr_attr.qp_state = IBV_QPS_RTR;
-    switch(RDMA_SoC_QP::kMTU){
+    switch(nicc::kMTU){
         case 1024:
             rtr_attr.path_mtu = IBV_MTU_1024;
             break;
@@ -434,7 +603,7 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
             rtr_attr.path_mtu = IBV_MTU_4096;
             break;
         default:
-            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", RDMA_SoC_QP::kMTU);
+            NICC_WARN_C("unsupported MTU: %lu, only 1024, 2048, 4096 are supported", nicc::kMTU);
             return NICC_ERROR_HARDWARE_FAILURE;
     }
     rtr_attr.dest_qp_num = remote_qp_info->qp_num;
@@ -483,8 +652,14 @@ nicc_retval_t Channel_SoC::__connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *r
     return retval;
 }
 
-nicc_retval_t Channel_SoC::__fill_recv_queue(RDMA_SoC_QP *qp) {
+nicc_retval_t Channel_SoC::__fill_recv_queue(SoC_QP *qp_) {
     nicc_retval_t retval = NICC_SUCCESS;
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        /// Ethernet does not need to fill the RECV queue
+        return NICC_SUCCESS;
+    }
+
+    RDMA_SoC_QP *qp = static_cast<RDMA_SoC_QP*>(qp_);
     // Fill the RECV queue. post_recvs() can use fast RECV and therefore not
     // actually fill the RQ, so post_recvs() isn't usable here.
     struct ibv_recv_wr *bad_wr;
@@ -504,5 +679,163 @@ nicc_retval_t Channel_SoC::deallocate_channel() {
     /* ...... */
     return retval;
 }
+
+nicc_retval_t Channel_SoC::__create_dpdk_mempool(uint8_t mp_id) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Generate unique mempool name using mp_id and process ID
+    char mempool_name[64];      
+    snprintf(mempool_name, sizeof(mempool_name), "mp_%d_%d", mp_id, getpid());
+    
+    // Calculate mempool size based on ring entries
+    // Using power-of-two minus one as recommended by DPDK docs
+    const size_t kDpdkMempoolSize = (kRQDepth + kSQDepth) * 4 - 1 ;  // good for most use cases, a component block has two qps, each qp has two rings
+    
+    // Calculate mbuf size: mbuf header + headroom + MTU
+    const size_t kMbufSize = sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM + nicc::kMTU;
+    
+    // Get NUMA node (default to socket 0)
+    int numa_node = 0;  // In a real implementation, you might want to detect this
+    
+    // Create memory pool
+    this->_mempool = rte_pktmbuf_pool_create(
+        mempool_name,               // pool name
+        kDpdkMempoolSize,           // number of elements
+        128, // cache size (RTE_MEMPOOL_CACHE_MAX_SIZE for performance)
+        0,                          // private data size
+        kMbufSize,                  // data room size  
+        numa_node                   // socket ID
+    );
+    
+    if (this->_mempool == nullptr) {
+        NICC_ERROR_C("Failed to create DPDK mempool '%s': %s", mempool_name, rte_strerror(rte_errno));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    NICC_DEBUG_C("Created DPDK mempool '%s' with %zu elements, mbuf size %zu bytes", 
+             mempool_name, kDpdkMempoolSize, kMbufSize);
+    
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__reserve_dpdk_qp_id(DPDK_SoC_QP* qp) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    NICC_CHECK_POINTER(qp);
+    
+    if (g_memzone == nullptr) {
+        NICC_ERROR("DPDK ownership memzone not initialized");
+        return NICC_ERROR_MEMORY_FAILURE;
+    }
+    
+    // Default physical port (you might want to make this configurable)
+    const size_t phy_port = 0;
+    
+    // Try to reserve a QP from the ownership manager
+    size_t qp_id = DPDK_SoC_QP::kInvalidQpId;
+    int result = g_memzone->get_qp(phy_port, 33);
+     
+    if (result == DPDK_SoC_QP::kInvalidQpId) {
+        NICC_ERROR("Failed to reserve DPDK QP on port %zu: %s", phy_port, strerror(result));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    // Set the QP ID
+    qp->_qp_id = result;
+    qp->_remote_qp_id = SIZE_MAX;  // Will be set during connection
+    
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__resolve_phy_port(uint8_t phy_port) {
+    nicc_retval_t retval = NICC_SUCCESS;
+    
+    // Get MAC address
+    struct rte_ether_addr mac;
+    rte_eth_macaddr_get(phy_port, &mac);
+    memcpy(&this->_resolve.mac_addr, &mac.addr_bytes, sizeof(this->_resolve.mac_addr));
+
+    if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET) {
+        memcpy(this->qp_for_prior_info->mac_addr, this->_resolve.mac_addr, sizeof(this->qp_for_prior_info->mac_addr));
+        this->qp_for_prior_info->is_initialized = true;
+    }
+    if (this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+        memcpy(this->qp_for_next_info->mac_addr, this->_resolve.mac_addr, sizeof(this->qp_for_next_info->mac_addr));
+        this->qp_for_next_info->is_initialized = true;
+    }
+
+    // Get IP address - Method 1: From configuration or environment
+    retval = __get_port_ip_address(phy_port, &this->_resolve.ipv4_addr);
+    if (retval != NICC_SUCCESS) {
+        NICC_WARN_C("Failed to get IP address for phy_port %u, using default", phy_port);
+        // Set a default IP address (e.g., 192.168.1.100 + phy_port)
+        this->_resolve.ipv4_addr.ip = htonl(0xC0A80164 + phy_port); // 192.168.1.100 + port
+        if (retval == NICC_ERROR_NOT_FOUND) {
+            // This is because maybe the port is not configured with an IP address
+            return NICC_SUCCESS;
+        }
+    }
+
+
+    return retval;
+}
+
+nicc_retval_t Channel_SoC::__get_port_ip_address(uint8_t phy_port, ipaddr_t* ipv4_addr) {
+    // Find system interface by MAC address matching
+    struct rte_ether_addr dpdk_mac;
+    if (rte_eth_macaddr_get(phy_port, &dpdk_mac) == 0) {
+        return __find_interface_by_mac(&dpdk_mac, ipv4_addr);
+    }
+    
+    return NICC_ERROR_HARDWARE_FAILURE;
+}
+
+nicc_retval_t Channel_SoC::__find_interface_by_mac(const struct rte_ether_addr* target_mac, ipaddr_t* ipv4_addr) {
+    struct ifaddrs *ifaddrs_ptr, *ifa;
+    nicc_retval_t retval = NICC_ERROR_NOT_FOUND;
+    
+    if (getifaddrs(&ifaddrs_ptr) == -1) {
+        NICC_WARN_C("Failed to get interface addresses: %s", strerror(errno));
+        return NICC_ERROR_HARDWARE_FAILURE;
+    }
+    
+    for (ifa = ifaddrs_ptr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) continue;
+        
+        // Skip non-IPv4 addresses
+        if (ifa->ifa_addr->sa_family != AF_INET) continue;
+        
+        // Get MAC address for this interface
+        int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) continue;
+        
+        struct ifreq ifr;
+        strncpy(ifr.ifr_name, ifa->ifa_name, IFNAMSIZ - 1);
+        ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+        
+        if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) == 0) {
+            // Compare MAC addresses
+            if (memcmp(target_mac->addr_bytes, ifr.ifr_hwaddr.sa_data, 6) == 0) {
+                // Found matching MAC! Get IP address
+                struct sockaddr_in* addr_in = (struct sockaddr_in*)ifa->ifa_addr;
+                ipv4_addr->ip = addr_in->sin_addr.s_addr;
+                
+                NICC_DEBUG_C("Found matching interface %s by MAC address: %02x:%02x:%02x:%02x:%02x:%02x, IP: %s",
+                            ifa->ifa_name,
+                            target_mac->addr_bytes[0], target_mac->addr_bytes[1],
+                            target_mac->addr_bytes[2], target_mac->addr_bytes[3],
+                            target_mac->addr_bytes[4], target_mac->addr_bytes[5],
+                            inet_ntoa(addr_in->sin_addr));
+                retval = NICC_SUCCESS;
+                close(sockfd);
+                break;
+            }
+        }
+        close(sockfd);
+    }
+    
+    freeifaddrs(ifaddrs_ptr);
+    return retval;
+}
+
 
 } // namespace nicc

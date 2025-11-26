@@ -18,7 +18,7 @@ nicc_retval_t PipelineRouting::register_component_router(const std::string& comp
     }
     
     this->_state->component_routers[component_id] = router;
-    NICC_DEBUG_C("Registered component router '%s'.", component_id.c_str());
+    // NICC_DEBUG_C("Registered component router '%s'.", component_id.c_str());
     return NICC_SUCCESS;
 }
 
@@ -80,8 +80,8 @@ nicc_retval_t PipelineRouting::load_from_app_dag(const AppDAG* app_dag) {
                 // Add rule to state
                 this->_state->dag_edge_rules.push_back(rule);
                 
-                NICC_DEBUG_C("Added routing rule: %s(%s) -> %s", 
-                        component_name.c_str(), match_str.c_str(), action_str.c_str());
+                // NICC_DEBUG_C("Added routing rule: %s(%s) -> %s", 
+                //         component_name.c_str(), match_str.c_str(), action_str.c_str());
             }
         }
         
@@ -116,8 +116,8 @@ nicc_retval_t ComponentRouting::register_local_channel(const std::string& channe
     }
     
     this->_state->local_channels[channel_name] = channel;
-    NICC_DEBUG_C("Registered local channel '%s' in component '%s'.", 
-            channel_name.c_str(), this->_state->component_id.c_str());
+    // NICC_DEBUG_C("Registered local channel '%s' in component '%s'.", 
+    //         channel_name.c_str(), this->_state->component_id.c_str());
     return NICC_SUCCESS;
 }
 
@@ -148,7 +148,7 @@ nicc_retval_t ComponentRouting::add_retval_mapping(nicc_core_retval_t retval, ni
 
 nicc_retval_t ComponentRouting::set_default_channel(nicc::Channel* channel) {
     this->_state->default_channel = channel;
-    NICC_DEBUG_C("Set default channel in component '%s'.", this->_state->component_id.c_str());
+    // NICC_DEBUG_C("Set default channel in component '%s'.", this->_state->component_id.c_str());
     return NICC_SUCCESS;
 }
 

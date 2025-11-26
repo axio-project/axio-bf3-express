@@ -4,12 +4,16 @@
 #include "common/soc_queue.h"
 #include "common/timer.h"
 
+#include <rte_common.h>
+#include <rte_ethdev.h> 
+
+
 namespace nicc {
 
 // SoC user function type definitions
 typedef user_state_info (*soc_init_handler_t)();       // init handler allocates and returns user_state with size
 typedef nicc_retval_t (*soc_pkt_handler_t)(Buffer* pkt, void* user_state);  
-typedef nicc_retval_t (*soc_msg_handler_t)(Buffer* msg, void* user_state);
+typedef nicc_retval_t (*soc_msg_handler_t)(Buffer** msg_batch, size_t batch_size, void* user_state);  // batch processing interface
 typedef void (*soc_cleanup_handler_t)(void* user_state);   // cleanup handler frees user_state
 
 /**
@@ -48,8 +52,8 @@ class SoCWrapper {
      */
     struct SoCWrapperContext{
         /* ========== metadata for dispatcher ========== */
-        RDMA_SoC_QP *qp_for_prior;    /// QP for communicating with the prior component block
-        RDMA_SoC_QP *qp_for_next;     /// QP for communicating with the next component block
+        SoC_QP *qp_for_prior;    /// QP for communicating with the prior component block
+        SoC_QP *qp_for_next;     /// QP for communicating with the next component block
         /// e.g. pkt handler ptr
         /// e.g. match-action table ptr
         /* ========== metadata for worker ========== */
@@ -106,6 +110,13 @@ class SoCWrapper {
      * \brief Launch the SoC kernel loop
      */
     void __launch();
+    
+    /**
+     * \brief Process worker batches for RDMA QP
+     * \param rx_qp  RX queue pair (prior component)
+     * \param tx_qp  TX queue pair (next component)
+     */
+    void __worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
 
     /* ========================SoC Datapath ========================*/
 
@@ -121,7 +132,7 @@ class SoCWrapper {
         int ret;
         size_t first_wr_i = qp->_recv_head;
         size_t last_wr_i = first_wr_i + (num_recvs - 1);
-        if (last_wr_i >= RDMA_SoC_QP::kNumRxRingEntries) last_wr_i -= RDMA_SoC_QP::kNumRxRingEntries;
+        if (last_wr_i >= nicc::kNumRxRingEntries) last_wr_i -= nicc::kNumRxRingEntries;
 
         first_wr = &qp->_recv_wr[first_wr_i];
         last_wr = &qp->_recv_wr[last_wr_i];
@@ -138,31 +149,34 @@ class SoCWrapper {
 
         // Update RECV head: go to the last wr posted and take 1 more step
         qp->_recv_head = last_wr_i;
-        qp->_recv_head = (qp->_recv_head + 1) % RDMA_SoC_QP::kNumRxRingEntries;
+        qp->_recv_head = (qp->_recv_head + 1) % nicc::kNumRxRingEntries;
     }
 
     /**
      * \brief Receive packets from the NIC and put them into the dispatcher rx queue.
-     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for receiving packets
      * \return the number of packets received
      */
     size_t __rx_burst(RDMA_SoC_QP *qp);
+    size_t __rx_burst(DPDK_SoC_QP *qp);
 
     /**
      * \brief Dispatch packets from the dispatcher rx queue to the worker rx queue 
      * based on packet UDP field. Workspace will be blocked until all packets are
      * dispatched.
-     * \param RDMA_SoC_QP *qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for receiving packets
      * \return the number of packets dispatched
      */
     size_t __dispatch_rx_pkts(RDMA_SoC_QP *qp);
+    size_t __dispatch_rx_pkts(DPDK_SoC_QP *qp);
 
     /**
      * \brief Iterate all worker queues assigned to this dispatcher, and collect packets from them.
-     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for sending packets
      * \return the number of packets collected
      */
     size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+    size_t __collect_tx_pkts(DPDK_SoC_QP *qp);
 
     /**
      * \brief Post send wrs to the NIC, and update the send head
@@ -176,19 +190,20 @@ class SoCWrapper {
     /**
      * \brief Flush the dispatcher tx queue to the NIC. Dispatcher will be blocked
      * until all packets are sent
-     * \param RDMA_SoC_QP *qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for sending packets
      * \return the number of packets sent
      */
     size_t __tx_flush(RDMA_SoC_QP *qp);
+    size_t __tx_flush(DPDK_SoC_QP *qp);
 
     /**
      * \brief Directly send packets from the one qp's rx queue to the another qp's tx queue.
-     * \param RDMA_SoC_QP *rx_qp, the QP for receiving packets
-     * \param RDMA_SoC_QP *tx_qp, the QP for sending packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *rx_qp, the QP for receiving packets
+     * \param RDMA_SoC_QP or DPDK_SoC_QP *tx_qp, the QP for sending packets
      * \return the number of packets sent
      */
     size_t __direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
-
+    size_t __direct_tx_burst(DPDK_SoC_QP *rx_qp, DPDK_SoC_QP *tx_qp);
     /**
      * \brief Forward packet using routing decision based on kernel return value
      * \param packet            packet buffer to forward
@@ -203,13 +218,21 @@ class SoCWrapper {
  private:
     soc_wrapper_type_t _type = kSoC_Invalid;
     SoCWrapperContext *_context = nullptr;
-    /// QPs
+    /// QPs; below is ugly but it's the only way to support both ROCE and DPDK; we cannot use "if" due to performance reasons
+  #if SoC_QP_PRIOR_TYPE == ROCE_MODE
     RDMA_SoC_QP *_qp_for_prior = nullptr;
+  #elif SoC_QP_PRIOR_TYPE == DPDK_MODE
+    DPDK_SoC_QP *_qp_for_prior = nullptr;
+  #endif
+  #if SoC_QP_NEXT_TYPE == ROCE_MODE
     RDMA_SoC_QP *_qp_for_next = nullptr;
+  #elif SoC_QP_NEXT_TYPE == DPDK_MODE
+    DPDK_SoC_QP *_qp_for_next = nullptr;
+  #endif
 
     /// tmp shm queue for testing
-    soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;
-    soc_shm_lock_free_queue* _tmp_worker_tx_queue = nullptr;
+    // soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;
+    // soc_shm_lock_free_queue* _tmp_worker_tx_queue = nullptr;
 };
 
 

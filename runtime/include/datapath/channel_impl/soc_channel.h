@@ -1,7 +1,17 @@
 #pragma once
 
-#include <infiniband/verbs.h>
 #include <unordered_map>
+
+#include <rte_common.h>
+#include <rte_config.h>
+#include <rte_errno.h>
+#include <rte_ethdev.h>
+#include <rte_ip.h>
+#include <rte_mbuf.h>
+#include <rte_thash.h>
+#include <rte_flow.h>
+#include <rte_ethdev.h>
+#include <rte_hash.h>
 
 #include "common.h"
 #include "log.h"
@@ -25,20 +35,19 @@ class Channel_SoC : public Channel {
     /// For now, anything outside 0xffff0000..0xffffffff (reserved by CX3) works.
     static constexpr uint32_t kQKey = 0x0205; 
 
-    static constexpr size_t kRQDepth = RDMA_SoC_QP::kNumRxRingEntries;   ///< RECV queue depth
-    static constexpr size_t kSQDepth = RDMA_SoC_QP::kNumTxRingEntries;   ///< Send queue depth
+    static constexpr size_t kRQDepth = nicc::kNumRxRingEntries;   ///< RECV queue depth
+    static constexpr size_t kSQDepth = nicc::kNumTxRingEntries;   ///< Send queue depth
 
     static constexpr size_t kPostlist = 32;    ///< Maximum SEND postlist
 
     // static constexpr size_t kSgeSize = kMTU;  /// seg size cannot exceed MTU
-    static constexpr size_t kSgeSize = round_up<4096>(RDMA_SoC_QP::kMTU);    /// manully update "2048" to higher if kMTU is > 2048
+    static constexpr size_t kSgeSize = round_up<4096>(nicc::kMTU);    /// manully update "2048" to higher if kMTU is > 2048
     static_assert(is_power_of_two(kSgeSize), "kSgeSize must be a power of 2");
-    static_assert(kSgeSize >= RDMA_SoC_QP::kMTU, "kSgeSize must be >= kMTU");
+    static_assert(kSgeSize >= nicc::kMTU, "kSgeSize must be >= kMTU");
 
     static constexpr size_t kRecvMbufSize = kSgeSize;    ///< RECV size 
     static constexpr size_t kSendMbufSize = kSgeSize;    ///< SEND size
 
-    static constexpr size_t kMaxUDSize = kSendMbufSize * kSQDepth;  ///< Maximum UD message size
     static constexpr size_t kMemRegionSize = 2 * (kRecvMbufSize * kRQDepth + kSendMbufSize * kSQDepth);  ///< Memory region size, for both TX and RX
 
     static constexpr size_t kInvalidQpId = SIZE_MAX;
@@ -59,32 +68,15 @@ class Channel_SoC : public Channel {
     }
     ~Channel_SoC() {
         NICC_DEBUG_C("destory channel for prior QP %lu, next QP %lu", this->qp_for_prior->_qp_id, this->qp_for_next->_qp_id);
-        // deregister memory region
-        int ret = ibv_dereg_mr(this->_mr);
-        if (ret != 0) {
-            NICC_WARN_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
+        if (this->_typeid_of_prior == Channel::channel_typeid_t::RDMA || this->_typeid_of_next == Channel::channel_typeid_t::RDMA) {
+            this->__delete_rdma_channel();
+        } else if (this->_typeid_of_prior == Channel::channel_typeid_t::ETHERNET && this->_typeid_of_next == Channel::channel_typeid_t::ETHERNET) {
+            this->__delete_dpdk_channel();
         }
-        NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
-        // delete Buffer in _rx_ring
-        for (size_t i = 0; i < kRQDepth; i++) {
-            delete this->qp_for_prior->_rx_ring[i];
-            delete this->qp_for_next->_rx_ring[i];
+        else {
+            NICC_ERROR_C("Unsupported channel type");
+            return;
         }
-        // delete SHM
-        delete this->_huge_alloc;
-
-        // Destroy QPs and CQs. QPs must be destroyed before CQs.
-        exit_assert(ibv_destroy_qp(this->qp_for_prior->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->qp_for_prior->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->qp_for_prior->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_qp(this->qp_for_next->_qp) == 0, "Failed to destroy send QP");
-        exit_assert(ibv_destroy_cq(this->qp_for_next->_send_cq) == 0, "Failed to destroy send CQ");
-        exit_assert(ibv_destroy_cq(this->qp_for_next->_recv_cq) == 0, "Failed to destroy recv CQ");
-        exit_assert(ibv_destroy_ah(this->_local_ah) == 0, "Failed to destroy local AH");
-        exit_assert(ibv_destroy_ah(this->qp_for_prior->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_destroy_ah(this->qp_for_next->_remote_ah) == 0, "Failed to destroy remote AH");
-        exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
-        exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
     }
 
     /**
@@ -119,14 +111,17 @@ class Channel_SoC : public Channel {
  */
  public:
     /// Parameters for qp init
-    class RDMA_SoC_QP *qp_for_prior;        /// QP for prior component block
-    class RDMA_SoC_QP *qp_for_next;         /// QP for next component block
-    QPInfo *qp_for_prior_info;
-    QPInfo *qp_for_next_info;
+    class SoC_QP *qp_for_prior;        /// QP for prior component block (RDMA or DPDK)
+    class SoC_QP *qp_for_next;         /// QP for next component block (RDMA or DPDK)
+    class QPInfo *qp_for_prior_info;
+    class QPInfo *qp_for_next_info;
 /**
  * ----------------------Internel methods----------------------
  */ 
  private:
+    /**
+     * =================RDMA=================
+     */
     /**
      * @brief Resolve InfiniBand-specific fields in \p resolve
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
@@ -144,7 +139,7 @@ class Channel_SoC : public Channel {
      * @param qp RDMA_SoC_QP
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __create_qp(RDMA_SoC_QP *qp);
+    nicc_retval_t __create_rdma_qp(RDMA_SoC_QP *qp);
 
     /**
      * @brief Set local QP info
@@ -184,25 +179,116 @@ class Channel_SoC : public Channel {
 
     /**
      * @brief connect a qp to a component block
-     * @param qp [in] RDMA_SoC_QP
+     * @param qp [in] SoC_QP
      * @param neighbour_component_block [in] the neighbour component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __connect_qp_to_component_block(RDMA_SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info);
+    nicc_retval_t __connect_qp_to_component_block(SoC_QP *qp, const ComponentBlock *neighbour_component_block, const QPInfo *local_qp_info);
 
     /**
      * @brief connect a qp to a remote/local host
-     * @param qp [in] RDMA_SoC_QP
+     * @param qp [in] SoC_QP
      * @param remote_qp_info [in] QP info of the target component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __connect_qp_to_host(RDMA_SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info);
+    nicc_retval_t __connect_qp_to_host(SoC_QP *qp, const QPInfo *remote_qp_info, const QPInfo *local_qp_info);
     /**
      * @brief Fill the RECV queue
-     * @param qp [in] RDMA_SoC_QP for prior or next component block
+     * @param qp [in] SoC_QP for prior or next component block
      * @return NICC_SUCCESS on success and NICC_ERROR otherwise
      */
-    nicc_retval_t __fill_recv_queue(RDMA_SoC_QP *qp);
+    nicc_retval_t __fill_recv_queue(SoC_QP *qp);
+    
+    /**
+     * @brief delete the RDMA Channel
+     */
+    void __delete_rdma_channel(){
+        // deregister memory region
+        int ret = ibv_dereg_mr(this->_mr);
+        if (ret != 0) {
+            NICC_WARN_C("Memory degistration failed. size %zu B, lkey %u\n", this->_mr->length / MB(1), this->_mr->lkey);
+        }
+        NICC_DEBUG_C("Deregistered %zu MB (lkey = %u)\n", this->_mr->length / MB(1), this->_mr->lkey);
+        RDMA_SoC_QP *qp_for_prior = this->_typeid_of_prior == Channel::channel_typeid_t::RDMA 
+                                            ? static_cast<RDMA_SoC_QP*>(this->qp_for_prior) : nullptr;
+        RDMA_SoC_QP *qp_for_next = this->_typeid_of_next == Channel::channel_typeid_t::RDMA 
+                                            ? static_cast<RDMA_SoC_QP*>(this->qp_for_next) : nullptr;
+        if (qp_for_prior != nullptr) {
+            this->__delete_rdma_qp(qp_for_prior);
+        }
+        if (qp_for_next != nullptr) {
+            this->__delete_rdma_qp(qp_for_next);
+        }
+        // delete SHM
+        delete this->_huge_alloc;
+
+        exit_assert(ibv_dealloc_pd(this->_pd) == 0, "Failed to destroy PD. Leaked MRs?");
+        exit_assert(ibv_close_device(this->_resolve.ib_ctx) == 0, "Failed to close device");
+    }
+
+    void __delete_rdma_qp(RDMA_SoC_QP *qp){
+        // delete Buffer in _rx_ring
+        for (size_t i = 0; i < kRQDepth; i++) {
+            delete qp->_rx_ring[i];
+        }
+        // Destroy QPs and CQs. QPs must be destroyed before CQs.
+        exit_assert(ibv_destroy_qp(qp->_qp) == 0, "Failed to destroy QP");
+        exit_assert(ibv_destroy_cq(qp->_send_cq) == 0, "Failed to destroy send CQ");
+        exit_assert(ibv_destroy_cq(qp->_recv_cq) == 0, "Failed to destroy recv CQ");
+        exit_assert(ibv_destroy_ah(qp->_remote_ah) == 0, "Failed to destroy remote AH");
+    }
+
+    /**
+     * =================DPDK=================
+     */
+
+      /**
+       * @brief Initialize structures: memopool and queue pair.
+       * @param phy_port [in] physical port
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __init_dpdk_structs(uint8_t phy_port);
+      
+      /**
+       * @brief Create DPDK memory pool for a DPDK QP
+       * @param mp_id [in] memory pool id
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __create_dpdk_mempool(uint8_t mp_id);
+      
+      /**
+       * @brief Reserve a QP ID from the DPDK ownership manager
+       * @param qp [in] DPDK_SoC_QP instance
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __reserve_dpdk_qp_id(DPDK_SoC_QP* qp);
+
+      /**
+       * @brief Resolve DPDK phy port
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __resolve_phy_port(uint8_t phy_port);
+
+      /**
+       * @brief Get IP address for a physical port
+       * @param phy_port [in] Physical port ID
+       * @param ipv4_addr [out] IPv4 address structure to fill
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __get_port_ip_address(uint8_t phy_port, ipaddr_t* ipv4_addr);
+
+      /**
+       * @brief Find system interface by MAC address and get its IP
+       * @param target_mac [in] Target MAC address to match
+       * @param ipv4_addr [out] IPv4 address structure to fill
+       * @return NICC_SUCCESS on success and NICC_ERROR otherwise
+       */
+      nicc_retval_t __find_interface_by_mac(const struct rte_ether_addr* target_mac, ipaddr_t* ipv4_addr);
+
+      void __delete_dpdk_channel(){
+          NICC_ERROR_C("DPDK channel deletion is not implemented");
+          return;
+      }
 
 /**
  * ----------------------Internel parameters----------------------
@@ -210,6 +296,9 @@ class Channel_SoC : public Channel {
  private:
     /// The hugepage allocator for this channel
     HugeAlloc *_huge_alloc = nullptr;
+    /// DPDK memory pool for this channel
+    struct rte_mempool *_mempool = nullptr;
+
     /// Info resolved from \p phy_port, must be filled by constructor.
     class IBResolve : public VerbsResolve {
     public:

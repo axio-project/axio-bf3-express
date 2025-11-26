@@ -133,6 +133,10 @@ static constexpr component_typeid_t NICC_ENABLE_FULL_MASK = static_cast<componen
  */
 using channel_id_t = std::string;
 
+#define DPDK_MODE 0
+#define ROCE_MODE 1
+#define SoC_QP_PRIOR_TYPE ROCE_MODE 
+#define SoC_QP_NEXT_TYPE ROCE_MODE 
 
 /**
  * ----------------------Scope Exit----------------------

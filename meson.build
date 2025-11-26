@@ -80,8 +80,8 @@ dpdk_modules = ['libdpdk', 'libdpdk-libs']
 founded_dpdk_modules = []
 foreach dpdk_module : dpdk_modules
 	dpdk_module_cflags = run_command(pkgconfig, '--cflags', dpdk_module, env: env, check: false)
-	 # TODO: when compile with doca, remove '--static' option
-	dpdk_module_ldflags = run_command(pkgconfig, '--libs', dpdk_module, env: env, check: false)
+	 # Use static linking for DPDK to avoid conflicts with system DPDK libraries
+	dpdk_module_ldflags = run_command(pkgconfig, '--libs', '--static', dpdk_module, env: env, check: false)
 	dpdk_module_version = run_command(pkgconfig, '--modversion', dpdk_module, env: env, check: false)
 	if dpdk_module_cflags.returncode() != 0 or dpdk_module_cflags.returncode() != 0 or dpdk_module_cflags.returncode() != 0
 		message('>>> Failed to find ' + dpdk_module)
