@@ -13,7 +13,7 @@ namespace nicc {
 // SoC user function type definitions
 typedef user_state_info (*soc_init_handler_t)();       // init handler allocates and returns user_state with size
 typedef nicc_retval_t (*soc_pkt_handler_t)(Buffer* pkt, void* user_state);  
-typedef nicc_retval_t (*soc_msg_handler_t)(Buffer* msg, void* user_state);
+typedef nicc_retval_t (*soc_msg_handler_t)(Buffer** msg_batch, size_t batch_size, void* user_state);  // batch processing interface
 typedef void (*soc_cleanup_handler_t)(void* user_state);   // cleanup handler frees user_state
 
 /**
@@ -110,6 +110,13 @@ class SoCWrapper {
      * \brief Launch the SoC kernel loop
      */
     void __launch();
+    
+    /**
+     * \brief Process worker batches for RDMA QP
+     * \param rx_qp  RX queue pair (prior component)
+     * \param tx_qp  TX queue pair (next component)
+     */
+    void __worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp);
 
     /* ========================SoC Datapath ========================*/
 
@@ -224,8 +231,8 @@ class SoCWrapper {
   #endif
 
     /// tmp shm queue for testing
-    soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;
-    soc_shm_lock_free_queue* _tmp_worker_tx_queue = nullptr;
+    // soc_shm_lock_free_queue* _tmp_worker_rx_queue = nullptr;
+    // soc_shm_lock_free_queue* _tmp_worker_tx_queue = nullptr;
 };
 
 

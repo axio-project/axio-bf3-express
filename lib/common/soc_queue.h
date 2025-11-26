@@ -18,7 +18,7 @@ namespace nicc {
 constexpr size_t kWsQueueSize = 1024;
 constexpr size_t kNumRxRingEntries = 2048;
 constexpr size_t kNumTxRingEntries = 2048;
-constexpr size_t kMTU = 4096;
+constexpr size_t kMTU = 2048;
 
 /**
  * \brief A lock-free queue for transferring buffer ownership within 
@@ -155,6 +155,15 @@ class RDMA_SoC_QP : public SoC_QP {
 
     size_t _free_send_wr_num = nicc::kNumTxRingEntries;
     size_t _wait_for_disp = 0;
+    
+    /* ========== Worker state (counter-based, no lock-free queue) ========== */
+    /// RX direction: dispatcher writes, worker reads
+    size_t _worker_rx_read_idx = 0;              ///< Worker's current read position in rx_ring
+    volatile size_t _worker_rx_pending = 0;      ///< Number of packets pending for worker to process
+    
+    /// TX direction: worker writes, dispatcher collects
+    size_t _worker_tx_write_idx = 0;             ///< Worker's current write position in tx_queue
+    volatile size_t _worker_tx_ready = 0;        ///< Number of packets ready for dispatcher to send
 };
 
 

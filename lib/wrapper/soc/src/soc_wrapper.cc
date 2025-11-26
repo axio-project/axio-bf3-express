@@ -19,8 +19,8 @@ SoCWrapper::SoCWrapper(soc_wrapper_type_t type, SoCWrapperContext *context) {
     #elif SoC_QP_NEXT_TYPE == DPDK_MODE
     NICC_CHECK_POINTER(this->_qp_for_next = static_cast<DPDK_SoC_QP*>(context->qp_for_next));
     #endif
-    NICC_CHECK_POINTER(this->_tmp_worker_rx_queue = new soc_shm_lock_free_queue());
-    NICC_CHECK_POINTER(this->_tmp_worker_tx_queue = new soc_shm_lock_free_queue());
+    // NICC_CHECK_POINTER(this->_tmp_worker_rx_queue = new soc_shm_lock_free_queue());
+    // NICC_CHECK_POINTER(this->_tmp_worker_tx_queue = new soc_shm_lock_free_queue());
     if (type & kSoC_Dispatcher) {
         // init the dispatcher
         if (this->__init_dispatcher() != NICC_SUCCESS) {
@@ -73,8 +73,8 @@ SoCWrapper::~SoCWrapper() {
 
 nicc_retval_t SoCWrapper::__init_dispatcher() {
     /// Allocate the SHM queue for transferring buffers between dispatcher and worker
-    this->_qp_for_prior->_disp_worker_queue = this->_tmp_worker_rx_queue;
-    this->_qp_for_next->_collect_worker_queue = this->_tmp_worker_tx_queue;
+    // this->_qp_for_prior->_disp_worker_queue = this->_tmp_worker_rx_queue;
+    // this->_qp_for_next->_collect_worker_queue = this->_tmp_worker_tx_queue;
     if (this->_qp_for_prior->get_qp_type() == SoC_QP::QP_Type::DPDK || 
         this->_qp_for_next->get_qp_type() == SoC_QP::QP_Type::DPDK) {
         rte_thread_register();
@@ -108,62 +108,65 @@ void SoCWrapper::__run(double seconds) {
     return;
 }
 
-/// \todo divide into worker and dispatcher, now we write in one function
 void SoCWrapper::__launch() {
-    /* 1. RX Direction, from piror component block to next component block */
+    /* 1. RX Direction: prior component → worker → next component */
     size_t nb_rx = this->__rx_burst(this->_qp_for_prior);
     size_t nb_disp = this->__dispatch_rx_pkts(this->_qp_for_prior);
 
-    /// Worker Logic
-    size_t worker_queue_size = this->_tmp_worker_rx_queue->get_size();
-    /// \todo get packets per message within header; now assume 1 packet per message
-    size_t msg_num = worker_queue_size / 1;
-    if (msg_num > kAppRxMsgBatchSize) {
-        /// handle received messages with user defined msg handler
-        for (size_t i = 0; i < msg_num * 1; i++) {
-            Buffer *m = (Buffer*)this->_tmp_worker_rx_queue->dequeue();
-            
-            // call user defined message handler if available
-            if (likely(this->_context->msg_handler)) {
-                nicc_retval_t ret = this->_context->msg_handler(m, this->_context->user_state);
-                
-                // Use routing to decide packet forwarding based on kernel return value
-                // if (this->_context->routing) {
-                    // nicc_retval_t routing_ret = this->__forward_packet_with_routing(m, ret);
-                    // if (routing_ret != NICC_SUCCESS) {
-                    //     NICC_WARN_C("Routing-based forwarding failed for kernel_retval=%d, using default forwarding", ret);
-                    //     this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
-                    // }
-                // } else {
-                    // No routing configured, use original logic
-                    if (likely(ret == NICC_SUCCESS)) {
-                        // successful processing, forward to next component
-                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
-                    } else {
-                        // processing failed, log warning but still forward (or could drop based on policy)
-                        NICC_WARN_C("User msg handler failed: ret=%d, still forwarding message", ret);
-                        this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
-                    }
-                // }
-            } else {
-                // no user handler registered, default behavior: forward message
-                this->_tmp_worker_tx_queue->enqueue((uint8_t*)m);
-            }
-        }
-    }
+    // Worker processing (only for RDMA QP currently)
+    this->__worker_process_batches_rdma(this->_qp_for_prior, this->_qp_for_next);
 
+    // Collect processed packets and send
     size_t nb_collect = this->__collect_tx_pkts(this->_qp_for_next);
-
     if (this->_qp_for_next->get_tx_queue_size() >= kTxBatchSize) {
-        /// \todo use MAT to decide dst qp_id
         this->__tx_flush(this->_qp_for_next);
     }
 
-    /* 2. TX Direction, from next component block to prior component block */
+    /* 2. TX Direction: next component → prior component (reverse path) */
     nb_rx = this->__rx_burst(this->_qp_for_next);
-    /// immediately send the packets
     size_t nb_direct_tx = this->__direct_tx_burst(this->_qp_for_next, this->_qp_for_prior);
     size_t nb_tx = this->__tx_flush(this->_qp_for_prior);
+}
+
+void SoCWrapper::__worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
+    // Load pending count (atomic for future multi-threading)
+    size_t available = __atomic_load_n(&rx_qp->_worker_rx_pending, __ATOMIC_ACQUIRE);
+    
+    if (available < kAppRxMsgBatchSize) {
+        return;  // Not enough messages for a batch
+    }
+    
+    // Process messages in batches
+    size_t num_batches = available / kAppRxMsgBatchSize;
+    
+    for (size_t batch_idx = 0; batch_idx < num_batches; batch_idx++) {
+        // Collect batch from rx_ring using worker_rx_read_idx
+        Buffer* msg_batch[kAppRxMsgBatchSize];
+        size_t start_idx = rx_qp->_worker_rx_read_idx;
+        
+        for (size_t i = 0; i < kAppRxMsgBatchSize; i++) {
+            size_t idx = (start_idx + i) % nicc::kNumRxRingEntries;
+            msg_batch[i] = rx_qp->_rx_ring[idx];
+        }
+        
+        // Call user defined message handler if available
+        if (likely(this->_context->msg_handler)) {
+            nicc_retval_t ret = this->_context->msg_handler(msg_batch, kAppRxMsgBatchSize, this->_context->user_state);
+            if (unlikely(ret != NICC_SUCCESS)) {
+                NICC_WARN_C("User batch msg handler failed: ret=%d, still forwarding all messages", ret);
+            }
+        }
+        
+        // Forward processed messages to TX queue (regardless of handler result)
+        size_t write_idx = tx_qp->_worker_tx_write_idx;
+        memcpy(&tx_qp->_tx_queue[write_idx], msg_batch, kAppRxMsgBatchSize * sizeof(Buffer*));
+        tx_qp->_worker_tx_write_idx = write_idx + kAppRxMsgBatchSize;
+        __atomic_add_fetch(&tx_qp->_worker_tx_ready, kAppRxMsgBatchSize, __ATOMIC_RELEASE);
+        
+        // Update worker read index and decrement pending count
+        rx_qp->_worker_rx_read_idx = (start_idx + kAppRxMsgBatchSize) % nicc::kNumRxRingEntries;
+        __atomic_sub_fetch(&rx_qp->_worker_rx_pending, kAppRxMsgBatchSize, __ATOMIC_RELEASE);
+    }
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
@@ -194,29 +197,30 @@ size_t SoCWrapper::__rx_burst(DPDK_SoC_QP *qp) {
     size_t nb_rx = 0;
     rte_mbuf **rx = &qp->_rx_queue[qp->_rx_queue_idx];
     nb_rx = rte_eth_rx_burst(qp->_phy_port, qp->_qp_id, rx, nicc::kNumRxRingEntries - qp->_rx_queue_idx);
-    if (nb_rx > 0) {
-        NICC_LOG("Received %lu packets", nb_rx);
-    }
     qp->_rx_queue_idx += nb_rx;
     return nb_rx;
 }
 
 size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
-    size_t dispatch_total = 0;
-    Buffer *ring_entry = qp->_rx_ring[qp->_ring_head];
-    struct soc_shm_lock_free_queue *worker_queue = qp->_disp_worker_queue;
-    for (size_t i = 0; i < qp->_wait_for_disp; i++) {
-        if (unlikely(!worker_queue->enqueue((uint8_t*)ring_entry))) {
-            ring_entry->state_ = Buffer::kFREE_BUF;
-            ring_entry = ring_entry->next_;
-            continue;
-        }
-        ring_entry->state_ = Buffer::kAPP_OWNED_BUF;
-        ring_entry = ring_entry->next_;
-        dispatch_total++;
+    size_t dispatch_total = qp->_wait_for_disp;
+    
+    if (dispatch_total == 0) {
+        return 0;
     }
-    qp->_ring_head = (qp->_ring_head + qp->_wait_for_disp) % nicc::kNumRxRingEntries;
+    
+    // Mark buffers as APP_OWNED (worker will process them)
+    for (size_t i = 0; i < dispatch_total; i++) {
+        size_t idx = (qp->_ring_head + i) % nicc::kNumRxRingEntries;
+        qp->_rx_ring[idx]->state_ = Buffer::kAPP_OWNED_BUF;
+    }
+    
+    // Update ring head
+    qp->_ring_head = (qp->_ring_head + dispatch_total) % nicc::kNumRxRingEntries;
     qp->_wait_for_disp = 0;
+    
+    // Notify worker: increment pending count (atomic for future multi-threading)
+    __atomic_add_fetch(&qp->_worker_rx_pending, dispatch_total, __ATOMIC_RELEASE);
+    
     return dispatch_total;
 }
 
@@ -239,18 +243,23 @@ size_t SoCWrapper::__dispatch_rx_pkts(DPDK_SoC_QP *qp) {
 }
 
 size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
-    size_t remain_ring_size = nicc::kNumTxRingEntries - qp->_tx_queue_idx;
-    size_t nb_collect_num = 0;
-    struct soc_shm_lock_free_queue *worker_queue = qp->_collect_worker_queue;
-    size_t tx_size = (worker_queue->get_size() > remain_ring_size) 
-                          ? remain_ring_size : worker_queue->get_size();
-    for (size_t i = 0; i < tx_size; i++) {
-        qp->_tx_queue[qp->_tx_queue_idx] = (Buffer*)worker_queue->dequeue();
-        qp->_tx_queue_idx++;
+    // Load ready count (atomic for future multi-threading)
+    size_t ready = __atomic_load_n(&qp->_worker_tx_ready, __ATOMIC_ACQUIRE);
+    
+    if (ready == 0) {
+        return 0;
     }
-    remain_ring_size -= tx_size;
-    nb_collect_num += tx_size;
-    return tx_size;
+    
+    // Worker has already filled tx_queue from index 0 to _worker_tx_write_idx
+    // Dispatcher's _tx_queue_idx should point to the number of packets ready to send
+    // Note: After __tx_flush sends packets, it resets _tx_queue_idx to 0
+    //       So we can safely set it to the ready count
+    qp->_tx_queue_idx = ready;
+    
+    // Decrement ready count (all collected)
+    __atomic_sub_fetch(&qp->_worker_tx_ready, ready, __ATOMIC_RELEASE);
+    
+    return ready;
 }
 
 size_t SoCWrapper::__collect_tx_pkts(DPDK_SoC_QP *qp) {
@@ -316,6 +325,8 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
         tx_total += nb_tx;
     }
     qp->_tx_queue_idx = 0;
+    // Reset worker write index after packets are sent
+    qp->_worker_tx_write_idx = 0;
     return tx_total;
 }
 

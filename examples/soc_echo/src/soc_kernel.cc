@@ -1,4 +1,3 @@
-#pragma once
 #include "common.h"
 #include "log.h"
 #include "common/buffer.h"
@@ -45,36 +44,34 @@ void soc_cleanup_handler(void* user_state) {
     }
 }
 
-// SoC message handler - processes messages
-nicc::nicc_retval_t soc_msg_handler(nicc::Buffer* msg, void* user_state) {
-    if (!user_state) {
-        NICC_WARN("user_state is null");
-        return nicc::NICC_ERROR;
-    }
+// SoC message handler - processes messages in batch mode
+nicc::nicc_retval_t soc_msg_handler(nicc::Buffer** msg_batch, size_t batch_size, void* user_state) {
+    if (!user_state) return nicc::NICC_ERROR;
     
     MyAppState* state = static_cast<MyAppState*>(user_state);
     
-    if (!state->is_initialized) {
-        NICC_WARN("user_state not properly initialized");
-        return nicc::NICC_ERROR;
+    // Process batch of messages
+    for (size_t i = 0; i < batch_size; i++) {
+        nicc::Buffer* msg = msg_batch[i];
+        if (!msg) continue;
+        
+        // Increment message counter
+        state->message_counter++;
+        
+        // Process message logic (example: simple echo and modify content)
+        // NICC_LOG("Processing message #%d, length=%u", 
+        //          state->message_counter, msg->length_);
+        
+        // Do some processing in user buffer
+        // if (msg->length_ < sizeof(state->processing_buffer)) {
+        //     memcpy(state->processing_buffer, msg->get_buf(), msg->length_);
+        //     // Can modify message content
+        //     // ...
+        // }
+        
+        // Record processing time (example)
+        // state->processing_time_sum += 0.001; // Assume processing time
     }
-    
-    // Increment message counter
-    state->message_counter++;
-    
-    // Process message logic (example: simple echo and modify content)
-    NICC_LOG("Processing message #%d, length=%u", 
-             state->message_counter, msg->length_);
-    
-    // Do some processing in user buffer
-    if (msg->length_ < sizeof(state->processing_buffer)) {
-        memcpy(state->processing_buffer, msg->get_buf(), msg->length_);
-        // Can modify message content
-        // ...
-    }
-    
-    // Record processing time (example)
-    state->processing_time_sum += 0.001; // Assume processing time
     
     return nicc::NICC_SUCCESS;
 }
