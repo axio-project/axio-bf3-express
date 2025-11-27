@@ -525,14 +525,14 @@ nicc_retval_t Channel_SoC::__init_recvs(RDMA_SoC_QP *qp) {
         qp->_recv_wr[i].wr_id = i;
         qp->_recv_wr[i].sg_list = &qp->_recv_sgl[i];
         qp->_recv_wr[i].num_sge = 1;      /// Only one SGE per recv wr
-        qp->_rx_ring[i] = new Buffer(&buf[offset], kRecvMbufSize, ring_extent->lkey_);  // RX ring entry
-        qp->_rx_ring[i]->state_ = Buffer::kPOSTED;
+        qp->_rx_sync_ring[i] = new Buffer(&buf[offset], kRecvMbufSize, ring_extent->lkey_);  // RX ring entry
+        qp->_rx_sync_ring[i]->state_ = Buffer::kPOSTED_PENDING;
         qp->_recv_wr[i].next = (i < kRQDepth - 1) ? &qp->_recv_wr[i + 1] : &qp->_recv_wr[0];
     }
 
     // Circular link rx ring
     for (size_t i = 0; i < kRQDepth; i++) {
-        qp->_rx_ring[i]->next_ = (i < kRQDepth - 1) ? qp->_rx_ring[i + 1] : qp->_rx_ring[0];
+        qp->_rx_sync_ring[i]->next_ = (i < kRQDepth - 1) ? qp->_rx_sync_ring[i + 1] : qp->_rx_sync_ring[0];
     }
 
     // Does not post RECVs here, because the qp has not been connected yet (i.e., qp has not been changed to RTR state)

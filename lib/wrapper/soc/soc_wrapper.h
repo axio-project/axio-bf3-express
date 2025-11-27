@@ -175,7 +175,7 @@ class SoCWrapper {
      * \param RDMA_SoC_QP or DPDK_SoC_QP *qp, the QP for sending packets
      * \return the number of packets collected
      */
-    size_t __collect_tx_pkts(RDMA_SoC_QP *qp);
+    size_t __collect_tx_pkts(RDMA_SoC_QP *prior_qp, RDMA_SoC_QP *next_qp);
     size_t __collect_tx_pkts(DPDK_SoC_QP *qp);
 
     /**

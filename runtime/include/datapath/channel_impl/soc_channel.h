@@ -227,9 +227,9 @@ class Channel_SoC : public Channel {
     }
 
     void __delete_rdma_qp(RDMA_SoC_QP *qp){
-        // delete Buffer in _rx_ring
+        // delete Buffer in _rx_sync_ring
         for (size_t i = 0; i < kRQDepth; i++) {
-            delete qp->_rx_ring[i];
+            delete qp->_rx_sync_ring[i];
         }
         // Destroy QPs and CQs. QPs must be destroyed before CQs.
         exit_assert(ibv_destroy_qp(qp->_qp) == 0, "Failed to destroy QP");

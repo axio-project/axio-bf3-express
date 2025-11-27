@@ -142,28 +142,25 @@ class RDMA_SoC_QP : public SoC_QP {
     size_t _send_head = 0;
     size_t _send_tail = 0;
 
-    Buffer *_sw_ring[nicc::kNumTxRingEntries];
+    Buffer *_sw_ring[nicc::kNumTxRingEntries];    ///< TX ring to facilicate post send WRs
     Buffer *_tx_queue[nicc::kNumTxRingEntries];
     size_t _tx_queue_idx = 0;
     /* RECV */
     struct ibv_recv_wr _recv_wr[kNumRxRingEntries];
     struct ibv_sge _recv_sgl[kNumRxRingEntries];
     struct ibv_wc _recv_wc[kNumRxRingEntries];
-    size_t _recv_head = 0;
-    Buffer *_rx_ring[kNumRxRingEntries];
-    size_t _ring_head = 0;
+    size_t _recv_head = 0;                          ///< Index of current un-posted RECV buffer, updated only after a RECV WR is posted
+    Buffer *_rx_sync_ring[kNumRxRingEntries];       ///< RX ring to facilitate synchronization between previous component (via RDMA qp) -> dispatcher -> worker -> collect to _tx_queue
+    volatile size_t _rx_sync_dispatch_head = 0;     ///< Index of the first buffer of 'kPOSTED_PENDING' buffers
+    size_t _rx_sync_collect_head = 0;               ///< Index of the first buffer of 'kAPP_OPERATING' buffers
 
     size_t _free_send_wr_num = nicc::kNumTxRingEntries;
     size_t _wait_for_disp = 0;
     
     /* ========== Worker state (counter-based, no lock-free queue) ========== */
     /// RX direction: dispatcher writes, worker reads
-    size_t _worker_rx_read_idx = 0;              ///< Worker's current read position in rx_ring
-    volatile size_t _worker_rx_pending = 0;      ///< Number of packets pending for worker to process
+    volatile size_t _worker_rx_read_idx = 0;              ///< Worker's current read position in _rx_sync_ring
     
-    /// TX direction: worker writes, dispatcher collects
-    size_t _worker_tx_write_idx = 0;             ///< Worker's current write position in tx_queue
-    volatile size_t _worker_tx_ready = 0;        ///< Number of packets ready for dispatcher to send
 };
 
 

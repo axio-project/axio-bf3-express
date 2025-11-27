@@ -117,7 +117,7 @@ void SoCWrapper::__launch() {
     this->__worker_process_batches_rdma(this->_qp_for_prior, this->_qp_for_next);
 
     // Collect processed packets and send
-    size_t nb_collect = this->__collect_tx_pkts(this->_qp_for_next);
+    size_t nb_collect = this->__collect_tx_pkts(this->_qp_for_prior, this->_qp_for_next);
     if (this->_qp_for_next->get_tx_queue_size() >= kTxBatchSize) {
         this->__tx_flush(this->_qp_for_next);
     }
@@ -129,9 +129,8 @@ void SoCWrapper::__launch() {
 }
 
 void SoCWrapper::__worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
-    // Load pending count (atomic for future multi-threading)
-    size_t available = __atomic_load_n(&rx_qp->_worker_rx_pending, __ATOMIC_ACQUIRE);
-    
+    size_t available = (rx_qp->_rx_sync_dispatch_head - rx_qp->_worker_rx_read_idx) & (nicc::kNumRxRingEntries - 1);
+
     if (available < kAppRxMsgBatchSize) {
         return;  // Not enough messages for a batch
     }
@@ -146,7 +145,7 @@ void SoCWrapper::__worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *
         
         for (size_t i = 0; i < kAppRxMsgBatchSize; i++) {
             size_t idx = (start_idx + i) % nicc::kNumRxRingEntries;
-            msg_batch[i] = rx_qp->_rx_ring[idx];
+            msg_batch[i] = rx_qp->_rx_sync_ring[idx];
         }
         
         // Call user defined message handler if available
@@ -156,26 +155,23 @@ void SoCWrapper::__worker_process_batches_rdma(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *
                 NICC_WARN_C("User batch msg handler failed: ret=%d, still forwarding all messages", ret);
             }
         }
-        
-        // Forward processed messages to TX queue (regardless of handler result)
-        size_t write_idx = tx_qp->_worker_tx_write_idx;
-        memcpy(&tx_qp->_tx_queue[write_idx], msg_batch, kAppRxMsgBatchSize * sizeof(Buffer*));
-        tx_qp->_worker_tx_write_idx = write_idx + kAppRxMsgBatchSize;
-        __atomic_add_fetch(&tx_qp->_worker_tx_ready, kAppRxMsgBatchSize, __ATOMIC_RELEASE);
-        
-        // Update worker read index and decrement pending count
+
         rx_qp->_worker_rx_read_idx = (start_idx + kAppRxMsgBatchSize) % nicc::kNumRxRingEntries;
-        __atomic_sub_fetch(&rx_qp->_worker_rx_pending, kAppRxMsgBatchSize, __ATOMIC_RELEASE);
+
+        // Forward processed messages to TX queue (regardless of handler result)
+        // for (size_t i = 0; i < kAppRxMsgBatchSize; i++) {
+        //     msg_batch[i]->state_ = Buffer::kREADY_FOR_TX;
+        // }
     }
 }
 
 size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
     /// post recvs first
-    Buffer *ring_entry = qp->_rx_ring[qp->_recv_head];
+    Buffer *ring_entry = qp->_rx_sync_ring[qp->_recv_head];
     size_t num_recvs = 0;
     while (ring_entry->state_ == Buffer::kFREE_BUF) {
         num_recvs++;
-        ring_entry->state_ = Buffer::kPOSTED;
+        ring_entry->state_ = Buffer::kPOSTED_PENDING;
         ring_entry = ring_entry->next_;
     }
     if (num_recvs) {
@@ -186,7 +182,7 @@ size_t SoCWrapper::__rx_burst(RDMA_SoC_QP *qp) {
     int ret = ibv_poll_cq(qp->_recv_cq, kRxBatchSize, qp->_recv_wc);
     /// set buffer's length
     for (int i = 0; i < ret; i++) {
-        qp->_rx_ring[(qp->_ring_head + qp->_wait_for_disp + i) % nicc::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
+        qp->_rx_sync_ring[(qp->_rx_sync_dispatch_head + qp->_wait_for_disp + i) % nicc::kNumRxRingEntries]->length_ = qp->_recv_wc[i].byte_len;
     }
     qp->_wait_for_disp += ret;
 
@@ -203,23 +199,20 @@ size_t SoCWrapper::__rx_burst(DPDK_SoC_QP *qp) {
 
 size_t SoCWrapper::__dispatch_rx_pkts(RDMA_SoC_QP *qp) {
     size_t dispatch_total = qp->_wait_for_disp;
-    
-    if (dispatch_total == 0) {
+    if (unlikely(dispatch_total == 0)) {
         return 0;
     }
     
     // Mark buffers as APP_OWNED (worker will process them)
-    for (size_t i = 0; i < dispatch_total; i++) {
-        size_t idx = (qp->_ring_head + i) % nicc::kNumRxRingEntries;
-        qp->_rx_ring[idx]->state_ = Buffer::kAPP_OWNED_BUF;
-    }
+    // for (size_t i = 0; i < dispatch_total; i++) {
+    //     size_t idx = (qp->_rx_sync_dispatch_head + i) % nicc::kNumRxRingEntries;
+    //     qp->_rx_sync_ring[idx]->state_ = Buffer::kAPP_OPERATING;
+    // }
     
     // Update ring head
-    qp->_ring_head = (qp->_ring_head + dispatch_total) % nicc::kNumRxRingEntries;
+    qp->_rx_sync_dispatch_head = (qp->_rx_sync_dispatch_head + dispatch_total) % nicc::kNumRxRingEntries;
+
     qp->_wait_for_disp = 0;
-    
-    // Notify worker: increment pending count (atomic for future multi-threading)
-    __atomic_add_fetch(&qp->_worker_rx_pending, dispatch_total, __ATOMIC_RELEASE);
     
     return dispatch_total;
 }
@@ -242,24 +235,22 @@ size_t SoCWrapper::__dispatch_rx_pkts(DPDK_SoC_QP *qp) {
     return dispatch_total;
 }
 
-size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *qp) {
-    // Load ready count (atomic for future multi-threading)
-    size_t ready = __atomic_load_n(&qp->_worker_tx_ready, __ATOMIC_ACQUIRE);
-    
-    if (ready == 0) {
+size_t SoCWrapper::__collect_tx_pkts(RDMA_SoC_QP *prior_qp, RDMA_SoC_QP *next_qp) {
+    // Collect processed packets (ready) to tx_queue
+    size_t available = (prior_qp->_worker_rx_read_idx - prior_qp->_rx_sync_collect_head) & (nicc::kNumRxRingEntries - 1);
+    if (unlikely(available == 0)) {
         return 0;
     }
-    
-    // Worker has already filled tx_queue from index 0 to _worker_tx_write_idx
-    // Dispatcher's _tx_queue_idx should point to the number of packets ready to send
-    // Note: After __tx_flush sends packets, it resets _tx_queue_idx to 0
-    //       So we can safely set it to the ready count
-    qp->_tx_queue_idx = ready;
-    
-    // Decrement ready count (all collected)
-    __atomic_sub_fetch(&qp->_worker_tx_ready, ready, __ATOMIC_RELEASE);
-    
-    return ready;
+
+    size_t start_idx = prior_qp->_rx_sync_collect_head;
+    for (size_t i = 0; i < available; i++) {
+        size_t idx = (start_idx + i) % nicc::kNumRxRingEntries;
+        next_qp->_tx_queue[i + next_qp->_tx_queue_idx] = prior_qp->_rx_sync_ring[idx];
+    }
+    prior_qp->_rx_sync_collect_head = (start_idx + available) % nicc::kNumRxRingEntries;
+    next_qp->_tx_queue_idx += available;
+
+    return available;
 }
 
 size_t SoCWrapper::__collect_tx_pkts(DPDK_SoC_QP *qp) {
@@ -292,7 +283,6 @@ size_t SoCWrapper::__tx_burst(RDMA_SoC_QP *qp, Buffer **tx, size_t tx_size) {
         tail_wr = &qp->_send_wr[qp->_send_tail];
         struct ibv_sge* sgl = &qp->_send_sgl[qp->_send_tail];
         Buffer *m = tx[nb_tx_res];
-        m->state_ = Buffer::kPOSTED;
         sgl->addr = reinterpret_cast<uint64_t>(m->get_buf());
         sgl->length = m->length_;
         sgl->lkey = m->lkey_;
@@ -325,8 +315,7 @@ size_t SoCWrapper::__tx_flush(RDMA_SoC_QP *qp) {
         tx_total += nb_tx;
     }
     qp->_tx_queue_idx = 0;
-    // Reset worker write index after packets are sent
-    qp->_worker_tx_write_idx = 0;
+
     return tx_total;
 }
 
@@ -347,11 +336,11 @@ size_t SoCWrapper::__direct_tx_burst(RDMA_SoC_QP *rx_qp, RDMA_SoC_QP *tx_qp) {
                                     ? rx_qp->_wait_for_disp : nicc::kNumTxRingEntries - tx_qp->_tx_queue_idx;
     
     for (size_t i = 0; i < remain_tx_queue_size; i++) {
-        Buffer *m = rx_qp->_rx_ring[(rx_qp->_ring_head + i) % nicc::kNumRxRingEntries];
+        Buffer *m = rx_qp->_rx_sync_ring[(rx_qp->_rx_sync_dispatch_head + i) % nicc::kNumRxRingEntries];
         tx_qp->_tx_queue[tx_qp->_tx_queue_idx] = m;
         tx_qp->_tx_queue_idx++;
     }
-    rx_qp->_ring_head = (rx_qp->_ring_head + remain_tx_queue_size) % nicc::kNumRxRingEntries;
+    rx_qp->_rx_sync_dispatch_head = (rx_qp->_rx_sync_dispatch_head + remain_tx_queue_size) % nicc::kNumRxRingEntries;
     rx_qp->_wait_for_disp -= remain_tx_queue_size;
 
     return remain_tx_queue_size;

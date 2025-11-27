@@ -10,9 +10,10 @@ namespace nicc {
 /// after the Buffer is created.
 class Buffer {
  public:
-  static constexpr uint8_t kPOSTED = 0;
-  static constexpr uint8_t kAPP_OWNED_BUF = 1;
-  static constexpr uint8_t kFREE_BUF = 2;
+  static constexpr uint8_t kPOSTED_PENDING = 0;
+  static constexpr uint8_t kAPP_OPERATING = 1;
+  static constexpr uint8_t kREADY_FOR_TX = 2;
+  static constexpr uint8_t kFREE_BUF = 3;
   Buffer(uint8_t *buf, size_t class_size, uint32_t lkey)
       : buf_(buf), class_size_(class_size), lkey_(lkey) {}
 
@@ -64,7 +65,7 @@ class Buffer {
   uint32_t length_ = 0;    ///< The length of the buffer
   /// Using for RX
   Buffer *next_;       ///< Next Buffer
-  uint8_t state_ = kFREE_BUF;  /// 0: owned by nic; 1: owned by app; 2: free, waiting for post_recv
+  uint8_t state_ = kFREE_BUF;  /// 0: owned by nic; 1: owned by app; 2: ready for TX; 3: free, waiting for post_recv
 };
 
 }  // namespace nicc
